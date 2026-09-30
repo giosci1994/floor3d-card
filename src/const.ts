@@ -1,4 +1,4 @@
-// Label of this build, shown at the top of the card editor and in the browser console.
-// Change it at every modification (next letter for another build on the same day):
-// the deploy folder takes the same name (v1.5.3-mod 2026-09-28c -> v20260928c).
-export const CARD_VERSION = 'v1.5.3-mod 2026-09-30b';
+// Version of this build, shown at the top of the card editor and in the browser console.
+// Keep it equal to "version" in package.json and to the tag of the GitHub release (HACS shows the
+// tag): 2.0.0 -> v2.0.0. Test builds between releases get a suffix (v2.0.1-dev.1).
+export const CARD_VERSION = 'v2.0.0';

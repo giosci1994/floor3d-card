@@ -1,6 +1,6 @@
 ![floor3d-card mod](docs/images/banner.png)
 
-> **This is a fork** of [adizanni/floor3d-card](https://github.com/adizanni/floor3d-card) with updated libraries (three.js 0.186, Lit 3), bug fixes and new features: see [FORK.md](FORK.md) for what changed and how to install it. The rest of this page is the original documentation: the HACS default repository, the release links and the donation link below refer to the original card and its author.
+> **This is a fork** of [adizanni/floor3d-card](https://github.com/adizanni/floor3d-card) with updated libraries (three.js 0.186, Lit 3), bug fixes and new features: see [FORK.md](FORK.md) for what changed. The rest of this page is the original documentation: the donation link and the ExportToHASS plugin below refer to the original card and its author.
 
 # floor3d-card (aka Your Home Digital Twin)
 
@@ -14,12 +14,22 @@ Javascript Module for the Home Assistant visualization Card for 3D Models with b
 
 ## Installation
 
-This fork is not in the HACS default repository, which installs the original card. Install it by hand as described in [FORK.md](FORK.md#installation): copy all the `dist/*.js` files (the card and its editor) into a folder of `/config/www` and add `floor3d-card.js` as a resource.
+### HACS
 
-It's **required** to load this card as `module`.
+[![Open this repository in HACS](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=giosci1994&repository=floor3d-card&category=plugin)
+
+1. Open the link above: HACS offers to add this repository. Or add it by hand: in HACS, menu (⋮) at the top right › **Custom repositories**, repository `https://github.com/giosci1994/floor3d-card`, type **Dashboard**.
+2. Open **floor3d-card mod** and click **Download**. HACS adds the resource by itself.
+3. Reload the browser or the app.
+
+If the original floor3d-card is installed, remove it from HACS first: both define `custom:floor3d-card` and use the same `www/community/floor3d-card` folder. The configuration of the card stays the same.
+
+### By hand
+
+Copy all the `.js` files of the [latest release](https://github.com/giosci1994/floor3d-card/releases/latest) into a folder of `/config/www` and add `floor3d-card.js` as a resource (details in [FORK.md](FORK.md#installation)). It's **required** to load this card as `module`.
 
 ```yaml
-- url: /local/pathtofile/floor3d-card.js
+- url: /local/floor3d-card/floor3d-card.js?v=2.0.0
   type: module
 ```
 

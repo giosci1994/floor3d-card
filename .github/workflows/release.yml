@@ -16,13 +16,14 @@ jobs:
         with:
           node-version: 22
 
-      # Build
+      # Build (it also removes from dist/ the chunks of older builds)
       - name: Build the files
         run: |
           npx --yes yarn@1.22.22 install --frozen-lockfile
           npm run build
 
-      # Upload the card and the editor chunk it loads on demand to the release.
+      # Upload the card and the chunks it loads (core, and the editor on demand) to the release.
+      # HACS downloads all the assets of the release into www/community/floor3d-card/.
       - name: Upload files to release
         uses: svenstaro/upload-release-action@v2
         with:
