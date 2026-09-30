@@ -1,3 +1,5 @@
+![floor3d-card mod](docs/images/banner.png)
+
 > **This is a fork** of [adizanni/floor3d-card](https://github.com/adizanni/floor3d-card) with updated libraries (three.js 0.186, Lit 3), bug fixes and new features: see [FORK.md](FORK.md) for what changed and how to install it. The rest of this page is the original documentation: the HACS default repository, the release links and the donation link below refer to the original card and its author.
 
 # floor3d-card (aka Your Home Digital Twin)
@@ -170,7 +172,7 @@ When in edit mode you can double click in an empty model space to retrieve the c
 
 An image explaining the coordinate concepts:
 
-![image](https://user-images.githubusercontent.com/35622920/152559923-c8762f2d-c8c6-4cd2-bbc8-8429b8fa7101.png)
+![Camera position, target and axes](docs/images/camera-coordinates.jpg)
 
 ## Overlay and action
 
@@ -322,10 +324,11 @@ entities:
     type3d: room
     object_id: <a room object (generally the floor) with a name containing "room". >
     room:
-      eleveation: <Number of cm going from the floor to the ceiling to set the parallelepiped height of the new room object>
+      elevation: <Number of cm going from the floor to the ceiling to set the parallelepiped height of the new room object>
       transparency: <Percentage of transparency of the room object>
       color: <color of the parallelipiped: ex: '#ff0000' or 'red'>
       label: <yes or no, default no: shows a label with the state of the entity or attribute (see below)>
+      label_text: <'state' to write the state of the entity in the label, 'template' for the entity template>
       span: <percentage span of text in the object plane> (ex. 50%)
       font: <name of the font text ex:'verdana'>
       textbgcolor: <background color for the text. ex: '#000000' or 'black'>
@@ -341,7 +344,7 @@ Room will draw a parallelipiped highlighting the room. Pretty static for the mom
 
 You can add a colorcondition section for rooms.
 
-![image](https://user-images.githubusercontent.com/35622920/153704069-f0be858f-5453-4a7c-a592-2c33d44284d0.PNG)
+![Rooms highlighted with the temperature as label](docs/images/room.jpg)
 
 ## Gesture
 
@@ -399,7 +402,7 @@ For a slide door (only pane object):
 
 Example of configuration for a window (Double French Window) exported using the ExportToHass plugin:
 
-![image](https://user-images.githubusercontent.com/35622920/132490828-37eed144-d86b-4ef0-93ec-4be5d8131da5.png)
+![The parts of a French window exported with ExportToHASS](docs/images/door-parts.jpg)
 
 The entity section:
 
@@ -426,9 +429,9 @@ And the related object group:
 
 Result:
 
-![image](https://user-images.githubusercontent.com/35622920/132490500-b6b40948-5f5b-4127-9d8e-5ae580c1e880.png)
-
-![image](https://user-images.githubusercontent.com/35622920/132490620-0dcf2614-4b28-40e5-ab9e-d01453e37d90.png)
+| ![Closed (off)](docs/images/door-closed.jpg) | ![Open (on): the pane turns 50° on its hinge](docs/images/door-open.jpg) |
+| :---: | :---: |
+| Closed (off) | Open (on): the pane turns 50° on its hinge |
 
 ## Cover
 
@@ -444,9 +447,9 @@ entities:
 
 It is an experimental implementation of cover entities.
 
-![image](https://user-images.githubusercontent.com/35622920/154579836-8cc59d3c-f8e1-439d-a088-58d514fcf170.png)
-
-![image](https://user-images.githubusercontent.com/35622920/154579949-189ef2e4-bfc5-4701-8967-1811a8426d0c.png)
+| ![Closed (current_position: 0)](docs/images/cover-closed.jpg) | ![Open at 45% (current_position: 45)](docs/images/cover-half.jpg) |
+| :---: | :---: |
+| Closed (current_position: 0) | Open at 45% (current_position: 45) |
 
 
 ## Rotate

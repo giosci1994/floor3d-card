@@ -1,5 +1,7 @@
 # floor3d-card mod
 
+![floor3d-card mod](docs/images/banner.png)
+
 A fork of [adizanni/floor3d-card](https://github.com/adizanni/floor3d-card) (MIT licence, © adizanni) based on version 1.5.3, with updated libraries, bug fixes and new features. All the options of the original card still work and are documented in [README.md](README.md). This page covers only what is different.
 
 ## Installation
@@ -37,9 +39,17 @@ Change `CARD_VERSION` in `src/const.ts` at every modification: the date, plus th
 - **Version label** at the top of the card editor and in the console banner.
 - The sky (`sky`) and the ambient light are removed on purpose, so that they don't affect the render. The light that follows the camera (torch) is always on.
 
+| ![TV screen (type3d: image): the picture of the media player lights the room](docs/images/tv.jpg) | ![Animated shower (type3d: shower)](docs/images/shower.jpg) |
+| :---: | :---: |
+| TV screen (`type3d: image`): the picture of the media player lights the room | Animated shower (`type3d: shower`) |
+
 ### Light and colours
 
 With three.js 0.186 colours are handled in sRGB, light is computed in linear space and lights use physical units (the model is in centimetres). Intensities are recalibrated to stay close to version 0.130 at room distances, and tone mapping (Neutral) avoids burnt-out areas.
+
+| ![sun: yes in the morning (sun.sun azimuth 105°)](docs/images/sun-morning.jpg) | ![The same model in the afternoon (azimuth 250°)](docs/images/sun-afternoon.jpg) |
+| :---: | :---: |
+| `sun: yes` in the morning (sun.sun azimuth 105°) | The same model in the afternoon (azimuth 250°) |
 
 | Option | Default | What it does |
 |---|---|---|
@@ -59,6 +69,8 @@ With three.js 0.186 colours are handled in sRGB, light is computed in linear spa
 ### Shadows
 
 Shadows are redrawn only when needed, and only for the lights that are on. While a door moves they are redrawn at most every 300 ms, plus once when it stops; before, it was every frame and for every light. Each light with shadows takes a GPU texture unit (16 on phones): beyond the limit the last lights get no shadow, and the sun comes first. `shadow: no` on a light excludes it.
+
+![Evening: lamps on, each with its own shadows](docs/images/evening.jpg)
 
 ### Trackers
 
@@ -86,6 +98,8 @@ The X coordinate comes from `sensor_x`, from an `x` attribute of the entity, or 
 
 Sensors that publish metres with the X axis already mirrored need `unit: m` and `flip_x: true`. Markers glide to the new position (about 0.25 s) and fade out when the target is lost. When only trackers or the shower are moving, rendering is limited to 30 frames per second.
 
+![Two people tracked, with the name of their zone above the head](docs/images/trackers.jpg)
+
 ### Tap and long press
 
 With `click: yes`, a tap runs the action of the object: lights toggle. A long press opens the entity details (or runs `long_press_action`). Dragging, rotating or pinching doesn't trigger anything. The Home Assistant app vibrates.
@@ -99,6 +113,10 @@ With `hideZoomMenu: no`, the "Views" menu at the top right moves smoothly to the
 - `state_colors: yes`: open doors and windows (`type3d: door`) light up (`open_color`, amber). With `alarm_entity` armed they turn red (`alarm_color`), and they blink when the alarm is triggered.
 - `rooms`: transparent copies of the floors, coloured by temperature (blue to red between `temperature_min` and `temperature_max`, 17 and 27 by default, with the value written on it) or by presence (`presence_color`).
 - A "Map" menu next to "Views" switches between no map, temperatures and presence; `room_colors` sets the initial choice.
+
+| ![Open doors and windows in amber (state_colors: yes)](docs/images/state-open.jpg) | ![Alarm armed: the open ones turn red](docs/images/state-alarm.jpg) |
+| :---: | :---: |
+| Open doors and windows in amber (`state_colors: yes`) | Alarm armed: the open ones turn red |
 
 ```yaml
 state_colors: 'yes'
@@ -114,6 +132,10 @@ rooms:
     temperature: sensor.living_room_temperature
     presence: [binary_sensor.living_room_occupancy, binary_sensor.kitchen_occupancy]
 ```
+
+| ![Room map by temperature, chosen in the "Map" menu at the top right](docs/images/map-temperature.jpg) | ![Room map by presence](docs/images/map-presence.jpg) |
+| :---: | :---: |
+| Room map by temperature, chosen in the "Map" menu at the top right | Room map by presence |
 
 ## Fixes
 
