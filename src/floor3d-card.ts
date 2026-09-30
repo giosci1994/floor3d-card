@@ -1,14 +1,15 @@
 /* eslint-disable @typescript-eslint/ban-types */
 import { LitElement, html, TemplateResult, css, PropertyValues, CSSResultGroup, render } from 'lit';
-import { property, customElement, state } from 'lit/decorators';
+import { property, customElement, state } from 'lit/decorators.js';
 import {
   HomeAssistant,
   ActionHandlerEvent,
   handleAction,
   LovelaceCardEditor,
   fireEvent,
+  forwardHaptic,
 } from 'custom-card-helpers'; // This is a community maintained npm module with common helper functions/types
-import './editor';
+// The editor is loaded on demand by getConfigElement(): devices that only show the card never download it.
 import { HassEntity } from 'home-assistant-js-websocket';
 import { createConfigArray, createObjectGroupConfigArray, getLovelace } from './helpers';
 import type { Floor3dCardConfig } from './types';
@@ -17,13 +18,55 @@ import { localize } from './localize/localize';
 //import three.js libraries for 3D rendering
 import * as TWEEN from '@tweenjs/tween.js';
 import * as THREE from 'three';
-import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
-import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader';
-import { MTLLoader } from 'three/examples/jsm/loaders/MTLLoader';
-import { GLTFLoader, GLTF } from 'three/examples/jsm/loaders/GLTFLoader';
-import { Sky } from 'three/examples/jsm/objects/Sky';
+import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
+import { MTLLoader } from 'three/examples/jsm/loaders/MTLLoader.js';
+import { GLTFLoader, GLTF } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { Object3D } from 'three';
 import '../elements/button';
+
+// three.js >= 0.155 always uses physical light units, and the model is in centimetres. These
+// factors keep the brightness close to the three.js 0.130 build at typical room distances (a lamp
+// seen from about 1.5 m); light_power, exposure and sun_power in the config adjust them.
+const LAMP_INTENSITY_PER_LUMEN = 47; // 0.130 build: 0.003 per lumen with the legacy light model
+const TORCH_SCALE = 0.66; // camera-following light: globalLightPower x this
+const SUN_INTENSITY = 2.4; // full daylight, multiplied by sun_power
+const SCREEN_EMISSIVE_SCALE = 0.25; // TV screen glow: image.lumens x this
+const TRACKER_SMOOTHING = 0.25; // seconds: trackers glide to each new position instead of jumping
+const TRACKER_FADE = 0.35; // seconds to appear or disappear
+const LIGHT_ANIMATION_FRAME_MS = 33; // only trackers or the shower moving: at most 30 frames per second
+const MOVING_SHADOW_MS = 300; // shadows of a moving door: redrawn at most this often, and at the end
+
+const TONE_MAPPINGS: { [name: string]: THREE.ToneMapping } = {
+  neutral: THREE.NeutralToneMapping,
+  agx: THREE.AgXToneMapping,
+  aces: THREE.ACESFilmicToneMapping,
+  linear: THREE.LinearToneMapping,
+};
+
+type ShadowLight = THREE.PointLight | THREE.SpotLight | THREE.DirectionalLight;
+
+interface RoomView {
+  name: string;
+  material: THREE.MeshBasicMaterial; // translucent copy of the floor, above it
+  overlays: THREE.Mesh[];
+  center: THREE.Vector3; // for the temperature label (world coordinates)
+  temperature?: string;
+  presence: string[];
+  label?: THREE.Sprite;
+  labelText?: string;
+}
+
+interface TrackerView {
+  group: THREE.Group;
+  materials: [THREE.Material, number][]; // material and its opacity when fully visible
+  target: THREE.Vector3;
+  present: boolean; // the sensors report a position
+  opacity: number; // 0..1, fades towards present ? 1 : 0
+  label?: THREE.Sprite;
+  labelText?: string;
+  height: number;
+}
 
 /* eslint no-console: 0 */
 console.info(
@@ -94,7 +137,9 @@ export class Floor3dCard extends LitElement {
   private _rotation_state: number[];
   private _rotation_index: number[];
   private _animated_transitions: any[];
-  private _clock?: THREE.Clock;
+  private _lastFrameTime?: number | null; // timestamp of the previous animation frame
+  private _lastRenderTime = 0;
+  private _lastShadowTime = 0;
   private _slidingdoor: THREE.Group[];
   private _overlay_entity: string;
   private _overlay_state: string;
@@ -105,12 +150,28 @@ export class Floor3dCard extends LitElement {
   private _resizeObserver: ResizeObserver;
   private _zIndexInterval: number;
   private _performActionListener: EventListener;
-  private _clickStart?: number;
-  private _mousedownEventListener: EventListener;
+  private _pointerDownListener: EventListener;
+  private _pointerMoveListener: EventListener;
+  private _pointerUpListener: EventListener;
+  private _pointerCancelListener: EventListener;
   private _longpressTimeout: any;
-  private _mouseupEventListener: EventListener;
-  private _currentIntersections: THREE.Intersection[];
-  private _changeListener: EventListener;
+  // A press on the model: becomes a tap or a long press unless the finger moves (then it is a drag).
+  private _tap?: { id: number; x: number; y: number; t: number; long: boolean } | null;
+  private _changeListener: () => void;
+  private _controlsStartListener: () => void;
+  private _zoomSelect?: HTMLSelectElement;
+  private _cameraTweens: any[] = [];
+  private _shadowLights: ShadowLight[] = [];
+  private _sunTarget?: THREE.Object3D;
+  private _sunRoof: THREE.Mesh[] = []; // invisible roof: shadow for the sun only
+  private _sunKey?: string;
+  private _modelCenter?: THREE.Vector3;
+  private _modelRadius?: number;
+  private _trackers: TrackerView[] = [];
+  private _roomViews: RoomView[] = [];
+  private _mapMode = 'none'; // rooms coloured by: none, temperature, presence
+  private _colorDeps?: HassEntity[];
+  private _alarmPulse = false; // alarm triggered with something open: the openings blink
   private _cardObscured: boolean;
   private _card?: HTMLElement;
   private _content?: HTMLElement;
@@ -118,6 +179,18 @@ export class Floor3dCard extends LitElement {
   private _config!: Floor3dCardConfig;
   private _configArray: Floor3dCardConfig[] = [];
   private _object_ids?: Floor3dCardConfig[] = [];
+  private _isVisible = true;
+  // Set by Home Assistant's hui-card (2024+): layout of the hosting view ('panel', 'grid', ...).
+  @property({ attribute: false }) public layout?: string;
+  @property({ attribute: false }) public isPanel?: boolean;
+  @property({ attribute: false }) public editMode?: boolean;
+  private _intersectionObserver?: IntersectionObserver;
+  private _showers?: THREE.Group[];
+  private _info?: string[];
+  private _zoommenu?: HTMLElement;
+  private _trackerPrev?: HassEntity[][];
+  private _renderPending?: boolean;
+  private _missingLogged?: { [entity: string]: boolean };
   private _overlay: HTMLDivElement;
   private _hass?: HomeAssistant;
   private _haShadowRoot: any;
@@ -126,7 +199,6 @@ export class Floor3dCard extends LitElement {
   private _ambient_light: any;
   private _torch: THREE.DirectionalLight;
   private _torchTarget: THREE.Object3D;
-  private _sky: Sky;
   private _sun: THREE.DirectionalLight;
   _helper: THREE.DirectionalLightHelper;
   private _modelready: boolean;
@@ -135,7 +207,7 @@ export class Floor3dCard extends LitElement {
   constructor() {
     super();
 
-    this._clickStart = null;
+    this._tap = null;
     this._initialobjectmaterials = {};
     this._selectedobjects = [];
 
@@ -146,29 +218,20 @@ export class Floor3dCard extends LitElement {
     this._performActionListener = (evt) => {
       this._performAction(evt);
     };
-    this._mousedownEventListener = (evt) => this._mousedownEvent(evt);
-    this._mouseupEventListener = (evt) => {
-      if (this._longpressTimeout) {
-        clearTimeout(this._longpressTimeout);
-        this._longpressTimeout = null;
-      }
-
-      // Handle mouse click events that are less than 200ms in duration
-      if (this._clickStart && Date.now() - this._clickStart < 200) {
-        if (this._config.click == 'yes' || this._selectionModeEnabled) {
-          this._firEvent(evt);
-        }
-      }
-
-      this._clickStart = null;
-    };
+    this._pointerDownListener = (evt) => this._onPointerDown(evt as PointerEvent);
+    this._pointerMoveListener = (evt) => this._onPointerMove(evt as PointerEvent);
+    this._pointerUpListener = (evt) => this._onPointerUp(evt as PointerEvent);
+    this._pointerCancelListener = () => this._cancelTap();
     this._changeListener = () => {
-      if (this._clickStart && Date.now() - this._clickStart > 200) {
-        this._clickStart = null;
-      }
-      this._render();
+      this._updateNearPlane();
+      this._scheduleRender();
     };
-    this._haShadowRoot = document.querySelector('home-assistant').shadowRoot;
+    // The user moved the camera: the views menu no longer shows where the camera is.
+    this._controlsStartListener = () => {
+      this._stopCameraTweens();
+      if (this._zoomSelect) this._zoomSelect.value = '';
+    };
+    this._haShadowRoot = document.querySelector('home-assistant')?.shadowRoot;
     this._eval = eval;
     this._card_id = 'ha-card-1';
 
@@ -178,6 +241,17 @@ export class Floor3dCard extends LitElement {
   public connectedCallback(): void {
     super.connectedCallback();
 
+    this._intersectionObserver = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          this._isVisible = entry.isIntersecting;
+          this._startOrStopAnimationLoop();
+        });
+      },
+      { threshold: 0.1 },
+    );
+    this._intersectionObserver.observe(this);
+
     if (this._modelready) {
       if (this._ispanel() || this._issidebar()) {
         this._resizeObserver.observe(this._card);
@@ -186,10 +260,7 @@ export class Floor3dCard extends LitElement {
         this._zIndexChecker();
       }, 250);
 
-      if (this._to_animate) {
-        this._clock = new THREE.Clock();
-        this._renderer.setAnimationLoop(() => this._animationLoop());
-      }
+      this._startOrStopAnimationLoop();
 
       if (this._ispanel() || this._issidebar()) {
         this._resizeCanvas();
@@ -198,16 +269,19 @@ export class Floor3dCard extends LitElement {
   }
 
   public disconnectedCallback(): void {
+    if (this._intersectionObserver) {
+      this._intersectionObserver.disconnect();
+    }
     super.disconnectedCallback();
 
     this._resizeObserver.disconnect();
     window.clearInterval(this._zIndexInterval);
 
+    this._cancelTap();
     if (this._modelready) {
-      if (this._to_animate) {
-        this._clock = null;
-        this._renderer.setAnimationLoop(null);
-      }
+      // _to_animate stays as it is: connectedCallback restarts the loop if it is still needed.
+      this._lastFrameTime = null;
+      this._renderer.setAnimationLoop(null);
     }
   }
 
@@ -434,10 +508,12 @@ export class Floor3dCard extends LitElement {
   }
 
   public rerender(): void {
-    this._content.removeEventListener('dblclick', this._performActionListener);
-    this._content.removeEventListener('touchstart', this._performActionListener);
-    this._content.removeEventListener('keydown', this._performActionListener);
+    this._removeInputListeners();
     this._controls.removeEventListener('change', this._changeListener);
+    this._controls.removeEventListener('start', this._controlsStartListener);
+    this._shadowLights = [];
+    this._trackers = [];
+    this._sun = null;
 
     this._renderer.setAnimationLoop(null);
     this._resizeObserver.disconnect();
@@ -451,7 +527,20 @@ export class Floor3dCard extends LitElement {
     this.display3dmodel();
   }
 
+  // Dashboard in edit mode: passed by Home Assistant (2024+), otherwise read from the page.
+  private _isEditMode(): boolean {
+    if (this.editMode !== undefined) {
+      return this.editMode;
+    }
+    const lovelace = getLovelace();
+    return !!(lovelace && lovelace.editMode);
+  }
+
   private _ispanel(): boolean {
+    if (this.isPanel !== undefined) {
+      return this.isPanel;
+    }
+    // Older Home Assistant versions: look for the panel view in the page structure.
 
     let root: any = document.querySelector('home-assistant');
     root = root && root.shadowRoot;
@@ -465,7 +554,7 @@ export class Floor3dCard extends LitElement {
     root = (root && root.shadowRoot) || root;
     root = root && root.querySelector('hui-view');
 
-    const panel: [] = root.getElementsByTagName('HUI-PANEL-VIEW');
+    const panel: [] = root && root.getElementsByTagName('HUI-PANEL-VIEW');
 
     if (panel) {
       if (panel.length == 0) {
@@ -493,7 +582,7 @@ export class Floor3dCard extends LitElement {
     root = (root && root.shadowRoot) || root;
     root = root && root.querySelector('hui-view');
 
-    const sidebar: [] = root.getElementsByTagName('HUI-SIDEBAR-VIEW');
+    const sidebar: [] = root && root.getElementsByTagName('HUI-SIDEBAR-VIEW');
 
     if (sidebar) {
       if (sidebar.length == 0) {
@@ -544,6 +633,19 @@ export class Floor3dCard extends LitElement {
         this.display3dmodel();
       }
 
+      if (!this._zoommenu) {
+        this._zoommenu = document.createElement('div');
+        this._zoommenu.style.position = 'absolute';
+        this._zoommenu.style.top = '10px';
+        this._zoommenu.style.right = '10px';
+        this._zoommenu.style.zIndex = '1000';
+        this._zoommenu.style.display = 'flex';
+        this._zoommenu.style.gap = '6px';
+        this._zoommenu.style.flexWrap = 'wrap';
+        this._zoommenu.style.justifyContent = 'flex-end';
+        this._card.appendChild(this._zoommenu);
+      }
+
       console.log('First updated end');
     }
   }
@@ -559,90 +661,141 @@ export class Floor3dCard extends LitElement {
     this._renderer.render(this._scene, this._camera);
   }
 
-  private _getintersect(e: any): THREE.Intersection[] {
-    const mouse: THREE.Vector2 = new THREE.Vector2();
-    mouse.x = (e.offsetX / this._content.clientWidth) * 2 - 1;
-    mouse.y = -(e.offsetY / this._content.clientHeight) * 2 + 1;
-    const raycaster: THREE.Raycaster = new THREE.Raycaster();
+  // Objects of the model under a point of the screen (client coordinates), nearest first.
+  private _getintersect(clientX: number, clientY: number): THREE.Intersection[] {
+    if (!this._renderer || !this._camera || clientX === undefined || clientY === undefined) return [];
+    const rect = this._renderer.domElement.getBoundingClientRect();
+    if (!rect.width || !rect.height) return [];
+    const mouse = new THREE.Vector2(
+      ((clientX - rect.left) / rect.width) * 2 - 1,
+      -((clientY - rect.top) / rect.height) * 2 + 1,
+    );
+    const raycaster = new THREE.Raycaster();
     raycaster.setFromCamera(mouse, this._camera);
-    const intersects: THREE.Intersection[] = raycaster.intersectObjects(this._raycasting, false);
-    return intersects;
+    return raycaster.intersectObjects(this._raycasting, false);
   }
 
-  private _mousedownEvent(e: any): void {
-    this._currentIntersections = this._getintersect(e);
-    this._clickStart = Date.now();
-    this._longpressTimeout = setTimeout(() => this._longPressEvent(e), 600);
-  }
-
-  private _firEvent(e: any): void {
-    //double click on object to show the name
-    const intersects = this._getintersect(e);
-    if (intersects.length > 0 && intersects[0].object.name != '') {
-      if (this._selectionModeEnabled) {
-        this._defaultaction(intersects);
-        return;
-      }
-
-      this._config.entities.forEach((entity, i) => {
-        for (let j = 0; j < this._object_ids[i].objects.length; j++) {
-          if (this._object_ids[i].objects[j].object_id == intersects[0].object.name) {
-            if (this._config.entities[i].action) {
-              switch (this._config.entities[i].action) {
-                case 'more-info':
-                  fireEvent(this, 'hass-more-info', { entityId: entity.entity });
-                  break;
-                case 'overlay':
-                  if (this._overlay) {
-                    this._setoverlaycontent(entity.entity);
-                  }
-                  break;
-                case 'default':
-                default:
-                  this._defaultaction(intersects);
-              }
-              return;
-            } else {
-              this._defaultaction(intersects);
-              return;
-            }
-          }
-        }
-      });
+  private _addInputListeners(): void {
+    const el = this._content;
+    el.addEventListener('pointerdown', this._pointerDownListener);
+    el.addEventListener('pointermove', this._pointerMoveListener);
+    el.addEventListener('pointerup', this._pointerUpListener);
+    el.addEventListener('pointercancel', this._pointerCancelListener);
+    el.addEventListener('keydown', this._performActionListener);
+    // With click on, a double click would toggle a light three times (two taps and the double click).
+    if (this._config.click != 'yes') {
+      el.addEventListener('dblclick', this._performActionListener);
     }
   }
 
-  // Hold down the mouse button on object
-  private _longPressEvent(_e: any): void {
-    if (this._clickStart == null) return;
-    this._clickStart = null;
+  private _removeInputListeners(): void {
+    const el = this._content;
+    if (!el) return;
+    el.removeEventListener('pointerdown', this._pointerDownListener);
+    el.removeEventListener('pointermove', this._pointerMoveListener);
+    el.removeEventListener('pointerup', this._pointerUpListener);
+    el.removeEventListener('pointercancel', this._pointerCancelListener);
+    el.removeEventListener('keydown', this._performActionListener);
+    el.removeEventListener('dblclick', this._performActionListener);
+    this._cancelTap();
+  }
 
-    // Use intersections from the mousedown event
-    const intersects = this._currentIntersections;
-    this._currentIntersections = null;
-    if (intersects.length > 0 && intersects[0].object.name != '') {
-      this._config.entities.forEach((entity, i) => {
-        for (let j = 0; j < this._object_ids[i].objects.length; j++) {
-          if (this._object_ids[i].objects[j].object_id == intersects[0].object.name) {
-            if (this._config.entities[i].long_press_action) {
-              switch (this._config.entities[i].long_press_action) {
-                case 'more-info':
-                  fireEvent(this, 'hass-more-info', { entityId: entity.entity });
-                  break;
-                case 'overlay':
-                  if (this._overlay) {
-                    this._setoverlaycontent(entity.entity);
-                  }
-                  break;
-                case 'default':
-                default:
-                  this._defaultaction(intersects);
-              }
-              return;
-            }
-          }
+  // Touch and mouse alike: a press that neither moves nor lasts is a tap, one held still is a long
+  // press, anything else (rotating, panning, pinching) belongs to the camera controls.
+  private _onPointerDown(e: PointerEvent): void {
+    this._cancelTap();
+    if (!e.isPrimary || (e.pointerType == 'mouse' && e.button != 0)) return;
+    this._tap = { id: e.pointerId, x: e.clientX, y: e.clientY, t: performance.now(), long: false };
+    this._longpressTimeout = setTimeout(() => this._onLongPress(), 550);
+  }
+
+  private _onPointerMove(e: PointerEvent): void {
+    if (!this._tap) return;
+    if (!e.isPrimary) {
+      this._cancelTap(); // second finger: pinch
+    } else if (e.pointerId == this._tap.id && Math.hypot(e.clientX - this._tap.x, e.clientY - this._tap.y) > 10) {
+      this._cancelTap();
+    }
+  }
+
+  private _onPointerUp(e: PointerEvent): void {
+    const tap = this._tap;
+    if (!tap || e.pointerId != tap.id) return;
+    this._cancelTap();
+    if (!tap.long && performance.now() - tap.t < 500 && (this._config.click == 'yes' || this._selectionModeEnabled)) {
+      this._firEvent(this._getintersect(tap.x, tap.y));
+    }
+  }
+
+  private _onLongPress(): void {
+    this._longpressTimeout = null;
+    if (!this._tap) return;
+    this._tap.long = true;
+    this._longPressEvent(this._getintersect(this._tap.x, this._tap.y));
+  }
+
+  private _cancelTap(): void {
+    if (this._longpressTimeout) {
+      clearTimeout(this._longpressTimeout);
+      this._longpressTimeout = null;
+    }
+    this._tap = null;
+  }
+
+  // Index of the first entity bound to an object of the model, or -1.
+  private _entityIndexForObject(name: string): number {
+    for (let i = 0; i < this._config.entities.length; i++) {
+      const ids = this._object_ids[i];
+      if (ids && ids.objects.some((o) => o.object_id == name)) return i;
+    }
+    return -1;
+  }
+
+  // Tap on the model (click: yes, or selection mode in the editor).
+  private _firEvent(intersects: THREE.Intersection[]): void {
+    if (intersects.length == 0 || intersects[0].object.name == '') return;
+    if (this._selectionModeEnabled) {
+      this._defaultaction(intersects);
+      return;
+    }
+    const i = this._entityIndexForObject(intersects[0].object.name);
+    if (i < 0) return;
+    const entity = this._config.entities[i];
+    switch (entity.action) {
+      case 'more-info':
+        fireEvent(this, 'hass-more-info', { entityId: entity.entity });
+        break;
+      case 'overlay':
+        if (this._overlay) {
+          this._setoverlaycontent(entity.entity);
         }
-      });
+        break;
+      case 'default':
+      default:
+        this._defaultaction(intersects);
+    }
+  }
+
+  // Long press on an object: its long_press_action or, with click on, the details of the entity.
+  private _longPressEvent(intersects: THREE.Intersection[]): void {
+    if (intersects.length == 0 || intersects[0].object.name == '' || this._selectionModeEnabled) return;
+    const i = this._entityIndexForObject(intersects[0].object.name);
+    if (i < 0) return;
+    const entity = this._config.entities[i];
+    const action = entity.long_press_action || (this._config.click == 'yes' ? 'more-info' : undefined);
+    switch (action) {
+      case 'more-info':
+        forwardHaptic('medium');
+        fireEvent(this, 'hass-more-info', { entityId: entity.entity });
+        break;
+      case 'overlay':
+        if (this._overlay) {
+          this._setoverlaycontent(entity.entity);
+        }
+        break;
+      case 'default':
+        this._defaultaction(intersects);
+        break;
     }
   }
 
@@ -659,7 +812,7 @@ export class Floor3dCard extends LitElement {
     if (intersects.length > 0 && intersects[0].object && intersects[0].object.name != '') {
       const objectName = intersects[0].object.name;
 
-      if (getLovelace().editMode && this._config.editModeNotifications != 'no') {
+      if (this._isEditMode() && this._config.editModeNotifications != 'no') {
         window.prompt('Object:', objectName);
       }
       console.log('Object:', objectName);
@@ -691,9 +844,10 @@ export class Floor3dCard extends LitElement {
 
       this._config.entities.forEach((entity, i) => {
         if (entity.type3d == 'light' || entity.type3d == 'gesture' || entity.type3d == 'camera') {
-          for (let j = 0; j < this._object_ids[i].objects.length; j++) {
+          for (let j = 0; this._object_ids[i] && j < this._object_ids[i].objects.length; j++) {
             if (this._object_ids[i].objects[j].object_id == intersects[0].object.name) {
               if (entity.type3d == 'light') {
+                forwardHaptic('light');
                 this._hass.callService(entity.entity.split('.')[0], 'toggle', {
                   entity_id: entity.entity,
                 });
@@ -733,49 +887,23 @@ export class Floor3dCard extends LitElement {
         ', z: ' +
         this._controls.target.z +
         ' }';
-      if (getLovelace().editMode && this._config.editModeNotifications != 'no') {
+      if (this._isEditMode() && this._config.editModeNotifications != 'no') {
         window.prompt('YAML:', cameraData);
       }
       console.log('YAML:', cameraData);
     }
   }
 
+  // Double click (with click off) and keys: a key has no position, so it only logs the camera.
   private _performAction(e: any): void {
-    const intersects = this._getintersect(e);
+    const intersects = e && e.clientX !== undefined ? this._getintersect(e.clientX, e.clientY) : [];
     this._defaultaction(intersects);
   }
 
   private _zIndexChecker(): void {
-    let centerX = (this._card.getBoundingClientRect().left + this._card.getBoundingClientRect().right) / 2;
-    let centerY = (this._card.getBoundingClientRect().top + this._card.getBoundingClientRect().bottom) / 2;
-    let topElement = this._haShadowRoot.elementFromPoint(centerX, centerY);
-
-    if (topElement != null) {
-      let topZIndex = this._getZIndex(topElement.shadowRoot.firstElementChild);
-      let myZIndex = this._getZIndex(this._card);
-
-      if (myZIndex != topZIndex) {
-        if (!this._cardObscured) {
-          this._cardObscured = true;
-
-          if (this._to_animate) {
-            console.log('Canvas Obscured; stopping animation');
-            this._clock = null;
-            this._renderer.setAnimationLoop(null);
-          }
-        }
-      } else {
-        if (this._cardObscured) {
-          this._cardObscured = false;
-
-          if (this._to_animate) {
-            console.log('Canvas visible again; starting animation');
-            this._clock = new THREE.Clock();
-            this._renderer.setAnimationLoop(() => this._animationLoop());
-          }
-        }
-      }
-    }
+    // Disabled: with the current Home Assistant DOM it reports false "obscured" states on
+    // mobile, stopping the animation loop while _to_animate stays true (doors and trackers
+    // froze). Visibility is handled by the IntersectionObserver in connectedCallback.
   }
 
   private _getZIndex(toCheck: any): string {
@@ -872,11 +1000,14 @@ export class Floor3dCard extends LitElement {
           this._text = [];
           this._spritetext = [];
           this._position = [];
+          this._info = [];
+          this._showers = [];
 
           this._config.entities.forEach((entity) => {
             if (hass.states[entity.entity]) {
               this._states.push(this._statewithtemplate(entity));
               this._canvas.push(null);
+              this._showers.push(null);
               if (hass.states[entity.entity].attributes['unit_of_measurement']) {
                 this._unit_of_measurement.push(hass.states[entity.entity].attributes['unit_of_measurement']);
               } else {
@@ -913,6 +1044,8 @@ export class Floor3dCard extends LitElement {
                     } else {
                       this._spritetext.push(this._hass.states[entity.entity].state);
                     }
+                  } else {
+                    this._spritetext.push('');
                   }
                 }
               } else {
@@ -920,12 +1053,15 @@ export class Floor3dCard extends LitElement {
                 this._rooms.push('');
                 this._sprites.push('');
               }
-              if (entity.type3d == 'cover') {
-                if (hass.states[entity.entity].attributes['current_position']) {
-                  this._position.push(hass.states[entity.entity].attributes['current_position']);
-                } else {
-                  this._position.push(null);
-                }
+              if (entity.type3d == 'info') {
+                this._info.push(this._statewithtemplate(entity));
+              } else {
+                this._info.push('');
+              }
+              if (entity.type3d == 'cover' && hass.states[entity.entity].attributes['current_position']) {
+                this._position.push(hass.states[entity.entity].attributes['current_position']);
+              } else {
+                this._position.push(null);
               }
               if (entity.type3d == 'light') {
                 this._lights.push(entity.object_id + '_light');
@@ -933,17 +1069,13 @@ export class Floor3dCard extends LitElement {
                 this._lights.push('');
               }
               let i = this._color.push([255, 255, 255]) - 1;
+              // Un tempo qui c'era "color_mode = ..." (assegnazione, non confronto): modificava lo
+              // stato condiviso di HA letto anche dalle altre card. Il colore risultante e' lo stesso.
               if (hass.states[entity.entity].attributes['color_mode']) {
-                if ((hass.states[entity.entity].attributes['color_mode'] = 'color_temp')) {
-                  this._color[i] = this._TemperatureToRGB(
-                    parseInt(hass.states[entity.entity].attributes['color_temp']),
-                  );
-                }
+                this._color[i] = this._TemperatureToRGB(parseInt(hass.states[entity.entity].attributes['color_temp']));
               }
-              if ((hass.states[entity.entity].attributes['color_mode'] = 'rgb')) {
-                if (hass.states[entity.entity].attributes['rgb_color'] !== this._color[i]) {
-                  this._color[i] = hass.states[entity.entity].attributes['rgb_color'];
-                }
+              if (hass.states[entity.entity].attributes['rgb_color'] !== this._color[i]) {
+                this._color[i] = hass.states[entity.entity].attributes['rgb_color'];
               }
               let j = this._brightness.push(-1) - 1;
               if (hass.states[entity.entity].attributes['brightness']) {
@@ -951,6 +1083,20 @@ export class Floor3dCard extends LitElement {
               }
             } else {
               console.log('Entity <' + entity.entity + '> not found');
+              // Every array is read by the position of the entity in the config: keep them aligned.
+              this._states.push('');
+              this._canvas.push(null);
+              this._showers.push(null);
+              this._unit_of_measurement.push('');
+              this._text.push('');
+              this._spritetext.push('');
+              this._rooms.push('');
+              this._sprites.push('');
+              this._info.push('');
+              this._position.push(null);
+              this._lights.push('');
+              this._color.push([255, 255, 255]);
+              this._brightness.push(-1);
             }
           });
           this._firstcall = false;
@@ -997,10 +1143,10 @@ export class Floor3dCard extends LitElement {
                   toupdate = true;
                 }
                 if (hass.states[entity.entity].attributes['color_mode']) {
-                  if ((hass.states[entity.entity].attributes['color_mode'] = 'color_temp')) {
+                  if (hass.states[entity.entity].attributes['color_mode'] == 'color_temp') {
                     if (
-                      this._TemperatureToRGB(parseInt(hass.states[entity.entity].attributes['color_temp'])) !==
-                      this._color[i]
+                      String(this._TemperatureToRGB(parseInt(hass.states[entity.entity].attributes['color_temp']))) !==
+                      String(this._color[i])
                     ) {
                       toupdate = true;
                       this._color[i] = this._TemperatureToRGB(
@@ -1008,7 +1154,7 @@ export class Floor3dCard extends LitElement {
                       );
                     }
                   }
-                  if ((hass.states[entity.entity].attributes['color_mode'] = 'rgb')) {
+                  if (hass.states[entity.entity].attributes['color_mode'] == 'rgb') {
                     if (hass.states[entity.entity].attributes['rgb_color'] !== this._color[i]) {
                       toupdate = true;
                       this._color[i] = hass.states[entity.entity].attributes['rgb_color'];
@@ -1024,6 +1170,33 @@ export class Floor3dCard extends LitElement {
                 if (toupdate) {
                   this._updatelight(entity, i);
                   torerender = true;
+                }
+              } else if (entity.type3d == 'door') {
+                if (this._states[i] !== state) {
+                  this._states[i] = state;
+                  this._updatedoor(entity, i);
+                  torerender = true;
+                }
+              } else if (entity.type3d == 'image') {
+                const stateObj = hass.states[entity.entity];
+                const key = stateObj.attributes['entity_picture'] + '|' + stateObj.state;
+                if (key !== this._text[i]) {
+                  this._text[i] = key;
+                  this._updateimage(entity, i);
+                  torerender = true;
+                }
+              } else if (entity.type3d == 'tracker') {
+                // Solo se sono cambiate le entita' del tracker (HA sostituisce l'oggetto stato
+                // quando un'entita' cambia), non a ogni aggiornamento di qualsiasi entita'.
+                const tr = entity.tracker || {};
+                const deps = [entity.entity, tr.sensor_x, tr.sensor_y, tr.zone].map((id) =>
+                  id ? hass.states[id] : undefined,
+                );
+                if (!this._trackerPrev) this._trackerPrev = [];
+                const prev = this._trackerPrev[i];
+                if (!prev || deps.some((s, k) => s !== prev[k])) {
+                  this._trackerPrev[i] = deps;
+                  this._updatetracker(entity, i);
                 }
               } else if (entity.type3d == 'text') {
                 let toupdate = false;
@@ -1050,6 +1223,12 @@ export class Floor3dCard extends LitElement {
               } else if (entity.type3d == 'rotate') {
                 this._states[i] = state;
                 this._rotatecalc(entity, i);
+              } else if (entity.type3d == 'shower') {
+                if (this._states[i] !== state) {
+                  this._states[i] = state;
+                  this._updateshowerstate(entity, i);
+                  torerender = true;
+                }
               } else if (this._states[i] !== state) {
                 this._states[i] = state;
                 if (entity.type3d == 'color') {
@@ -1060,9 +1239,6 @@ export class Floor3dCard extends LitElement {
                   torerender = true;
                 } else if (entity.type3d == 'show') {
                   this._updateshow(entity, i);
-                  torerender = true;
-                } else if (entity.type3d == 'door') {
-                  this._updatedoor(entity, i);
                   torerender = true;
                 } else if (entity.type3d == 'room') {
                   let toupdate = false;
@@ -1100,9 +1276,15 @@ export class Floor3dCard extends LitElement {
                 }
               }
             } else {
-              console.log('Entity <' + entity.entity + '> not found');
+              if (!this._missingLogged) this._missingLogged = {};
+              if (entity.entity && !this._missingLogged[entity.entity]) {
+                this._missingLogged[entity.entity] = true;
+                console.log('Entity <' + entity.entity + '> not found');
+              }
             }
           });
+          this._updateSun();
+          this._updateStateColors();
           if (torerender) {
             this._render();
           }
@@ -1114,119 +1296,8 @@ export class Floor3dCard extends LitElement {
     }
   }
 
-  private _initSky(): void {
-    const effectController = {
-      turbidity: 10,
-      rayleigh: 3,
-      mieCoefficient: 0.005,
-      mieDirectionalG: 0.7,
-      elevation: 15,
-      azimuth: 0,
-    };
-
-    //init sky
-    console.log('Init Sky');
-
-    this._sky = new Sky();
-    this._sky.scale.setScalar(100000);
-    this._scene.add(this._sky);
-
-    const uniforms = this._sky.material.uniforms;
-    uniforms['turbidity'].value = effectController.turbidity;
-    uniforms['rayleigh'].value = effectController.rayleigh;
-    uniforms['mieCoefficient'].value = effectController.mieCoefficient;
-    uniforms['mieDirectionalG'].value = effectController.mieDirectionalG;
-
-    // init ground
-
-    console.log('Init Ground');
-
-    const groundGeo = new THREE.PlaneGeometry(10000, 10000);
-    const groundMat = new THREE.MeshLambertMaterial({ color: 0xffffff });
-    groundMat.color.setHSL(0.095, 1, 0.75);
-    const ground = new THREE.Mesh(groundGeo, groundMat);
-    ground.position.y = -5;
-    ground.rotation.x = -Math.PI / 2;
-    ground.receiveShadow = false;
-    ground.castShadow = false;
-    //this._bboxmodel.add(ground);
-    this._scene.add(ground);
-
-    // inti sun
-
-    console.log('Init Sun');
-
-    this._sun = new THREE.DirectionalLight(0xffffff, 2.0);
-    const sun = new THREE.Vector3();
-    this._scene.add(this._sun);
-
-    if (this._hass.states['sun.sun'].attributes['azimuth']) {
-      effectController.azimuth = Number(this._hass.states['sun.sun'].attributes['azimuth']);
-    }
-
-    if (this._hass.states['sun.sun'].attributes['elevation']) {
-      effectController.elevation = Number(this._hass.states['sun.sun'].attributes['elevation']);
-    }
-
-    let south: THREE.Vector3;
-
-    south = new THREE.Vector3();
-
-    if (this._config.north) {
-      south.x = -this._config.north.x;
-      south.z = -this._config.north.z;
-      south.y = 0;
-    } else {
-      south.x = 0;
-      south.z = 1;
-      south.y = 0;
-    }
-
-    let south_sphere: THREE.Spherical;
-
-    south_sphere = new THREE.Spherical();
-
-    south_sphere.setFromVector3(south);
-
-    south_sphere.phi = THREE.MathUtils.degToRad(90 - effectController.elevation);
-
-    south_sphere.theta = THREE.MathUtils.degToRad(
-      THREE.MathUtils.radToDeg(south_sphere.theta) - effectController.azimuth,
-    );
-
-    sun.setFromSphericalCoords(1, south_sphere.phi, south_sphere.theta);
-
-    if (sun.y < 0) {
-      this._sun.intensity = 0;
-    }
-
-    uniforms['sunPosition'].value.copy(sun);
-
-    this._sun.position.copy(sun.multiplyScalar(5000));
-
-    // sun directional light parameters
-    const d = 1000;
-
-    this._sun.shadow.camera;
-    this._sun.castShadow = true;
-
-    this._sun.shadow.mapSize.width = 1024;
-    this._sun.shadow.mapSize.height = 1024;
-    this._sun.shadow.camera.near = 4000;
-    this._sun.shadow.camera.far = 6000;
-
-    this._sun.shadow.camera.left = -d;
-    this._sun.shadow.camera.right = d;
-    this._sun.shadow.camera.top = d;
-    this._sun.shadow.camera.bottom = -d;
-
-    this._renderer.shadowMap.needsUpdate = true;
-
-    //FOR DEBUG: this._scene.add(new THREE.CameraHelper(this._sun.shadow.camera));
-  }
-
   private _initTorch(): void {
-    this._torch = new THREE.DirectionalLight(0xffffff, 0.2);
+    this._torch = new THREE.DirectionalLight(0xffffff, 0.2 * TORCH_SCALE);
     this._torchTarget = new THREE.Object3D();
     this._torchTarget.name = 'Torch Target';
     this._torch.target = this._torchTarget;
@@ -1242,38 +1313,30 @@ export class Floor3dCard extends LitElement {
 
     if (this._hass.states[this._config.globalLightPower]) {
       if (!Number.isNaN(this._hass.states[this._config.globalLightPower].state)) {
-        this._torch.intensity = Number(this._hass.states[this._config.globalLightPower].state);
+        this._torch.intensity = Number(this._hass.states[this._config.globalLightPower].state) * TORCH_SCALE;
       }
     } else {
       if (this._config.globalLightPower) {
-        this._torch.intensity = Number(this._config.globalLightPower);
+        this._torch.intensity = Number(this._config.globalLightPower) * TORCH_SCALE;
       }
     }
   }
 
   private _initAmbient(): void {
-    let intensity = 0.5;
-
     if (this._hass.states[this._config.globalLightPower]) {
       if (!Number.isNaN(this._hass.states[this._config.globalLightPower].state)) {
-        intensity = Number(this._hass.states[this._config.globalLightPower].state);
+        Number(this._hass.states[this._config.globalLightPower].state);
       }
     } else {
       if (this._config.globalLightPower) {
-        intensity = Number(this._config.globalLightPower);
+        Number(this._config.globalLightPower);
       }
     }
 
-    if (this._config.sky == 'yes') {
-      this._ambient_light = new THREE.HemisphereLight(0xffffff, 0x000000, 0.2);
-      this._ambient_light.groundColor.setHSL(0.095, 1, 0.75);
-      this._ambient_light.intensity = intensity;
-    } else {
-      this._ambient_light = new THREE.AmbientLight(0xffffff, 0.2);
-      this._ambient_light.intensity = intensity;
+    // No ambient light on purpose (it must not affect the render): add it only if one exists.
+    if (this._ambient_light) {
+      this._scene.add(this._ambient_light);
     }
-
-    this._scene.add(this._ambient_light);
   }
 
   protected display3dmodel(): void {
@@ -1286,11 +1349,21 @@ export class Floor3dCard extends LitElement {
 
     this._scene = new THREE.Scene();
 
-    this._camera = new THREE.PerspectiveCamera(45, 1, 0.1, 10000);
+    // The near plane follows the distance from the target (_updateNearPlane): 0.1 cm with a
+    // standard depth buffer made coplanar surfaces flicker.
+    this._camera = new THREE.PerspectiveCamera(45, 1, 5, 20000);
 
     // create and initialize renderer
 
-    this._renderer = new THREE.WebGLRenderer({ antialias: true, logarithmicDepthBuffer: true, alpha: true });
+    // The logarithmic depth buffer is costly on phones (no early depth test): it is off unless
+    // log_depth: yes. Where EXT_clip_control exists a reversed depth buffer adds precision for free.
+    const logDepth = this._config.log_depth == 'yes';
+    this._renderer = new THREE.WebGLRenderer({
+      antialias: true,
+      alpha: true,
+      logarithmicDepthBuffer: logDepth,
+      reversedDepthBuffer: !logDepth && this._config.reversed_depth != 'no',
+    });
     this._maxtextureimage = this._renderer.capabilities.maxTextures;
     console.log('Max Texture Image Units: ' + this._maxtextureimage);
     console.log('Max Texture Image Units: number of lights casting shadow should be less than the above number');
@@ -1311,15 +1384,12 @@ export class Floor3dCard extends LitElement {
       this._scene.background = new THREE.Color('#aaaaaa');
     }
 
-    //this._renderer.physicallyCorrectLights = true;
-    if (this._config.sky && this._config.sky == 'yes') {
-      this._renderer.outputEncoding = THREE.sRGBEncoding;
-    }
-    this._renderer.toneMapping = THREE.LinearToneMapping;
-    //this._renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this._renderer.toneMappingExposure = 0.6;
+    // Colours in sRGB with light computed in linear space (three.js default since 0.152); the tone
+    // mapping rolls off the highlights instead of clipping them.
+    this._renderer.outputColorSpace = THREE.SRGBColorSpace;
+    this._renderer.toneMapping = TONE_MAPPINGS[this._config.tone_mapping] ?? THREE.NeutralToneMapping;
+    this._renderer.toneMappingExposure = this._num(this._config.exposure, 1);
     this._renderer.localClippingEnabled = true;
-    this._renderer.physicallyCorrectLights = false;
 
     if (this._config.path && this._config.path != '') {
       let path = this._config.path;
@@ -1342,7 +1412,7 @@ export class Floor3dCard extends LitElement {
             this._config.mtlfile,
             this._onLoaded3DMaterials.bind(this),
             this._onLoadMaterialProgress.bind(this),
-            function (error: ErrorEvent): void {
+            function (error: any): void {
               throw new Error(error.error);
             },
           );
@@ -1352,7 +1422,7 @@ export class Floor3dCard extends LitElement {
             path + this._config.objfile,
             this._onLoaded3DModel.bind(this),
             this._onLoadObjectProgress.bind(this),
-            function (error: ErrorEvent): void {
+            function (error: any): void {
               throw new Error(error.error);
             },
           );
@@ -1365,7 +1435,7 @@ export class Floor3dCard extends LitElement {
           this._config.objfile,
           this._onLoadedGLTF3DModel.bind(this),
           this._onloadedGLTF3DProgress.bind(this),
-          function (error: ErrorEvent): void {
+          function (error: any): void {
             throw new Error(error.error);
           },
         );
@@ -1426,8 +1496,10 @@ export class Floor3dCard extends LitElement {
 
     if (this._config.shadow && this._config.shadow == 'yes') {
       console.log('Shadow On');
+      // Shadow maps are redrawn only when something changes, and only for the lights that are on
+      // (see _invalidateShadows). PCF with a radius gives the soft edges PCFSoftShadowMap gave.
       this._renderer.shadowMap.enabled = true;
-      this._renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+      this._renderer.shadowMap.type = THREE.PCFShadowMap;
       this._renderer.shadowMap.autoUpdate = false;
     } else {
       console.log('Shadow Off');
@@ -1453,24 +1525,26 @@ export class Floor3dCard extends LitElement {
 
       render(this._getSelectionBar(), this._selectionbar);
 
-      this._content.addEventListener('mousedown', this._mousedownEventListener);
-      this._content.addEventListener('mouseup', this._mouseupEventListener);
-      this._content.addEventListener('dblclick', this._performActionListener);
-      this._content.addEventListener('touchstart', this._performActionListener);
-      this._content.addEventListener('keydown', this._performActionListener);
+      this._addInputListeners();
 
       this._setCamera();
 
       this._controls = new OrbitControls(this._camera, this._renderer.domElement);
 
-      this._renderer.setPixelRatio(window.devicePixelRatio);
+      // Phones report 3x or more: 9 times the pixels of 1x for a difference hard to see.
+      this._renderer.setPixelRatio(
+        Math.min(window.devicePixelRatio || 1, this._num(this._config.max_pixel_ratio, 2)),
+      );
 
       this._controls.maxPolarAngle = (0.85 * Math.PI) / 2;
       this._controls.addEventListener('change', this._changeListener);
+      this._controls.addEventListener('start', this._controlsStartListener);
 
       this._setLookAt();
 
       this._controls.update();
+      this._updateNearPlane();
+      this._computeModelBounds();
 
       if (this._config.lock_camera == 'yes') {
         /*
@@ -1481,19 +1555,21 @@ export class Floor3dCard extends LitElement {
         this._controls.enabled = false;
       }
 
-      if (this._config.sky && this._config.sky == 'yes') {
-        this._initSky();
-      }
-
-      if (!this._config.sky || this._config.sky == 'no') {
-        this._initTorch();
-      }
+      this._initTorch();
 
       this._initAmbient();
+
+      this._initSun();
+
+      this._applyShadowBudget();
+
+      this._initRooms();
 
       this._getOverlay();
 
       this._manageZoom();
+      this._renderMenus();
+      this._updateStateColors(true);
 
       const initialLevel = typeof this._config.initialLevel === 'undefined' ? -1 : this._config.initialLevel;
       this._setVisibleLevel(initialLevel);
@@ -1533,7 +1609,7 @@ export class Floor3dCard extends LitElement {
     this._levels[0] = new THREE.Object3D();
     this._raycastinglevels[0] = [];
 
-    const regex = /lvl(?<level>\d{3})/;
+    const regex = /lvl(\d{3})/;
 
     let imported_objects: THREE.Object3D[] = [];
 
@@ -1547,16 +1623,16 @@ export class Floor3dCard extends LitElement {
       found = element.name.match(regex);
 
       if (found) {
-        if (!this._levels[Number(found.groups?.level)]) {
-          console.log('Found level ' + found.groups?.level);
-          this._levels[Number(found.groups?.level)] = new THREE.Object3D();
-          this._raycastinglevels[Number(found.groups?.level)] = [];
+        if (!this._levels[Number(found[1])]) {
+          console.log('Found level ' + found[1]);
+          this._levels[Number(found[1])] = new THREE.Object3D();
+          this._raycastinglevels[Number(found[1])] = [];
         }
 
-        element.userData = { level: Number(found.groups?.level) };
+        element.userData = { level: Number(found[1]) };
         element.name = element.name.slice(6);
-        this._levels[Number(found.groups?.level)].add(element);
-        level = Number(found.groups?.level);
+        this._levels[Number(found[1])].add(element);
+        level = Number(found[1]);
       } else {
         element.userData = { level: 0 };
         this._levels[0].add(element);
@@ -1666,7 +1742,8 @@ export class Floor3dCard extends LitElement {
 
   private _getZoomBar(): TemplateResult {
     if (this._levels) {
-      if (this._zoom.length > 0) {
+      // The original button bar, only when the views menu is hidden: they do the same thing.
+      if (this._zoom.length > 0 && this._config.hideZoomMenu == 'yes') {
         return html`
           <div class="category" style="opacity: 0.5; position: absolute; bottom: 0px; left: 0px">
             ${this._getZoomButtons()}
@@ -1708,6 +1785,76 @@ export class Floor3dCard extends LitElement {
     return iconArray;
   }
 
+  private _getZoomMenu(): TemplateResult {
+    if (this._config.hideZoomMenu == 'yes' || !this._levels || this._zoom.length == 0) {
+      return html``;
+    }
+    // The placeholder comes back when the camera is moved by hand, so the same view can be picked again.
+    return html`
+      <select
+        aria-label=${this._t('views')}
+        @change=${this._handleZoomChange.bind(this)}
+        style="font: inherit; font-size: 14px; padding: 6px 10px; border-radius: 8px; color-scheme: dark;
+          background: rgba(0, 0, 0, 0.55); color: white; border: 1px solid rgba(255, 255, 255, 0.6);
+          max-width: 60vw; cursor: pointer;"
+      >
+        <option value="" selected disabled hidden>${this._t('views')}</option>
+        <option value="-1">${this._t('initial_view')}</option>
+        ${this._zoom.map((zoom, index) => html`<option value="${index}">${zoom.name}</option>`)}
+      </select>
+    `;
+  }
+
+  private _handleZoomChange(ev: Event): void {
+    ev.stopPropagation();
+    const select = ev.target as HTMLSelectElement;
+    this._zoomSelect = select;
+    const index = parseInt(select.value);
+    if (isNaN(index)) return;
+    if (index == -1) {
+      if (this._config.camera_position && this._config.camera_target) {
+        this._flyTo(this._config.camera_position, this._config.camera_target);
+      } else {
+        this._setCamera();
+        this._setLookAt();
+        this._controls.update();
+        this._render();
+      }
+      return;
+    }
+    const zoom = this._zoom[index];
+    if (!zoom) return;
+    if (zoom.level != null) {
+      this._setVisibleLevel(zoom.level);
+    }
+    this._flyTo(zoom.position, zoom.target);
+  }
+
+  // Smooth camera move to a view: position and target together.
+  private _flyTo(position: { x: number; y: number; z: number }, target: { x: number; y: number; z: number }): void {
+    this._stopCameraTweens();
+    const update = () => this._controls.update();
+    const done = () => {
+      this._cameraTweens = this._cameraTweens.filter((t) => t.isPlaying());
+      this._updateNearPlane();
+      this._startOrStopAnimationLoop();
+    };
+    this._cameraTweens = [
+      new TWEEN.Tween(this._camera.position).to({ x: position.x, y: position.y, z: position.z }, 700),
+      new TWEEN.Tween(this._controls.target).to({ x: target.x, y: target.y, z: target.z }, 700),
+    ];
+    this._cameraTweens.forEach((t) => t.easing(TWEEN.Easing.Cubic.InOut).onUpdate(update).onComplete(done).start());
+    this._startOrStopAnimationLoop();
+  }
+
+  private _stopCameraTweens(): void {
+    this._cameraTweens.forEach((t) => t.stop());
+    this._cameraTweens = [];
+  }
+
+  private _t(key: string): string {
+    return localize('common.' + key, '', '', this._hass && this._hass.language);
+  }
   private _getLevelBar(): TemplateResult {
     if (this._levels) {
       if (this._levels.length > 1 && (this._config.hideLevelsMenu == null || this._config.hideLevelsMenu == 'no')) {
@@ -2026,7 +2173,7 @@ export class Floor3dCard extends LitElement {
       path + this._config.objfile,
       this._onLoaded3DModel.bind(this),
       this._onLoadObjectProgress.bind(this),
-      function (error: ErrorEvent): void {
+      function (error: any): void {
         throw new Error(error.error);
       },
     );
@@ -2297,7 +2444,7 @@ export class Floor3dCard extends LitElement {
                     const box: THREE.Box3 = new THREE.Box3();
                     box.setFromObject(_foundobject);
 
-                    let light = new THREE.Light();
+                    let light: THREE.PointLight | THREE.SpotLight;
 
                     let x: number, y: number, z: number;
 
@@ -2397,10 +2544,65 @@ export class Floor3dCard extends LitElement {
                     if (entity.light.shadow == 'no') {
                       light.castShadow = false;
                     } else {
-                      light.castShadow = true;
-                      light.shadow.bias = -0.0001;
+                      this._enableShadow(light, -0.0001);
                     }
                     light.name = element.object_id + '_light';
+                  }
+                });
+              }
+              if (entity.type3d == 'image') {
+                this._object_ids[i].objects.forEach((element) => {
+                  if (entity.image && entity.image.lighting_lumens && Number(entity.image.lighting_lumens) > 0) {
+                    const _foundobject: any = this._scene.getObjectByName(element.object_id);
+                    if (_foundobject) {
+                      // One point light in front of the screen, tinted with the picture. The first
+                      // version also added a spot light with the same name: only this light was
+                      // ever found by name, so the spot stayed at 0 while still drawing shadows.
+                      const screenBox = new THREE.Box3();
+                      screenBox.setFromObject(_foundobject);
+                      const center = new THREE.Vector3();
+                      screenBox.getCenter(center);
+                      const local = _foundobject.worldToLocal(center.clone());
+                      const lightingDirection = entity.image.lighting_direction || 'positive_z';
+                      const offset = 20;
+                      let lx = local.x;
+                      let ly = local.y;
+                      let lz = local.z;
+                      switch (lightingDirection) {
+                        case 'positive_z':
+                          lz += offset;
+                          break;
+                        case 'negative_z':
+                          lz -= offset;
+                          break;
+                        case 'positive_x':
+                          lx += offset;
+                          break;
+                        case 'negative_x':
+                          lx -= offset;
+                          break;
+                        case 'positive_y':
+                          ly += offset;
+                          break;
+                        case 'negative_y':
+                          ly -= offset;
+                          break;
+                      }
+                      const ambient = new THREE.PointLight(
+                        new THREE.Color('#ffffff'),
+                        0,
+                        this._num(entity.image.lighting_distance, 800),
+                        2,
+                      );
+                      ambient.name = element.object_id + '_light';
+                      if (entity.image.lighting_shadow == 'no') {
+                        ambient.castShadow = false;
+                      } else {
+                        this._enableShadow(ambient, -0.0001);
+                      }
+                      _foundobject.add(ambient);
+                      ambient.position.set(lx, ly, lz);
+                    }
                   }
                 });
               }
@@ -2432,6 +2634,69 @@ export class Floor3dCard extends LitElement {
                   this._levels[_foundobject.userData.level].add(_newobject);
                 });
               }
+              if (entity.type3d == 'tracker') {
+                this._createTracker(entity, i);
+              }
+              if (entity.type3d == 'info') {
+                const sprite = new THREE.Sprite();
+                sprite.name = entity.object_id + '_info';
+                this._sprites[i] = sprite.name;
+                const info = entity.info || {};
+                this._canvas[i] = this._createTextCanvas(info, this._info[i], this._unit_of_measurement[i]);
+                const size = entity.info && entity.info.size ? entity.info.size : 100;
+                const aspect = this._canvas[i].width / this._canvas[i].height;
+                sprite.scale.set(size * aspect, size, 1);
+                if (entity.info && entity.info.position) {
+                  sprite.position.set(entity.info.position[0], entity.info.position[1], entity.info.position[2]);
+                } else if (entity.object_id) {
+                  const _foundobject = this._scene.getObjectByName(entity.object_id);
+                  if (_foundobject) {
+                    const box = new THREE.Box3().setFromObject(_foundobject);
+                    const center = new THREE.Vector3();
+                    box.getCenter(center);
+                    sprite.position.copy(center);
+                    sprite.position.y = box.max.y + size / 2 + 10;
+                  }
+                }
+                this._scene.add(sprite);
+              }
+              if (entity.type3d == 'shower') {
+                const group = new THREE.Group();
+                group.name = entity.object_id + '_shower_group';
+                this._bboxmodel.add(group);
+                this._showers[i] = group;
+                group.visible = false;
+                this._object_ids[i].objects.forEach((element) => {
+                  const _foundobject = this._scene.getObjectByName(element.object_id);
+                  if (_foundobject) {
+                    const count = entity.shower && entity.shower.count ? entity.shower.count : 200;
+                    const geometry = new THREE.BufferGeometry();
+                    const vertices = [];
+                    const width = entity.shower && entity.shower.width ? entity.shower.width : 20;
+                    for (let p = 0; p < count; p++) {
+                      vertices.push((Math.random() - 0.5) * width, Math.random() * 5, (Math.random() - 0.5) * width);
+                    }
+                    geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+                    const material = new THREE.PointsMaterial({
+                      color: entity.shower && entity.shower.color ? new THREE.Color(entity.shower.color) : 0xaaaaaa,
+                      size: entity.shower && entity.shower.size ? entity.shower.size : 1,
+                      transparent: true,
+                      opacity: 0.8,
+                    });
+                    const points = new THREE.Points(geometry, material);
+                    points.name = element.object_id + '_shower_points';
+                    const box = new THREE.Box3().setFromObject(_foundobject);
+                    const center = new THREE.Vector3();
+                    box.getCenter(center);
+                    points.position.copy(center);
+                    points.position.y = box.min.y;
+                    group.add(points);
+                  } else {
+                    console.warn('F3D: Shower target NOT matched:', element.object_id);
+                  }
+                });
+                this._updateshowerstate(entity, i);
+              }
             }
           } catch (error) {
             console.log(error);
@@ -2458,6 +2723,12 @@ export class Floor3dCard extends LitElement {
             } else if (entity.type3d == 'room') {
               this._createroom(entity, i);
               this._updateroom(entity, this._spritetext[i], this._unit_of_measurement[i], i);
+            } else if (entity.type3d == 'info') {
+              this._updateinfo(entity, this._info[i], this._unit_of_measurement[i], i);
+            } else if (entity.type3d == 'shower') {
+              this._updateshowerstate(entity, i);
+            } else if (entity.type3d == 'tracker') {
+              this._updatetracker(entity, i);
             }
           }
         });
@@ -2518,6 +2789,34 @@ export class Floor3dCard extends LitElement {
               level: element.level,
             });
           }
+        } else if (element.camera_position && element.camera_target) {
+          const positionVector = new THREE.Vector3(
+            element.camera_position.x,
+            element.camera_position.y,
+            element.camera_position.z,
+          );
+          const targetVector = new THREE.Vector3(
+            element.camera_target.x,
+            element.camera_target.y,
+            element.camera_target.z,
+          );
+          let rotationVector: THREE.Vector3;
+          if (element.camera_rotate) {
+            rotationVector = new THREE.Vector3(
+              element.camera_rotate.x,
+              element.camera_rotate.y,
+              element.camera_rotate.z,
+            );
+          } else {
+            rotationVector = new THREE.Vector3(0, 0, 0);
+          }
+          this._zoom.push({
+            name: element.zoom,
+            target: targetVector,
+            position: positionVector,
+            rotation: rotationVector,
+            level: element.level,
+          });
         }
       });
 
@@ -2553,7 +2852,7 @@ export class Floor3dCard extends LitElement {
           newRoomBox.expandByVector(expansion);
 
           const dimensions = new THREE.Vector3().subVectors(newRoomBox.max, newRoomBox.min);
-          const newRoomGeometry: THREE.BoxBufferGeometry = new THREE.BoxBufferGeometry(
+          const newRoomGeometry: THREE.BoxGeometry = new THREE.BoxGeometry(
             dimensions.x - 4,
             dimensions.y - 4,
             dimensions.z - 4,
@@ -2652,6 +2951,61 @@ export class Floor3dCard extends LitElement {
     }
   }
 
+  private _updateinfo(item: Floor3dCardConfig, text: string, uom: string, index: number): void {
+    const sprite: any = this._scene.getObjectByName(this._sprites[index]);
+    const canvas = this._canvas[index];
+    if (sprite && canvas) {
+      const info = item.info || {};
+      this._updateTextCanvas(info, canvas, text + uom);
+      this._applyTextCanvasSprite(canvas, sprite);
+      const size = item.info && item.info.size ? item.info.size : 100;
+      const aspect = canvas.width / canvas.height;
+      sprite.scale.set(size * aspect, size, 1);
+    }
+  }
+
+  private _updateshowerstate(_item: Floor3dCardConfig, index: number) {
+    if (this._showers[index]) {
+      const state = this._states[index] ? String(this._states[index]).toLowerCase() : '';
+      if (['on', 'active', 'true', '1'].includes(state)) {
+        this._showers[index].visible = true;
+      } else {
+        this._showers[index].visible = false;
+      }
+      this._startOrStopAnimationLoop();
+    } else {
+      console.warn('F3D: Shower object not found for index:', index);
+    }
+  }
+
+  private _animateshowers(step?: number) {
+    step = step > 0 ? Math.min(step, 4) : 1;
+    if (this._showers) {
+      this._showers.forEach((shower, index) => {
+        if (shower && shower.visible) {
+          shower.children.forEach((child) => {
+            const points = child as THREE.Points;
+            const positions = points.geometry.attributes.position.array as Float32Array;
+            const velocity =
+              this._config.entities[index].shower && this._config.entities[index].shower.velocity
+                ? this._config.entities[index].shower.velocity
+                : 5;
+            const height =
+              this._config.entities[index].shower && this._config.entities[index].shower.height
+                ? this._config.entities[index].shower.height
+                : 100;
+            for (let i = 1; i < positions.length; i += 3) {
+              positions[i] -= velocity * step;
+              if (positions[i] < -height) {
+                positions[i] = 0;
+              }
+            }
+            points.geometry.attributes.position.needsUpdate = true;
+          });
+        }
+      });
+    }
+  }
   private _updatecover(item: Floor3dCardConfig, state: string, i: number): void {
     let pane = this._scene.getObjectByName(item.cover.pane);
 
@@ -2668,7 +3022,7 @@ export class Floor3dCard extends LitElement {
       pane = this._scene.getObjectByName(this._object_ids[i].objects[0].object_id);
     }
     this._translatedoor(pane, this._position[i], item.cover.side, i, state);
-    this._renderer.shadowMap.needsUpdate = true;
+    // Shadows follow the tween in the animation loop.
   }
 
   private _createTextCanvas(entity: Floor3dCardConfig, text: string, uom: string): HTMLCanvasElement {
@@ -2726,6 +3080,7 @@ export class Floor3dCard extends LitElement {
 
     if (_foundobject instanceof THREE.Mesh) {
       const texture = new THREE.CanvasTexture(canvas);
+      texture.colorSpace = THREE.SRGBColorSpace; // canvas colours are sRGB
       texture.repeat.set(1, 1);
 
       if (fileExt == 'glb') {
@@ -2749,6 +3104,7 @@ export class Floor3dCard extends LitElement {
     // put the canvas texture with the text on top of the Sprite object: consider merge with the applyTextCanvas
 
     const texture = new THREE.CanvasTexture(canvas);
+    texture.colorSpace = THREE.SRGBColorSpace; // canvas colours are sRGB
     texture.repeat.set(1, 1);
 
     if (object.material.name.startsWith('f3dmat')) {
@@ -2824,19 +3180,13 @@ export class Floor3dCard extends LitElement {
       if (!light) {
         return;
       }
-      let max: number;
-
-      if (entity.light.lumens) {
-        max = entity.light.lumens;
-      } else {
-        max = 800;
-      }
+      const max = this._lampIntensity(entity.light.lumens ? entity.light.lumens : 800);
 
       if (this._states[i] == 'on') {
         if (this._brightness[i] != -1) {
-          light.intensity = 0.003 * max * (this._brightness[i] / 255);
+          light.intensity = max * (this._brightness[i] / 255);
         } else {
-          light.intensity = 0.003 * max;
+          light.intensity = max;
         }
         if (!this._color[i]) {
           if (entity.light.color) {
@@ -2856,8 +3206,105 @@ export class Floor3dCard extends LitElement {
           this._manage_light_shadows(entity, light);
         }
       }
-      this._renderer.shadowMap.needsUpdate = true;
+      // Brightness and colour do not change the shadow map: it is redrawn only if it is out of date.
+      this._refreshLightShadow(light);
     });
+  }
+
+  // Applies the rendering settings of the config without reloading the model (the dashboard
+  // recreates the card when its config changes; this is for test pages that tune them live).
+  private _applyTuning(): void {
+    if (!this._renderer) return;
+    this._renderer.toneMapping = TONE_MAPPINGS[this._config.tone_mapping] ?? THREE.NeutralToneMapping;
+    this._renderer.toneMappingExposure = this._num(this._config.exposure, 1);
+    this._renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, this._num(this._config.max_pixel_ratio, 2)));
+    if (this._torch && !this._hass.states[this._config.globalLightPower]) {
+      this._torch.intensity = this._num(this._config.globalLightPower, 0.2) * TORCH_SCALE;
+    }
+    this._config.entities.forEach((entity, i) => {
+      if (entity.type3d == 'light') this._updatelight(entity, i);
+      else if (entity.type3d == 'image' && this._hass.states[entity.entity]) this._updateimage(entity, i);
+    });
+    this._sunKey = undefined;
+    this._updateSun();
+    this._render();
+  }
+
+  // Intensity of a lamp in three.js units (the model is in centimetres), light_power included.
+  private _lampIntensity(lumens: number | string): number {
+    return Number(lumens) * LAMP_INTENSITY_PER_LUMEN * this._num(this._config.light_power, 1);
+  }
+
+  private _num(value: any, fallback: number): number {
+    const n = Number(value);
+    return value === undefined || value === null || value === '' || isNaN(n) ? fallback : n;
+  }
+
+  // Let a light cast shadows. Its shadow map is drawn once now and then only when needed, see
+  // _invalidateShadows.
+  private _enableShadow(light: ShadowLight, bias: number): void {
+    light.castShadow = true;
+    light.shadow.bias = bias;
+    light.shadow.radius = 2; // soft edges with PCF
+    light.shadow.autoUpdate = false;
+    // Even for a light that is off: the shadow of a point light that was never drawn leaves its
+    // cube sampler bound to a plain texture, and WebGL 2 then refuses every lit draw call (the
+    // house disappeared, only the room colours and labels were left).
+    light.shadow.needsUpdate = true;
+    light.userData.shadowStale = false;
+    if (this._renderer) this._renderer.shadowMap.needsUpdate = true;
+    if (light instanceof THREE.PointLight || light instanceof THREE.SpotLight) {
+      // Default near 0.5 wastes depth precision in a model in centimetres; nothing is drawn past the light's reach.
+      light.shadow.camera.near = 2;
+      light.shadow.camera.far = light.distance > 0 ? light.distance : 1000;
+    }
+    this._shadowLights.push(light);
+  }
+
+  // Each shadow is a texture unit in the shaders: past the limit of the GPU (16 on phones) they no
+  // longer compile. Two units stay for the textures of a material (picture and glow of the TV); the
+  // sun comes first, then the lights in config order.
+  private _applyShadowBudget(): void {
+    const budget = Math.max(2, this._renderer.capabilities.maxTextures - 2);
+    const ordered = this._shadowLights.filter((l) => l === this._sun).concat(this._shadowLights.filter((l) => l !== this._sun));
+    const dropped = ordered.slice(budget);
+    dropped.forEach((light) => {
+      light.castShadow = false;
+    });
+    if (dropped.length > 0) {
+      console.warn(
+        'floor3d-card: ' + dropped.length + ' lights over the limit of ' + budget + ' shadows, without shadow: ' +
+          dropped.map((l) => l.name).join(', '),
+      );
+    }
+    this._shadowLights = ordered.slice(0, budget);
+  }
+
+  // Something moved (a door, a cover, an object shown or hidden): the shadow maps of the lights
+  // that are on are redrawn at the next frame, the others as soon as they are switched on.
+  private _invalidateShadows(): void {
+    for (const light of this._shadowLights) {
+      if (light.intensity > 0) {
+        light.shadow.needsUpdate = true;
+        light.userData.shadowStale = false;
+      } else {
+        light.userData.shadowStale = true;
+      }
+    }
+    if (this._renderer) this._renderer.shadowMap.needsUpdate = true;
+  }
+
+  // A light was switched on or changed: redraw its shadow map only if it is out of date
+  // (or always, with force, when the light itself moved).
+  private _refreshLightShadow(light: ShadowLight, force = false): void {
+    if (!light.castShadow || !light.shadow) return;
+    const missing = !light.shadow.map; // never drawn: it must exist even while the light is off
+    if (!missing && light.intensity <= 0) return;
+    if (missing || force || light.userData.shadowStale !== false) {
+      light.shadow.needsUpdate = true;
+      light.userData.shadowStale = false;
+      if (this._renderer) this._renderer.shadowMap.needsUpdate = true;
+    }
   }
 
   private _manage_light_shadows(entity: Floor3dCardConfig, light: THREE.Light): void {
@@ -2913,8 +3360,719 @@ export class Floor3dCard extends LitElement {
         }
       }
     }
-    this._renderer.shadowMap.needsUpdate = true;
+    // The door moves with a tween: the animation loop redraws the shadows while it moves.
     // console.log("Update Door End");
+  }
+
+  private _updateimage(item: Floor3dCardConfig, index: number): void {
+    let _foundobject: any;
+    if (this._object_ids[index].objects.length > 0) {
+      _foundobject = this._scene.getObjectByName(this._object_ids[index].objects[0].object_id);
+    }
+    if (_foundobject) {
+      const picture = this._hass.states[item.entity].attributes['entity_picture'];
+      if (picture && !['off', 'standby', 'unavailable', 'unknown'].includes(this._hass.states[item.entity].state)) {
+        const texture = new THREE.TextureLoader().load(picture);
+        texture.flipY = false;
+        texture.colorSpace = THREE.SRGBColorSpace;
+        if ((item.image && item.image.rotate) || (item.image && item.image.mirror)) {
+          texture.center.set(0.5, 0.5);
+        }
+        if (item.image && item.image.rotate) {
+          texture.rotation = (item.image.rotate * Math.PI) / 180;
+        }
+        if (item.image && item.image.mirror) {
+          texture.wrapS = THREE.RepeatWrapping;
+          texture.repeat.x = -1;
+        }
+        if (_foundobject instanceof THREE.Mesh) {
+          let material: any;
+          if (_foundobject.material.name.startsWith('f3dmat')) {
+            material = _foundobject.material;
+            if (material.map && material.map !== texture) material.map.dispose();
+            material.map = texture;
+          } else {
+            material = _foundobject.material.clone();
+            material.map = texture;
+            material.name = 'f3dmat' + _foundobject.name;
+            material.transparent = true;
+            _foundobject.material = material;
+          }
+          material.needsUpdate = true;
+          if (item.image && item.image.lumens) {
+            material.emissive = new THREE.Color(0xffffff);
+            material.emissiveMap = texture;
+            material.emissiveIntensity = Number(item.image.lumens) * SCREEN_EMISSIVE_SCALE;
+            const light: any = this._scene.getObjectByName(this._object_ids[index].objects[0].object_id + '_light');
+            if (light && item.image.lighting_lumens) {
+              light.intensity = this._lampIntensity(item.image.lighting_lumens);
+              this._refreshLightShadow(light);
+              const img = new Image();
+              img.crossOrigin = 'anonymous';
+              img.onload = () => {
+                try {
+                  const canvas = document.createElement('canvas');
+                  const ctx = canvas.getContext('2d');
+                  if (ctx) {
+                    canvas.width = 16;
+                    canvas.height = 16;
+                    ctx.drawImage(img, 0, 0, 16, 16);
+                    const data = ctx.getImageData(0, 0, 16, 16).data;
+                    let r = 0;
+                    let g = 0;
+                    let b = 0;
+                    const count = data.length / 4;
+                    for (let i = 0; i < data.length; i += 4) {
+                      r += data[i];
+                      g += data[i + 1];
+                      b += data[i + 2];
+                    }
+                    r = Math.floor(r / count);
+                    g = Math.floor(g / count);
+                    b = Math.floor(b / count);
+                    // Picture bytes are sRGB: converted to the linear working space.
+                    light.color.setRGB(r / 255, g / 255, b / 255, THREE.SRGBColorSpace);
+                    this._render();
+                  }
+                } catch (e) {
+                  console.log('Ambient light color extraction failed (CORS?), using white');
+                  light.color.setRGB(1, 1, 1);
+                }
+              };
+              img.onerror = () => {
+                light.color.setRGB(1, 1, 1);
+              };
+              img.src = picture;
+            } else if (light) {
+              light.intensity = 0;
+            }
+          } else {
+            material.emissive = new THREE.Color(0x000000);
+            material.emissiveIntensity = 0;
+            const light: any = this._scene.getObjectByName(this._object_ids[index].objects[0].object_id + '_light');
+            if (light) {
+              light.intensity = 0;
+            }
+          }
+        }
+      } else {
+        const state = this._hass.states[item.entity].state;
+        const offState = item.image && item.image.lighting_off_state ? item.image.lighting_off_state : 'unavailable';
+        const light: any = this._scene.getObjectByName(this._object_ids[index].objects[0].object_id + '_light');
+        if (state === offState || ['off', 'standby', 'unavailable', 'unknown'].includes(state)) {
+          if (light) {
+            light.intensity = 0;
+          }
+          if (_foundobject instanceof THREE.Mesh) {
+            const material: any = _foundobject.material;
+            if (material && material.name && material.name.startsWith('f3dmat')) {
+              if (material.map) material.map.dispose();
+              material.map = null;
+              material.emissiveMap = null;
+              material.color.setHex(0x000000);
+              material.emissive = new THREE.Color(0x000000);
+              material.emissiveIntensity = 0;
+              material.needsUpdate = true;
+            }
+          }
+          this._render();
+        } else if (light && item.image && item.image.lighting_lumens) {
+          light.intensity = this._lampIntensity(item.image.lighting_lumens);
+          this._refreshLightShadow(light);
+        }
+      }
+    }
+  }
+
+  // One render per frame even when many updates arrive together. None while the animation loop
+  // runs: it renders anyway.
+  private _scheduleRender(): void {
+    if (this._renderPending || this._to_animate) return;
+    this._renderPending = true;
+    requestAnimationFrame(() => {
+      this._renderPending = false;
+      if (this._renderer) this._render();
+    });
+  }
+
+  // Tracker: a glowing head at the configured height, a thin stem and a halo on the floor, all in
+  // the colour of the tracker. It glides to each new position and fades in and out.
+  private _createTracker(entity: Floor3dCardConfig, i: number): void {
+    const tracker = entity.tracker || {};
+    const size = this._num(tracker.size, 15);
+    const height = this._num(tracker.height, 150);
+    const color = new THREE.Color(tracker.color || '#FF5500');
+
+    const headMaterial = new THREE.MeshStandardMaterial({
+      color,
+      emissive: color,
+      emissiveIntensity: 0.6,
+      roughness: 0.4,
+      transparent: true,
+      opacity: 0,
+    });
+    const head = new THREE.Mesh(new THREE.SphereGeometry(size, 24, 16), headMaterial);
+    head.position.y = height;
+
+    const stemHeight = Math.max(height - size, 1);
+    const stemMaterial = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0, depthWrite: false });
+    const stem = new THREE.Mesh(new THREE.CylinderGeometry(size * 0.12, size * 0.12, stemHeight, 8), stemMaterial);
+    stem.position.y = stemHeight / 2;
+
+    const haloMaterial = new THREE.MeshBasicMaterial({
+      color,
+      transparent: true,
+      opacity: 0,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    });
+    const halo = new THREE.Mesh(new THREE.RingGeometry(size * 1.1, size * 2.6, 48), haloMaterial);
+    halo.rotation.x = -Math.PI / 2;
+    halo.position.y = 1;
+
+    const group = new THREE.Group();
+    group.name = entity.object_id + '_tracker';
+    group.visible = false;
+    group.add(head, stem, halo);
+    group.traverse((o) => {
+      o.castShadow = false;
+      o.receiveShadow = false;
+    });
+    this._scene.add(group);
+
+    this._trackers[i] = {
+      group,
+      materials: [
+        [headMaterial, 0.95],
+        [stemMaterial, 0.35],
+        [haloMaterial, 0.5],
+      ],
+      target: new THREE.Vector3(),
+      present: false,
+      opacity: 0,
+      height,
+    };
+  }
+
+  private _updatetracker(item: Floor3dCardConfig, index: number): void {
+    const tv = this._trackers[index];
+    if (!tv) return;
+    const tracker = item.tracker || {};
+    const value = (id: string): number => {
+      const s = this._hass.states[id];
+      if (!s || ['unavailable', 'unknown', 'none', ''].includes(String(s.state))) return NaN;
+      return parseFloat(s.state);
+    };
+    const stateObj = this._hass.states[item.entity];
+    let x = NaN;
+    let y = 0;
+    if (tracker.sensor_x) {
+      x = value(tracker.sensor_x);
+    } else if (stateObj && stateObj.attributes && stateObj.attributes.x !== undefined) {
+      x = parseFloat(stateObj.attributes.x);
+    } else {
+      x = value(item.entity);
+    }
+    if (tracker.sensor_y) {
+      y = value(tracker.sensor_y);
+    } else if (stateObj && stateObj.attributes && stateObj.attributes.y !== undefined) {
+      y = parseFloat(stateObj.attributes.y);
+    }
+    // Radar slots report 0,0 when nobody is there; the tracking sensors become unavailable.
+    if (isNaN(x) || isNaN(y) || (x === 0 && y === 0)) {
+      this._setTrackerPresent(tv, false);
+      return;
+    }
+
+    // Sensor coordinates to millimetres (unit: mm, cm or m), optionally mirrored, then scaled,
+    // rotated and moved to the position of the sensor in the model.
+    const toMm = tracker.unit == 'm' ? 1000 : tracker.unit == 'cm' ? 10 : 1;
+    let xMm = x * toMm;
+    let yMm = y * toMm;
+    if (tracker.flip_x === true || tracker.flip_x == 'yes') xMm = -xMm;
+    if (tracker.flip_y === true || tracker.flip_y == 'yes') yMm = -yMm;
+    const scale = this._num(tracker.scale, 0.001);
+    const rotation = (this._num(tracker.sensor_rotation, 0) * Math.PI) / 180;
+    const sensorPos = tracker.sensor_position || [0, 0, 0];
+    const x3d = xMm * scale;
+    const z3d = yMm * scale;
+    const cos = Math.cos(rotation);
+    const sin = Math.sin(rotation);
+    tv.target.set(
+      Number(sensorPos[0]) + x3d * cos - z3d * sin,
+      Number(sensorPos[1]) || 0,
+      Number(sensorPos[2]) + x3d * sin + z3d * cos,
+    );
+    // Appearing: start where the person is, not from where the previous track ended.
+    if (tv.opacity == 0) tv.group.position.copy(tv.target);
+
+    const zone = tracker.zone ? this._hass.states[tracker.zone] : undefined;
+    const zoneText = zone && !['unavailable', 'unknown', '-', ''].includes(String(zone.state)) ? String(zone.state) : '';
+    this._setTrackerLabel(tv, tracker.label == 'no' ? '' : zoneText, tracker.color || '#FF5500', this._num(tracker.size, 15));
+
+    this._setTrackerPresent(tv, true);
+    this._startOrStopAnimationLoop();
+    this._scheduleRender();
+  }
+
+  private _setTrackerPresent(tv: TrackerView, present: boolean): void {
+    if (tv.present === present) return;
+    tv.present = present;
+    if (present) tv.group.visible = true;
+    this._startOrStopAnimationLoop();
+    this._scheduleRender();
+  }
+
+  // Name of the zone above the head (tracker.zone), always the same size on screen.
+  private _setTrackerLabel(tv: TrackerView, text: string, color: string, size: number): void {
+    if (text === (tv.labelText || '')) return;
+    tv.labelText = text;
+    if (!text) {
+      if (tv.label) tv.label.visible = false;
+      return;
+    }
+    if (!tv.label) {
+      const material = new THREE.SpriteMaterial({ transparent: true, opacity: 0, depthTest: false, sizeAttenuation: false });
+      tv.label = new THREE.Sprite(material);
+      tv.label.renderOrder = 20;
+      tv.label.position.y = tv.height + size * 2.8;
+      tv.group.add(tv.label);
+      tv.materials.push([material, 1]);
+      material.opacity = tv.opacity;
+    }
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    const font = '600 40px Roboto, Arial, sans-serif';
+    ctx.font = font;
+    const width = Math.ceil(ctx.measureText(text).width) + 56;
+    canvas.width = width;
+    canvas.height = 64;
+    ctx.font = font;
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+    ctx.beginPath();
+    ctx.roundRect(0, 0, width, 64, 16);
+    ctx.fill();
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(24, 32, 8, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = 'white';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(text, 42, 34);
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    const material = tv.label.material as THREE.SpriteMaterial;
+    if (material.map) material.map.dispose();
+    material.map = texture;
+    material.needsUpdate = true;
+    const h = 0.045; // fraction of the height of the view
+    tv.label.scale.set((h * width) / 64, h, 1);
+    tv.label.visible = true;
+  }
+
+  // Every frame while needed: glide towards the last position and fade in or out.
+  private _animateTrackers(dt: number): void {
+    const k = 1 - Math.exp(-dt / TRACKER_SMOOTHING);
+    const fade = dt / TRACKER_FADE;
+    for (const tv of this._trackers) {
+      if (!tv) continue;
+      if (tv.present) {
+        if (tv.group.position.distanceToSquared(tv.target) > 0.25) {
+          tv.group.position.lerp(tv.target, k);
+        } else {
+          tv.group.position.copy(tv.target);
+        }
+      }
+      const goal = tv.present ? 1 : 0;
+      if (tv.opacity != goal) {
+        tv.opacity = goal > tv.opacity ? Math.min(goal, tv.opacity + fade) : Math.max(goal, tv.opacity - fade);
+        for (const [material, full] of tv.materials) material.opacity = full * tv.opacity;
+        tv.group.visible = tv.opacity > 0;
+      }
+    }
+  }
+
+  private _trackersNeedAnimation(): boolean {
+    return this._trackers.some(
+      (tv) =>
+        tv &&
+        (tv.opacity != (tv.present ? 1 : 0) ||
+          (tv.present && tv.group.position.distanceToSquared(tv.target) > 0.25)),
+    );
+  }
+
+  // Centre and radius of the model, once it has been placed by _setCamera.
+  private _computeModelBounds(): void {
+    const sphere = new THREE.Box3().setFromObject(this._bboxmodel).getBoundingSphere(new THREE.Sphere());
+    this._modelCenter = sphere.center;
+    this._modelRadius = Math.max(sphere.radius, 100);
+  }
+
+  // Near plane proportional to the distance from the target: with a standard depth buffer a
+  // fixed 0.1 cm near plane made nearby surfaces flicker.
+  private _updateNearPlane(): void {
+    if (!this._camera || !this._controls) return;
+    const near = THREE.MathUtils.clamp(this._camera.position.distanceTo(this._controls.target) / 150, 1, 25);
+    if (Math.abs(near - this._camera.near) > 0.1) {
+      this._camera.near = near;
+      this._camera.updateProjectionMatrix();
+    }
+  }
+
+  // Sun (sun: yes): a directional light placed like sun.sun (azimuth and elevation), using the north
+  // of the config. Its shadow covers the whole model and is redrawn when the sun moves.
+  private _initSun(): void {
+    if (this._config.sun != 'yes' || !this._modelCenter) return;
+    this._sun = new THREE.DirectionalLight(0xffffff, 0);
+    this._sun.name = 'f3d_sun';
+    this._sunTarget = new THREE.Object3D();
+    this._sun.target = this._sunTarget;
+    this._scene.add(this._sun);
+    this._scene.add(this._sunTarget);
+    if (this._config.sun_shadow != 'no') {
+      const r = this._modelRadius;
+      const camera = this._sun.shadow.camera;
+      camera.left = -r;
+      camera.right = r;
+      camera.top = r;
+      camera.bottom = -r;
+      camera.near = r * 0.5;
+      camera.far = r * 3.5;
+      camera.updateProjectionMatrix();
+      this._sun.shadow.mapSize.set(2048, 2048);
+      this._sun.shadow.normalBias = 1.5;
+      this._enableShadow(this._sun, -0.0003);
+      this._buildSunRoof();
+    }
+    this._sunKey = undefined;
+    this._updateSun();
+  }
+
+  // The model has no ceilings, so that the rooms can be seen from above, and the sun would light
+  // every floor as if there were no roof. sun_roof lists the indoor floors: copies of them at the
+  // top of the walls form a roof that only the sun sees (not the camera, not the lamps: a lamp at
+  // ceiling height would be switched off by it). Light then comes in through windows and doors.
+  private _buildSunRoof(): void {
+    this._sunRoof = [];
+    const ids: string[] = Array.isArray(this._config.sun_roof) ? this._config.sun_roof : [];
+    if (ids.length == 0) return;
+    const top = new THREE.Box3().setFromObject(this._bboxmodel).max.y;
+    const material = new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: false, side: THREE.DoubleSide });
+    material.shadowSide = THREE.DoubleSide;
+    ids.forEach((id) => {
+      const floor = this._scene.getObjectByName(id) as THREE.Mesh;
+      if (!floor || !floor.geometry) {
+        console.warn('floor3d-card: sun_roof: object not found: ' + id);
+        return;
+      }
+      floor.updateWorldMatrix(true, false);
+      const geometry = floor.geometry.clone().applyMatrix4(floor.matrixWorld);
+      geometry.computeBoundingBox();
+      const box = geometry.boundingBox;
+      const center = box.getCenter(new THREE.Vector3());
+      const size = box.getSize(new THREE.Vector3());
+      // A few centimetres wider on each side, so that no light slips in along the walls.
+      geometry.translate(-center.x, -box.min.y, -center.z);
+      geometry.scale((size.x + 8) / Math.max(size.x, 1), 1, (size.z + 8) / Math.max(size.z, 1));
+      geometry.translate(center.x, top - 1, center.z);
+      const roof = new THREE.Mesh(geometry, material);
+      roof.name = id + '_sun_roof';
+      roof.castShadow = true;
+      roof.receiveShadow = false;
+      roof.visible = false; // shown only while the sun's shadow map is drawn
+      this._scene.add(roof);
+      this._sunRoof.push(roof);
+    });
+    if (this._sunRoof.length == 0) return;
+
+    // Shadow maps are drawn in one call for all the lights: the sun gets its own, with the roof.
+    const shadowMap = this._renderer.shadowMap;
+    const renderShadows = shadowMap.render.bind(shadowMap);
+    shadowMap.render = (lights, scene, camera) => {
+      if (!lights.includes(this._sun)) return renderShadows(lights, scene, camera);
+      const needsUpdate = shadowMap.needsUpdate;
+      this._sunRoof.forEach((roof) => (roof.visible = true));
+      renderShadows([this._sun], scene, camera);
+      this._sunRoof.forEach((roof) => (roof.visible = false));
+      shadowMap.needsUpdate = needsUpdate; // the call above resets it
+      renderShadows(
+        lights.filter((light) => light !== this._sun),
+        scene,
+        camera,
+      );
+    };
+  }
+
+  private _updateSun(): void {
+    if (!this._sun || !this._hass) return;
+    const sun = this._hass.states[this._config.sun_entity || 'sun.sun'];
+    const azimuth = sun ? Number(sun.attributes.azimuth) : NaN;
+    const elevation = sun ? Number(sun.attributes.elevation) : NaN;
+    const key = azimuth + '|' + elevation;
+    if (key === this._sunKey) return;
+    this._sunKey = key;
+    if (isNaN(azimuth) || isNaN(elevation)) {
+      this._sun.intensity = 0;
+    } else {
+      const north = new THREE.Vector3(
+        this._num(this._config.north && this._config.north.x, 0),
+        0,
+        this._num(this._config.north && this._config.north.z, -1),
+      ).normalize();
+      const east = new THREE.Vector3().crossVectors(north, new THREE.Vector3(0, 1, 0));
+      const az = THREE.MathUtils.degToRad(azimuth);
+      const el = THREE.MathUtils.degToRad(elevation);
+      const direction = north
+        .multiplyScalar(Math.cos(az))
+        .addScaledVector(east, Math.sin(az))
+        .multiplyScalar(Math.cos(el));
+      direction.y = Math.sin(el);
+      direction.normalize();
+      this._sunTarget.position.copy(this._modelCenter);
+      this._sun.position.copy(this._modelCenter).addScaledVector(direction, this._modelRadius * 2);
+      this._sunTarget.updateMatrixWorld();
+      this._sun.updateMatrixWorld();
+      // Night below -3 degrees, full light from 8 degrees; warmer near the horizon.
+      const daylight = THREE.MathUtils.smoothstep(elevation, -3, 8);
+      const warm = 1 - THREE.MathUtils.smoothstep(elevation, 2, 25);
+      this._sun.color.setRGB(1, 1 - 0.25 * warm, 1 - 0.5 * warm, THREE.SRGBColorSpace);
+      this._sun.intensity = SUN_INTENSITY * this._num(this._config.sun_power, 1) * daylight;
+    }
+    this._refreshLightShadow(this._sun, true);
+    this._scheduleRender();
+  }
+
+  // Menus at the top right: views and, with rooms configured, the room colours.
+  private _renderMenus(): void {
+    if (this._zoommenu) render(html`${this._getZoomMenu()}${this._getMapMenu()}`, this._zoommenu);
+  }
+
+  private _getMapMenu(): TemplateResult {
+    if (this._roomViews.length == 0) return html``;
+    const option = (value: string, key: string) =>
+      html`<option value=${value} ?selected=${this._mapMode == value}>${this._t(key)}</option>`;
+    return html`
+      <select
+        aria-label=${this._t('map')}
+        @change=${(ev: Event) => this._setMapMode((ev.target as HTMLSelectElement).value)}
+        style="font: inherit; font-size: 14px; padding: 6px 10px; border-radius: 8px; color-scheme: dark;
+          background: rgba(0, 0, 0, 0.55); color: white; border: 1px solid rgba(255, 255, 255, 0.6); cursor: pointer;"
+      >
+        ${option('none', 'map_none')} ${option('temperature', 'map_temperature')} ${option('presence', 'map_presence')}
+      </select>
+    `;
+  }
+
+  private _setMapMode(mode: string): void {
+    this._mapMode = ['temperature', 'presence'].includes(mode) ? mode : 'none';
+    this._updateStateColors(true);
+  }
+
+  // rooms: [{ name, object_id (floor object or <group>), temperature, presence }]: a translucent
+  // copy of each floor, coloured by temperature or presence, with the temperature written on it.
+  private _initRooms(): void {
+    this._roomViews = [];
+    const rooms = Array.isArray(this._config.rooms) ? this._config.rooms : [];
+    rooms.forEach((room: any) => {
+      const ids: string[] = [];
+      const id = String(room.object_id || '');
+      if (id.startsWith('<') && id.endsWith('>')) {
+        const group = (this._config.object_groups || []).find((g: any) => '<' + g.object_group + '>' == id);
+        if (group) group.objects.forEach((o: any) => ids.push(o.object_id));
+      } else if (id) {
+        ids.push(id);
+      }
+      const material = new THREE.MeshBasicMaterial({
+        transparent: true,
+        opacity: 0,
+        depthWrite: false,
+        polygonOffset: true,
+        polygonOffsetFactor: -2,
+        polygonOffsetUnits: -2,
+      });
+      const overlays: THREE.Mesh[] = [];
+      const box = new THREE.Box3();
+      ids.forEach((objectId) => {
+        const floor = this._scene.getObjectByName(objectId) as THREE.Mesh;
+        if (!floor || !floor.geometry) return;
+        const overlay = new THREE.Mesh(floor.geometry, material);
+        overlay.name = objectId + '_room_color';
+        overlay.position.y = 0.6;
+        overlay.renderOrder = 5;
+        overlay.visible = false;
+        floor.add(overlay);
+        overlays.push(overlay);
+        box.expandByObject(floor);
+      });
+      if (overlays.length == 0) {
+        console.warn('floor3d-card: room ' + room.name + ': floor object not found (' + id + ')');
+        return;
+      }
+      const presence = room.presence ? (Array.isArray(room.presence) ? room.presence : [room.presence]) : [];
+      this._roomViews.push({
+        name: room.name || id,
+        material,
+        overlays,
+        // Level with the top of the walls: seen from above it sits inside the outline of the room.
+        center: box.getCenter(new THREE.Vector3()).setY(box.max.y + 250),
+        temperature: room.temperature,
+        presence,
+      });
+    });
+    const initial = this._config.room_colors;
+    this._mapMode = ['temperature', 'presence'].includes(initial) ? initial : 'none';
+  }
+
+  private _isOpen(state: string): boolean {
+    return state == 'on' || state == 'open' || state == 'opening';
+  }
+
+  // Doors and windows (state_colors: yes) and room colours: recomputed when one of their
+  // entities, or the alarm, changes.
+  private _updateStateColors(force = false): void {
+    if (!this._hass || !this._scene || !this._modelready) return;
+    const doors = this._config.state_colors == 'yes' ? this._config.entities.filter((e) => e.type3d == 'door') : [];
+    const ids: string[] = [this._config.alarm_entity, ...doors.map((e) => e.entity)];
+    this._roomViews.forEach((r) => ids.push(r.temperature, ...r.presence));
+    const deps = ids.map((id) => (id ? this._hass.states[id] : undefined));
+    if (!force && this._colorDeps && deps.every((d, k) => d === this._colorDeps[k])) return;
+    this._colorDeps = deps;
+
+    // Openings: amber when open, red with the alarm armed, blinking red when it goes off.
+    const alarm = this._config.alarm_entity ? this._hass.states[this._config.alarm_entity] : undefined;
+    const alarmState = alarm ? alarm.state : '';
+    const armed = alarmState.startsWith('armed') || ['arming', 'pending', 'triggered'].includes(alarmState);
+    const openColor = new THREE.Color(armed ? this._config.alarm_color || '#ff3b30' : this._config.open_color || '#ffb020');
+    let anyOpen = false;
+    this._config.entities.forEach((entity, i) => {
+      if (!doors.includes(entity)) return;
+      const open = this._isOpen(this._states[i]);
+      anyOpen = anyOpen || open;
+      this._tintObjects(i, open ? openColor : null, armed ? 0.9 : 0.6);
+    });
+    const pulse = alarmState == 'triggered' && anyOpen;
+    if (pulse != this._alarmPulse) {
+      this._alarmPulse = pulse;
+      this._startOrStopAnimationLoop();
+    }
+
+    // Rooms
+    this._roomViews.forEach((room) => {
+      let color: THREE.Color | null = null;
+      let opacity = 0.35;
+      let label = '';
+      if (this._mapMode == 'temperature' && room.temperature) {
+        const s = this._hass.states[room.temperature];
+        const t = s ? parseFloat(s.state) : NaN;
+        if (!isNaN(t)) {
+          color = this._temperatureColor(t);
+          const unit = (s.attributes && s.attributes.unit_of_measurement) || '°';
+          label = t.toLocaleString(this._hass.language || 'it', { maximumFractionDigits: 1 }) + ' ' + unit;
+        }
+      } else if (this._mapMode == 'presence') {
+        const present = room.presence.some((id) => this._hass.states[id] && this._hass.states[id].state == 'on');
+        if (present) {
+          color = new THREE.Color(this._config.presence_color || '#34d399');
+          opacity = 0.32;
+        }
+      }
+      if (color) room.material.color.copy(color);
+      room.material.opacity = opacity;
+      room.overlays.forEach((o) => (o.visible = !!color));
+      this._setRoomLabel(room, label);
+    });
+    this._scheduleRender();
+  }
+
+  // Blue (temperature_min, 17 by default) to red (temperature_max, 27), green in the middle.
+  private _temperatureColor(t: number): THREE.Color {
+    const min = this._num(this._config.temperature_min, 17);
+    const max = this._num(this._config.temperature_max, 27);
+    const k = THREE.MathUtils.clamp((t - min) / (max - min || 1), 0, 1);
+    return new THREE.Color().setHSL(((1 - k) * 220) / 360, 0.85, 0.55, THREE.SRGBColorSpace);
+  }
+
+  private _setRoomLabel(room: RoomView, text: string): void {
+    if (text === (room.labelText || '')) return;
+    room.labelText = text;
+    if (!text) {
+      if (room.label) room.label.visible = false;
+      return;
+    }
+    if (!room.label) {
+      room.label = new THREE.Sprite(new THREE.SpriteMaterial({ transparent: true, depthTest: false, sizeAttenuation: false }));
+      room.label.renderOrder = 20;
+      room.label.position.copy(room.center);
+      this._scene.add(room.label);
+    }
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    const font = '600 40px Roboto, Arial, sans-serif';
+    ctx.font = font;
+    const width = Math.ceil(ctx.measureText(text).width) + 32;
+    canvas.width = width;
+    canvas.height = 60;
+    ctx.font = font;
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.55)';
+    ctx.beginPath();
+    ctx.roundRect(0, 0, width, 60, 14);
+    ctx.fill();
+    ctx.fillStyle = 'white';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(text, 16, 32);
+    const texture = new THREE.CanvasTexture(canvas);
+    texture.colorSpace = THREE.SRGBColorSpace;
+    const material = room.label.material as THREE.SpriteMaterial;
+    if (material.map) material.map.dispose();
+    material.map = texture;
+    material.needsUpdate = true;
+    const h = 0.04;
+    room.label.scale.set((h * width) / 60, h, 1);
+    room.label.visible = true;
+  }
+
+  // Glow on the objects of an entity (null: back to their own materials). The tinted materials are
+  // copies, so objects sharing a material with the rest of the house are not affected.
+  private _tintObjects(index: number, color: THREE.Color | null, intensity: number): void {
+    if (!this._object_ids[index]) return;
+    this._object_ids[index].objects.forEach((o) => {
+      const obj: any = this._scene.getObjectByName(o.object_id);
+      if (!obj || !obj.material) return;
+      if (!obj.userData.baseMaterial) obj.userData.baseMaterial = obj.material;
+      if (!color) {
+        obj.material = obj.userData.baseMaterial;
+        return;
+      }
+      if (!obj.userData.tintMaterial) {
+        const base = obj.userData.baseMaterial;
+        obj.userData.tintMaterial = Array.isArray(base) ? base.map((m) => m.clone()) : base.clone();
+      }
+      const materials = Array.isArray(obj.userData.tintMaterial) ? obj.userData.tintMaterial : [obj.userData.tintMaterial];
+      materials.forEach((m) => {
+        if (m.emissive) {
+          m.emissive.copy(color);
+          m.emissiveIntensity = intensity;
+          m.userData.tintIntensity = intensity;
+        }
+      });
+      obj.material = obj.userData.tintMaterial;
+    });
+  }
+
+  // Alarm triggered: the open doors and windows blink (about once per second).
+  private _pulseOpenings(now: number): void {
+    const k = 0.25 + 0.75 * (0.5 + 0.5 * Math.sin((now / 1000) * Math.PI * 2));
+    this._config.entities.forEach((entity, i) => {
+      if (entity.type3d != 'door' || !this._isOpen(this._states[i]) || !this._object_ids[i]) return;
+      this._object_ids[i].objects.forEach((o) => {
+        const obj: any = this._scene.getObjectByName(o.object_id);
+        const tint = obj && obj.userData.tintMaterial;
+        if (!tint) return;
+        (Array.isArray(tint) ? tint : [tint]).forEach((m) => {
+          if (m.emissive) m.emissiveIntensity = (m.userData.tintIntensity || 0.9) * k;
+        });
+      });
+    });
   }
 
   private _centerobjecttopivot(object: THREE.Mesh, pivot: THREE.Vector3) {
@@ -3131,7 +4289,7 @@ export class Floor3dCard extends LitElement {
         }
       }
     });
-    this._renderer.shadowMap.needsUpdate = true;
+    this._invalidateShadows();
   }
 
   private _updateshow(entity: Floor3dCardConfig, index: number): void {
@@ -3148,7 +4306,7 @@ export class Floor3dCard extends LitElement {
         }
       }
     });
-    this._renderer.shadowMap.needsUpdate = true;
+    this._invalidateShadows();
   }
 
   // end of manage entity types
@@ -3184,29 +4342,52 @@ export class Floor3dCard extends LitElement {
   }
 
   private _needsAnimationLoop() {
-    // Check rotations and Tween.getAll()
-    return this._rotation_state.some((item) => item !== 0) || TWEEN.getAll().length > 0;
+    // Showers, rotations, tweens (doors, covers, camera moves) and trackers still gliding or
+    // fading (the model may not be loaded yet)
+    return (
+      !!(this._showers && this._showers.some((shower) => shower && shower.visible)) ||
+      !!(this._rotation_state && this._rotation_state.some((item) => item !== 0)) ||
+      TWEEN.getAll().length > 0 ||
+      this._trackersNeedAnimation() ||
+      this._alarmPulse
+    );
   }
 
   // If every rotating entity and Tween is stopped, disable animation
   private _startOrStopAnimationLoop() {
-    if (this._needsAnimationLoop()) {
-      if (this._to_animate) return;
+    if (!this._renderer) return;
+    // The loop runs only while the card is visible. It is (re)armed every time it is
+    // needed: setAnimationLoop is idempotent, and _to_animate alone could be stale.
+    if (this._isVisible !== false && this._needsAnimationLoop()) {
+      if (!this._to_animate) {
+        this._lastFrameTime = null;
+        this._lastShadowTime = performance.now(); // nothing has moved yet
+      }
       this._to_animate = true;
-      this._clock = new THREE.Clock();
-      this._renderer.setAnimationLoop(() => this._animationLoop());
+      this._renderer.setAnimationLoop((time) => this._animationLoop(time));
     } else {
       this._to_animate = false;
-      this._clock = null;
-      this._renderer.setAnimationLoop(null);
+      this._lastFrameTime = null;
+      if (this._renderer) {
+        this._renderer.setAnimationLoop(null);
+      }
     }
   }
 
-  private _animationLoop() {
-    const clockDelta = this._clock.getDelta();
+  private _animationLoop(time?: number) {
+    const now = time !== undefined ? time : performance.now();
+    // Seconds since the previous frame, capped so that a pause does not make things jump.
+    const clockDelta = this._lastFrameTime != null ? Math.min((now - this._lastFrameTime) / 1000, 0.1) : 1 / 60;
+    this._lastFrameTime = now;
     let rotateBy = clockDelta * Math.PI * 2;
 
-    this._rotation_state.forEach((state, index) => {
+    // What moves in this frame, read before TWEEN.update() removes the tweens that end now.
+    const rotating = !!(this._rotation_state && this._rotation_state.some((s) => s !== 0));
+    const tweening = TWEEN.getAll().length > 0;
+    const objectTweens = tweening && TWEEN.getAll().some((t) => !this._cameraTweens.includes(t));
+    const showering = !!(this._showers && this._showers.some((shower) => shower && shower.visible));
+
+    (this._rotation_state || []).forEach((state, index) => {
       if (state == 0) return;
 
       this._object_ids[this._rotation_index[index]].objects.forEach((element) => {
@@ -3227,10 +4408,38 @@ export class Floor3dCard extends LitElement {
       });
     });
 
+    // Step proportional to elapsed time (60 fps = 1 step), capped after long pauses.
+    this._animateshowers(clockDelta * 60);
+
     TWEEN.update();
 
-    this._renderer.shadowMap.needsUpdate = true;
-    this._renderer.render(this._scene, this._camera);
+    this._animateTrackers(clockDelta);
+    if (this._alarmPulse) this._pulseOpenings(now);
+
+    // Only moving objects change the shadows (not the shower, the trackers or the camera). Redrawing
+    // every shadow map at every frame of a door is dozens of passes over the whole model per frame:
+    // they follow the door a few times per second and take its final position when it stops.
+    const objectsStopped = objectTweens && !TWEEN.getAll().some((t) => !this._cameraTweens.includes(t));
+    if ((rotating || objectTweens) && (objectsStopped || now - this._lastShadowTime >= MOVING_SHADOW_MS)) {
+      this._lastShadowTime = now;
+      this._invalidateShadows();
+    }
+
+    // Trackers and the shower do not need every frame of the display (the last one is always drawn).
+    const light = !rotating && !tweening;
+    const throttled =
+      light &&
+      now - this._lastRenderTime < LIGHT_ANIMATION_FRAME_MS &&
+      (showering || this._alarmPulse || this._trackersNeedAnimation());
+    if (!throttled && (this._isVisible || this._needsAnimationLoop())) {
+      this._lastRenderTime = now;
+      this._render();
+    }
+
+    // Tween onComplete runs while the tween is still listed: stop here once nothing is left.
+    if (!this._needsAnimationLoop()) {
+      this._startOrStopAnimationLoop();
+    }
   }
 
   // https://lit-element.polymer-project.org/guide/templates

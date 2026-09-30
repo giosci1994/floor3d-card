@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/explicit-module-boundary-types */
 /* eslint-disable @typescript-eslint/ban-types */
 import { LitElement, CSSResultGroup, css } from 'lit';
-import { property, customElement, state } from 'lit/decorators';
+import { property, customElement, state } from 'lit/decorators.js';
 import { TemplateResult, html } from 'lit';
 import { HomeAssistant, fireEvent, LovelaceCardEditor } from 'custom-card-helpers';
 import {
@@ -12,6 +12,8 @@ import {
 } from './helpers';
 import { loadHaComponents } from './ensureComponents';
 import { Floor3dCardConfig } from './types';
+import { CARD_VERSION } from './const';
+import '../elements/menu';
 import '../elements/formfield';
 import '../elements/select';
 import '../elements/textfield';
@@ -81,6 +83,11 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
       if (entityConfig.room) {
         if (Object.entries(entityConfig.room).length === 0) {
           delete entityConfig.room;
+        }
+      }
+      if (entityConfig.image) {
+        if (Object.entries(entityConfig.image).length === 0) {
+          delete entityConfig.image;
         }
       }
     }
@@ -200,6 +207,14 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
       visible: false,
     };
 
+    const imageOptions = {
+      icon: 'image',
+      name: 'Image',
+      secondary: 'Image options.',
+      show: false,
+      visible: false,
+    };
+
     const objectGroupOptions = {
       icon: 'cube-unfolded',
       name: 'Objects',
@@ -236,6 +251,7 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
         cover: { ...coverOptions },
         rotate: { ...rotateOptions },
         gesture: { ...gestureOptions },
+        image: { ...imageOptions },
       },
     };
 
@@ -351,8 +367,9 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
   protected render(): TemplateResult | void {
     const show = this._config.overlay ? this._config.overlay == 'yes' : false;
     return html`
-      <div class="sub-category" style="display: flex; flex-direction: row; align-items: left;">
+      <div class="sub-category" style="display: flex; flex-direction: row; align-items: center;">
         <ha-icon @click=${this._config_changed} icon="mdi:refresh" class="ha-icon-large"> </ha-icon>
+        <span class="version">floor3d-card ${CARD_VERSION}</span>
       </div>
       ${this._createModelElement()} ${this._createAppearanceElement()}
       ${show ? html` ${this._createOverlayElement()} ` : ``} ${this._createEntitiesElement()}
@@ -366,6 +383,9 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
     root = root && root.querySelector('hui-dialog-edit-card');
     root = root && root.shadowRoot;
     root = root && root.querySelector('ha-dialog');
+    if (!root) {
+      return null;
+    }
 
     const preview_card: HTMLCollection = root.getElementsByTagName('floor3d-card');
 
@@ -678,6 +698,7 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
                 ${this._createColorConditionElement(index)} ${this._createHideElement(index)}
                 ${this._createShowElement(index)} ${this._createTextElement(index)} ${this._createGestureElement(index)}
                 ${this._createDoorElement(index)} ${this._createCoverElement(index)} ${this._createRotateElement(index)}
+                ${this._createImageElement(index)} ${this._createTrackerElement(index)} ${this._createInfoElement(index)} ${this._createShowerElement(index)}
               </div>
             `
           : ''}
@@ -1071,14 +1092,7 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
                     <mwc-list-item value="yes">yes</mwc-list-item>
                     <mwc-list-item value="no">no</mwc-list-item>
                 </floor3d-select>
-                <floor3d-textfield
-                  label="Background Color"
-                  fullwidth
-                  .value=${config.backgroundColor ? config.backgroundColor : '#aaaaaa'}
-                  .configObject=${config}
-                  .configAttribute=${'backgroundColor'}
-                  @input=${this._valueChanged}
-                ></floor3d-textfield>
+
                 <floor3d-select
                   label="Hide Levels Menu (yes/<no>)"
                   @selected=${this._valueChanged}
@@ -1092,7 +1106,19 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
                     <mwc-list-item value="yes">yes</mwc-list-item>
                     <mwc-list-item value="no">no</mwc-list-item>
                 </floor3d-select>
-                ></floor3d-textfield>
+                <floor3d-select
+                  label="Hide Zoom Menu (yes/<no>)"
+                  @selected=${this._valueChanged}
+                  .value=${config.hideZoomMenu ? config.hideZoomMenu : 'no'}
+                  .configObject=${config}
+                  .configAttribute=${'hideZoomMenu'}
+                  .ignoreNull=${false}
+                  @closed=${(ev) => ev.stopPropagation()}
+                >
+                    <mwc-list-item></mwc-list-item>
+                    <mwc-list-item value="yes">yes</mwc-list-item>
+                    <mwc-list-item value="no">no</mwc-list-item>
+                </floor3d-select>
                 <floor3d-formfield alignEnd label="Global Scene Light (0..1)" >
                   <floor3d-textfield
                     type="number"
@@ -1119,6 +1145,16 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
                     <mwc-list-item value="yes">yes</mwc-list-item>
                     <mwc-list-item value="no">no</mwc-list-item>
                 </floor3d-select>
+                ${this._textField('Esposizione (<1>)', config, 'exposure', 1, 'number')}
+                ${this._choiceField('Tone mapping (<neutral>)', config, 'tone_mapping', 'neutral', ['neutral', 'agx', 'aces', 'linear'])}
+                ${this._textField('Potenza lampade (<1>)', config, 'light_power', 1, 'number')}
+                ${this._yesNoField('Sole da sun.sun (yes/<no>)', config, 'sun', 'no')}
+                ${this._textField('Potenza sole (<1>)', config, 'sun_power', 1, 'number')}
+                ${this._textField('Risoluzione massima (<2>)', config, 'max_pixel_ratio', 2, 'number')}
+                ${this._yesNoField('Log depth (yes/<no>)', config, 'log_depth', 'no')}
+                ${this._yesNoField('Porte e finestre aperte colorate (yes/<no>)', config, 'state_colors', 'no')}
+                ${this._textField('Allarme (entità, es. alarm_control_panel.allarme)', config, 'alarm_entity', '')}
+                ${this._choiceField('Mappa delle stanze iniziale (<none>)', config, 'room_colors', 'none', ['none', 'temperature', 'presence'])}
                 <floor3d-select
                   label="+ Lights - Perf (yes/<no>)"
                   @selected=${this._valueChanged}
@@ -1145,19 +1181,7 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
                     <mwc-list-item value="yes">yes</mwc-list-item>
                     <mwc-list-item value="no">no</mwc-list-item>
                 </floor3d-select>
-                <floor3d-select
-                  label="Sky (yes/<no>)"
-                  @selected=${this._valueChanged}
-                  .value=${config.sky ? config.sky : 'no'}
-                  .configObject=${config}
-                  .configAttribute=${'sky'}
-                  .ignoreNull=${false}
-                  @closed=${(ev) => ev.stopPropagation()}
-                >
-                    <mwc-list-item></mwc-list-item>
-                    <mwc-list-item value="yes">yes</mwc-list-item>
-                    <mwc-list-item value="no">no</mwc-list-item>
-                </floor3d-select>
+
                 <paper-input
                   editable
                   label="North Direction {x: xxxx,z: zzzzzz }"
@@ -1418,6 +1442,7 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
                   <mwc-list-item value="color">color</mwc-list-item>
                   <mwc-list-item value="room">room</mwc-list-item>
                   <mwc-list-item value="hide">hide</mwc-list-item>
+                  <mwc-list-item value="image">image</mwc-list-item>
                   <mwc-list-item value="show">show</mwc-list-item>
                   <mwc-list-item value="text">text</mwc-list-item>
                   <mwc-list-item value="door">door</mwc-list-item>
@@ -1425,6 +1450,8 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
                   <mwc-list-item value="rotate">rotate</mwc-list-item>
                   <mwc-list-item value="gesture">gesture</mwc-list-item>
                   <mwc-list-item value="camera">camera</mwc-list-item>
+                  <mwc-list-item value="info">info</mwc-list-item>
+                  <mwc-list-item value="shower">shower</mwc-list-item>
                 </floor3d-select>
                 ${!this._objects
                   ? html`
@@ -1873,6 +1900,112 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
 
     this._config.entities = this._configArray;
     fireEvent(this, 'config-changed', { config: this._config });
+  }
+
+  private _createImageElement(index): TemplateResult {
+    const options = this._options.entities.options.entities[index].options.image;
+    const config = this._configArray[index];
+    const isImage = !!config.type3d && config.type3d === 'image';
+    if (isImage) {
+      config.image = { ...config.image };
+    }
+    return html`
+      ${isImage ? html`
+            <div class="category" id="image">
+              <div
+                class="sub-category"
+                @click=${this._toggleThing}
+                .options=${options}
+                .optionsTarget=${this._options.entities.options.entities[index].options}
+              >
+                <div class="row">
+                  <ha-icon .icon=${`mdi:${options.icon}`}></ha-icon>
+                  <div class="title">${options.name}</div>
+                  <ha-icon .icon=${options.show ? 'mdi:chevron-up' : 'mdi:chevron-down'} style="margin-left: auto;"></ha-icon>
+                </div>
+                <div class="secondary">${options.secondary}</div>
+              </div>
+              ${options.show ? html`
+                    <div class="card-options" style="display: flex; flex-direction: column; align-items: left;">
+                      <floor3d-textfield
+                        label="Image Attribute (Optional)"
+                        .value=${config.image && config.image.attribute ? config.image.attribute : ''}
+                        .configAttribute=${'attribute'}
+                        .configObject=${config.image}
+                        @input=${this._valueChanged}
+                      ></floor3d-textfield>
+                      <floor3d-textfield
+                        label="Rotation (Degrees)"
+                        .value=${config.image && config.image.rotate ? config.image.rotate : ''}
+                        .configAttribute=${'rotate'}
+                        .configObject=${config.image}
+                        @input=${this._valueChanged}
+                        type="number"
+                      ></floor3d-textfield>
+                      <floor3d-textfield
+                        label="Lumens (Emission)"
+                        .value=${config.image && config.image.lumens ? config.image.lumens : ''}
+                        .configAttribute=${'lumens'}
+                        .configObject=${config.image}
+                        @input=${this._valueChanged}
+                        type="number"
+                      ></floor3d-textfield>
+                      <ha-formfield .label=${'Mirror'}>
+                        <ha-switch
+                          .checked=${config.image && config.image.mirror ? config.image.mirror : false}
+                          .configAttribute=${'mirror'}
+                          .configObject=${config.image}
+                          @change=${this._valueChanged}
+                        ></ha-switch>
+                      </ha-formfield>
+                      <floor3d-textfield
+                        label="Lighting Lumens (Room Light)"
+                        .value=${config.image && config.image.lighting_lumens ? config.image.lighting_lumens : ''}
+                        .configAttribute=${'lighting_lumens'}
+                        .configObject=${config.image}
+                        @input=${this._valueChanged}
+                        type="number"
+                      ></floor3d-textfield>
+                      <ha-formfield label="Light Direction">
+                        <ha-select
+                          .label=${'Light Direction'}
+                          .configValue=${'lighting_direction'}
+                          .value=${config.image && config.image.lighting_direction ? config.image.lighting_direction : 'positive_z'}
+                          .configAttribute=${'lighting_direction'}
+                          .configObject=${config.image}
+                          @selected=${this._valueChanged}
+                          @closed=${(ev) => ev.stopPropagation()}
+                        >
+                          <mwc-list-item value="positive_z">Front (+Z)</mwc-list-item>
+                          <mwc-list-item value="negative_z">Back (-Z)</mwc-list-item>
+                          <mwc-list-item value="positive_x">Right (+X)</mwc-list-item>
+                          <mwc-list-item value="negative_x">Left (-X)</mwc-list-item>
+                          <mwc-list-item value="positive_y">Top (+Y)</mwc-list-item>
+                          <mwc-list-item value="negative_y">Bottom (-Y)</mwc-list-item>
+                        </ha-select>
+                      </ha-formfield>
+                      <ha-formfield label="Light Off State">
+                        <ha-select
+                          .label=${'Light Off State'}
+                          .configValue=${'lighting_off_state'}
+                          .value=${config.image && config.image.lighting_off_state ? config.image.lighting_off_state : 'unavailable'}
+                          .configAttribute=${'lighting_off_state'}
+                          .configObject=${config.image}
+                          @selected=${this._valueChanged}
+                          @closed=${(ev) => ev.stopPropagation()}
+                        >
+                          <mwc-list-item value="unavailable">Unavailable</mwc-list-item>
+                          <mwc-list-item value="off">Off</mwc-list-item>
+                          <mwc-list-item value="idle">Idle</mwc-list-item>
+                          <mwc-list-item value="paused">Paused</mwc-list-item>
+                          <mwc-list-item value="standby">Standby</mwc-list-item>
+                        </ha-select>
+                      </ha-formfield>
+                    </div>
+                  ` : ''}
+            </div>
+          ` : ''}
+    `;
   }
 
   private _createLightElement(index): TemplateResult {
@@ -2472,19 +2605,6 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
                               .configAttribute=${'pane'}
                               @input=${this._valueChanged}
                             ></floor3d-textfield>
-                            <floor3d-select
-                              label="Side"
-                              @selected=${this._valueChanged}
-                              .value=${config.cover.side ? config.cover.side : null}
-                              .configObject=${config.cover}
-                              .configAttribute=${'side'}
-                              .ignoreNull=${false}
-                              @closed=${(ev) => ev.stopPropagation()}
-                            >
-                              <mwc-list-item></mwc-list-item>
-                              <mwc-list-item value="up">up</mwc-list-item>
-                              <mwc-list-item value="down">down</mwc-list-item>
-                            </floor3d-select>
                           `
                         : ''}
                     </div>
@@ -2494,6 +2614,132 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
           `
         : ''}
     `;
+  }
+
+  // Compact fields for the options added in the three.js 0.186 build.
+  private _yesNoField(label: string, object: any, attribute: string, fallback: string): TemplateResult {
+    const current = object[attribute];
+    return this._choiceField(label, object, attribute, fallback, ['yes', 'no'], current === true ? 'yes' : current === false ? 'no' : undefined);
+  }
+
+  private _choiceField(
+    label: string,
+    object: any,
+    attribute: string,
+    fallback: string,
+    choices: string[],
+    value?: string,
+  ): TemplateResult {
+    return html`
+      <floor3d-select
+        label=${label}
+        @selected=${this._valueChanged}
+        .value=${value !== undefined ? value : object[attribute] ? object[attribute] : fallback}
+        .configObject=${object}
+        .configAttribute=${attribute}
+        .ignoreNull=${false}
+        @closed=${(ev) => ev.stopPropagation()}
+        style="flex: 1;"
+      >
+        <mwc-list-item></mwc-list-item>
+        ${choices.map((c) => html`<mwc-list-item value=${c}>${c}</mwc-list-item>`)}
+      </floor3d-select>
+    `;
+  }
+
+  private _textField(label: string, object: any, attribute: string, fallback: any, type = 'text'): TemplateResult {
+    return html`
+      <floor3d-textfield
+        label=${label}
+        type=${type}
+        step="any"
+        .value=${object[attribute] !== undefined ? object[attribute] : fallback}
+        .configObject=${object}
+        .configAttribute=${attribute}
+        @input=${this._valueChanged}
+      ></floor3d-textfield>
+    `;
+  }
+
+  private _createTrackerElement(index): TemplateResult {
+    if (this._configArray[index].type3d == 'tracker') {
+      if (!this._configArray[index].tracker) {
+        this._configArray[index].tracker = {};
+      }
+      const tracker = this._configArray[index].tracker;
+      return html`
+        <div class="card-options">
+          <floor3d-textfield
+            label="Y Sensore Entità (es. sensor.y)"
+            .value=${tracker.sensor_y ? tracker.sensor_y : ''}
+            .configAttribute=${'sensor_y'}
+            .configObject=${tracker}
+            @input=${this._valueChanged}
+          ></floor3d-textfield>
+          <floor3d-textfield
+            label="Posizione Sensore [X, Y, Z]"
+            .value=${tracker.sensor_position ? JSON.stringify(tracker.sensor_position) : '[0, 0, 0]'}
+            .configAttribute=${'sensor_position'}
+            .configObject=${tracker}
+            @input=${this._valueChanged}
+          ></floor3d-textfield>
+          <div style="display: flex; gap: 8px;">
+            <floor3d-textfield
+              label="Rotazione (gradi)"
+              type="number"
+              .value=${tracker.sensor_rotation !== undefined ? tracker.sensor_rotation : 0}
+              .configAttribute=${'sensor_rotation'}
+              .configObject=${tracker}
+              @input=${this._valueChanged}
+              style="flex: 1;"
+            ></floor3d-textfield>
+            <floor3d-textfield
+              label="Scala"
+              type="number"
+              step="0.001"
+              .value=${tracker.scale !== undefined ? tracker.scale : 0.001}
+              .configAttribute=${'scale'}
+              .configObject=${tracker}
+              @input=${this._valueChanged}
+              style="flex: 1;"
+            ></floor3d-textfield>
+          </div>
+          <div style="display: flex; gap: 8px;">
+            <floor3d-textfield
+              label="Altezza (cm)"
+              type="number"
+              .value=${tracker.height !== undefined ? tracker.height : 150}
+              .configAttribute=${'height'}
+              .configObject=${tracker}
+              @input=${this._valueChanged}
+              style="flex: 1;"
+            ></floor3d-textfield>
+            <floor3d-textfield
+              label="Dimensione"
+              type="number"
+              .value=${tracker.size !== undefined ? tracker.size : 0.15}
+              .configAttribute=${'size'}
+              .configObject=${tracker}
+              @input=${this._valueChanged}
+              style="flex: 1;"
+            ></floor3d-textfield>
+          </div>
+          <floor3d-textfield
+            label="Colore (Hex)"
+            .value=${tracker.color ? tracker.color : '#FF5500'}
+            .configAttribute=${'color'}
+            .configObject=${tracker}
+            @input=${this._valueChanged}
+          ></floor3d-textfield>
+          <div style="display: flex; gap: 8px;">
+            ${this._choiceField('Unità coordinate (<mm>)', tracker, 'unit', 'mm', ['mm', 'cm', 'm'])}
+            ${this._yesNoField('Specchia X (yes/<no>)', tracker, 'flip_x', 'no')}
+          </div>
+          ${this._textField('Zona (entità, opzionale)', tracker, 'zone', '')}
+        </div>
+      `;
+    }
+    return html``;
   }
 
   private _createGestureElement(index): TemplateResult {
@@ -2780,6 +3026,10 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
               const { light, ...lightObject } = ev.target.configObject;
               newobject = lightObject;
               break;
+            case 'image':
+              const { image, ...imageObject } = ev.target.configObject;
+              newobject = imageObject;
+              break;
             case 'room':
               let { room, ...roomObject } = ev.target.configObject;
               newobject = roomObject;
@@ -2886,21 +3136,38 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
       return;
     }
     const target = ev.target;
-    if (target.configObject[target.configAttribute] == target.value) {
+    const value = target.checked !== undefined ? target.checked : target.value;
+    if (target.configObject[target.configAttribute] == value) {
       return;
     }
 
-    if (target.configAdd && target.value !== '') {
+    if (target.configAdd && value !== '') {
       target.configObject = Object.assign(target.configObject, {
-        [target.configAdd]: { [target.configAttribute]: target.value },
+        [target.configAdd]: { [target.configAttribute]: value },
       });
     }
     if (target.configAttribute && target.configObject && !target.configAdd) {
-      if (target.value == '' || target.value === false) {
+      if (value == '' || value === false) {
         if (target.ignoreNull == true) return;
         delete target.configObject[target.configAttribute];
+      } else if (target.configAttribute === 'sensor_position') {
+        // Accept only a valid [x, y, z]: while typing, keep the last valid value.
+        let position;
+        try {
+          position = JSON.parse(value);
+        } catch (e) {
+          return;
+        }
+        if (
+          !Array.isArray(position) ||
+          position.length !== 3 ||
+          !position.every((n) => typeof n === 'number' && isFinite(n))
+        ) {
+          return;
+        }
+        target.configObject[target.configAttribute] = position;
       } else {
-        target.configObject[target.configAttribute] = target.value;
+        target.configObject[target.configAttribute] = value;
       }
     }
     this._config.entities = this._configArray;
@@ -2909,8 +3176,131 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
     fireEvent(this, 'config-changed', { config: this._config });
   }
 
+  private _createInfoElement(index): TemplateResult {
+    if (this._configArray[index].type3d == 'info') {
+      if (!this._configArray[index].info) {
+        this._configArray[index].info = {};
+      }
+      const info = this._configArray[index].info;
+      return html`
+        <div class="card-options">
+          <floor3d-textfield
+            label="Template/Testo"
+            .value=${info.text ? info.text : ''}
+            .configAttribute=${'text'}
+            .configObject=${info}
+            @input=${this._valueChanged}
+          ></floor3d-textfield>
+          <floor3d-textfield
+            label="Posizione [X, Y, Z] (Opzionale)"
+            .value=${info.position ? JSON.stringify(info.position) : ''}
+            .configAttribute=${'position'}
+            .configObject=${info}
+            @input=${this._valueChanged}
+          ></floor3d-textfield>
+          <floor3d-textfield
+            label="Colore Testo"
+            .value=${info.textfgcolor ? info.textfgcolor : 'white'}
+            .configAttribute=${'textfgcolor'}
+            .configObject=${info}
+            @input=${this._valueChanged}
+          ></floor3d-textfield>
+          <floor3d-textfield
+            label="Colore Sfondo"
+            .value=${info.textbgcolor ? info.textbgcolor : 'transparent'}
+            .configAttribute=${'textbgcolor'}
+            .configObject=${info}
+            @input=${this._valueChanged}
+          ></floor3d-textfield>
+          <floor3d-textfield
+             label="Font"
+             .value=${info.font ? info.font : 'monospace'}
+             .configAttribute=${'font'}
+             .configObject=${info}
+             @input=${this._valueChanged}
+          ></floor3d-textfield>
+          <floor3d-textfield
+            label="Dimensione"
+            type="number"
+            .value=${info.size !== undefined ? info.size : 100}
+            .configAttribute=${'size'}
+            .configObject=${info}
+            @input=${this._valueChanged}
+          ></floor3d-textfield>
+        </div>
+      `;
+    }
+    return html``;
+  }
+
+  private _createShowerElement(index): TemplateResult {
+    if (this._configArray[index].type3d == 'shower') {
+      if (!this._configArray[index].shower) {
+        this._configArray[index].shower = {};
+      }
+      const shower = this._configArray[index].shower;
+      return html`
+        <div class="card-options">
+          <floor3d-textfield
+            label="Velocità"
+            type="number"
+            .value=${shower.velocity !== undefined ? shower.velocity : 5}
+            .configAttribute=${'velocity'}
+            .configObject=${shower}
+            @input=${this._valueChanged}
+          ></floor3d-textfield>
+          <floor3d-textfield
+            label="Conteggio"
+            type="number"
+            .value=${shower.count !== undefined ? shower.count : 200}
+            .configAttribute=${'count'}
+            .configObject=${shower}
+            @input=${this._valueChanged}
+          ></floor3d-textfield>
+          <floor3d-textfield
+            label="Colore"
+            .value=${shower.color ? shower.color : '#aaaaaa'}
+            .configAttribute=${'color'}
+            .configObject=${shower}
+            @input=${this._valueChanged}
+          ></floor3d-textfield>
+          <floor3d-textfield
+            label="Dimensione"
+            type="number"
+            .value=${shower.size !== undefined ? shower.size : 1}
+            .configAttribute=${'size'}
+            .configObject=${shower}
+            @input=${this._valueChanged}
+          ></floor3d-textfield>
+          <floor3d-textfield
+            label="Altezza (cm)"
+            type="number"
+            .value=${shower.height !== undefined ? shower.height : 100}
+            .configAttribute=${'height'}
+            .configObject=${shower}
+            @input=${this._valueChanged}
+          ></floor3d-textfield>
+          <floor3d-textfield
+            label="Lato del quadrato"
+            type="number"
+            .value=${shower.width !== undefined ? shower.width : 20}
+            .configAttribute=${'width'}
+            .configObject=${shower}
+            @input=${this._valueChanged}
+          ></floor3d-textfield>
+        </div>
+      `;
+    }
+    return html``;
+  }
+
   static get styles(): CSSResultGroup {
     return css`
+      .version {
+        margin-left: auto;
+        color: var(--secondary-text-color);
+        font-size: 12px;
+      }
       .option {
         padding: 4px 0px;
         cursor: pointer;

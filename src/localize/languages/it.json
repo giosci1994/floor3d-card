@@ -1,0 +1,14 @@
+{
+  "common": {
+    "version": "Versione",
+    "invalid_configuration": "Configurazione non valida",
+    "show_warning": "Mostra avviso",
+    "show_error": "Mostra errore",
+    "views": "Viste",
+    "initial_view": "Vista iniziale",
+    "map": "Mappa",
+    "map_none": "Nessuna mappa",
+    "map_temperature": "Temperature",
+    "map_presence": "Presenze"
+  }
+}

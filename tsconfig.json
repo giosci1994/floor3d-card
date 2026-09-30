@@ -1,14 +1,15 @@
-{ "$schema": "./tsconfig",
+{
+  "$schema": "./tsconfig",
   "compilerOptions": {
-    "target": "es2017",
+    "target": "es2021",
     "module": "esnext",
-    "moduleResolution": "node",
+    "moduleResolution": "bundler",
     "lib": [
-      "es2017",
+      "es2021",
       "dom",
       "dom.iterable"
     ],
-    "noEmit": true,
+    "noEmit": false,
     "noUnusedParameters": true,
     "noImplicitReturns": true,
     "noFallthroughCasesInSwitch": true,
@@ -19,6 +20,12 @@
     "resolveJsonModule": true,
     "experimentalDecorators": true,
     "noUnusedLocals": false,
-    "strictNullChecks":false
-  }
+    "strictNullChecks": false,
+    "useDefineForClassFields": false,
+    "importHelpers": true
+  },
+  "include": [
+    "src",
+    "elements"
+  ]
 }

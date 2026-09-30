@@ -1,14 +1,17 @@
 import * as en from './languages/en.json';
 import * as nb from './languages/nb.json';
+import * as it from './languages/it.json';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const languages: any = {
   en: en,
   nb: nb,
+  it: it,
 };
 
-export function localize(string: string, search = '', replace = ''): string {
-  const lang = (localStorage.getItem('selectedLanguage') || 'en').replace(/['"]+/g, '').replace('-', '_');
+// language: the one of Home Assistant when known (hass.language), otherwise the saved choice.
+export function localize(string: string, search = '', replace = '', language?: string): string {
+  const lang = (language || localStorage.getItem('selectedLanguage') || 'en').replace(/['"]+/g, '').replace('-', '_');
 
   let translated: string;
 

@@ -103,6 +103,34 @@ export interface Floor3dCardConfig {
   color: string;
   show_warning: boolean;
   show_error: boolean;
+  hideZoomMenu: string;
+  // Rendering (three.js 0.186 build)
+  exposure: number | string;
+  tone_mapping: string;
+  light_power: number | string;
+  max_pixel_ratio: number | string;
+  log_depth: string;
+  reversed_depth: string;
+  sun: string;
+  sun_entity: string;
+  sun_power: number | string;
+  sun_shadow: string;
+  sun_roof: any;
+  long_press_action: string;
+  // State colours
+  state_colors: string;
+  open_color: string;
+  alarm_entity: string;
+  alarm_color: string;
+  presence_color: string;
+  rooms: any;
+  room_colors: string;
+  temperature_min: number | string;
+  temperature_max: number | string;
+  shower: any;
+  tracker: any;
+  image: any;
+  info: any;
 }
 
 export interface EntityFloor3dCardConfig {
