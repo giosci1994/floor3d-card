@@ -38,6 +38,12 @@ const TRACKER_FADE = 0.35; // seconds to appear or disappear
 const LIGHT_ANIMATION_FRAME_MS = 33; // only trackers or the shower moving: at most 30 frames per second
 const MOVING_SHADOW_MS = 300; // shadows of a moving door: redrawn at most this often, and at the end
 
+// Runs the code of an entity_template (between [[[ and ]]]) with the state as a value, $entity,
+// instead of pasting the state into the code: a state such as "unavailable", or one with quotes,
+// no longer breaks the template or runs as code. The eval inside gives back the value of the last
+// statement, as in `if ($entity > 25) { "hot" } else { "cool" }`.
+const runTemplate = new Function('$entity', '$f3dState', '$f3dCode', 'return eval($f3dCode);');
+
 const TONE_MAPPINGS: { [name: string]: THREE.ToneMapping } = {
   neutral: THREE.NeutralToneMapping,
   agx: THREE.AgXToneMapping,
@@ -145,7 +151,7 @@ export class Floor3dCard extends LitElement {
   private _overlay_entity: string;
   private _overlay_state: string;
 
-  private _eval: Function;
+  private _templateErrors = new Set<string>();
   private _firstcall?: boolean;
   private _resizeTimeout?: number;
   private _resizeObserver: ResizeObserver;
@@ -155,6 +161,7 @@ export class Floor3dCard extends LitElement {
   private _pointerMoveListener: EventListener;
   private _pointerUpListener: EventListener;
   private _pointerCancelListener: EventListener;
+  private _contextRestoredListener = (): void => this._onContextRestored();
   private _longpressTimeout: any;
   // A press on the model: becomes a tap or a long press unless the finger moves (then it is a drag).
   private _tap?: { id: number; x: number; y: number; t: number; long: boolean } | null;
@@ -239,7 +246,6 @@ export class Floor3dCard extends LitElement {
       if (this._zoomSelect) this._zoomSelect.value = '';
     };
     this._haShadowRoot = document.querySelector('home-assistant')?.shadowRoot;
-    this._eval = eval;
     this._card_id = 'ha-card-1';
 
     console.log('New Card');
@@ -509,11 +515,53 @@ export class Floor3dCard extends LitElement {
     window.clearInterval(this._zIndexInterval);
 
     this._renderer.domElement.remove();
+    this._disposeScene();
     this._renderer = null;
 
     this._states = null;
     this.hass = this._hass;
     this.display3dmodel();
+  }
+
+  // Frees what the GPU holds for the model before it is loaded again. Before, every reload (in the
+  // card editor, for example) kept its WebGL context until the browser went past its limit (about
+  // 16) and dropped the oldest one, which could be another card of the dashboard.
+  private _disposeScene(): void {
+    const textures = new Set<THREE.Texture>();
+    this._scene.traverse((object: any) => {
+      if (object.geometry) object.geometry.dispose();
+      const materials: THREE.Material[] = Array.isArray(object.material)
+        ? object.material
+        : object.material
+          ? [object.material]
+          : [];
+      materials.forEach((material) => {
+        Object.values(material).forEach((value) => {
+          if (value instanceof THREE.Texture) textures.add(value);
+        });
+        material.dispose();
+      });
+      if (object.isLight) object.dispose(); // its shadow map
+    });
+    textures.forEach((texture) => texture.dispose());
+    this._renderer.domElement.removeEventListener('webglcontextrestored', this._contextRestoredListener);
+    this._renderer.dispose();
+    this._renderer.forceContextLoss();
+  }
+
+  // The browser can take the WebGL context away (an app in the background on a phone, a GPU
+  // reset) and give it back later. three.js uploads the model again by itself, but the card
+  // draws only when something changes: without this the canvas stayed empty until a touch.
+  private _onContextRestored(): void {
+    if (!this._renderer || !this._modelready) return;
+    for (const light of this._shadowLights) {
+      if (light.castShadow) {
+        light.shadow.needsUpdate = true;
+        light.userData.shadowStale = false;
+      }
+    }
+    this._renderer.shadowMap.needsUpdate = true;
+    this._render();
   }
 
   // Dashboard in edit mode: passed by Home Assistant (2024+), otherwise read from the page.
@@ -1049,8 +1097,18 @@ export class Floor3dCard extends LitElement {
         const trimmed = entity.entity_template.trim();
 
         if (trimmed.substring(0, 3) === '[[[' && trimmed.slice(-3) === ']]]' && trimmed.includes('$entity')) {
-          const normal = trimmed.slice(3, -3).replace(/\$entity/g, state);
-          state = this._eval(normal);
+          // A numeric state is a number, as when it was pasted into the code ($entity > 25), and
+          // '$entity' or "$entity" in quotes is still the text of the state.
+          const code = trimmed.slice(3, -3).replace(/(['"])\$entity\1/g, '$f3dState');
+          const value = state.trim() !== '' && !isNaN(Number(state)) ? Number(state) : state;
+          try {
+            state = runTemplate(value, state, code);
+          } catch (error) {
+            if (!this._templateErrors.has(entity.entity_template)) {
+              this._templateErrors.add(entity.entity_template);
+              console.warn('floor3d-card: entity_template of <' + entity.entity + '> failed: ' + error);
+            }
+          }
         }
       }
       return state;
@@ -1135,11 +1193,7 @@ export class Floor3dCard extends LitElement {
               } else {
                 this._info.push('');
               }
-              if (entity.type3d == 'cover' && hass.states[entity.entity].attributes['current_position']) {
-                this._position.push(hass.states[entity.entity].attributes['current_position']);
-              } else {
-                this._position.push(null);
-              }
+              this._position.push(entity.type3d == 'cover' ? this._coverPosition(hass.states[entity.entity]) : null);
               if (entity.type3d == 'light') {
                 this._lights.push(entity.object_id + '_light');
               } else {
@@ -1196,20 +1250,12 @@ export class Floor3dCard extends LitElement {
             if (hass.states[entity.entity]) {
               let state = this._statewithtemplate(entity);
               if (entity.type3d == 'cover') {
-                let toupdate = false;
-                if (hass.states[entity.entity].attributes['current_position']) {
-                  if (this._position[i] != hass.states[entity.entity].attributes['current_position']) {
-                    this._position[i] = hass.states[entity.entity].attributes['current_position'];
-                    toupdate = true;
-                  }
-                } else {
-                  if (state != this._states[i]) {
-                    toupdate = true;
-                    this._states[i] = state;
-                  }
-                }
-                if (toupdate) {
-                  this._updatecover(entity, this._states[i], i);
+                // Both can change: the position while the cover moves, the state when it starts or stops.
+                const position = this._coverPosition(hass.states[entity.entity]);
+                if (state != this._states[i] || position !== this._position[i]) {
+                  this._states[i] = state;
+                  this._position[i] = position;
+                  this._updatecover(entity, state, i);
                   torerender = true;
                 }
               }
@@ -1283,7 +1329,8 @@ export class Floor3dCard extends LitElement {
                       this._text[i] = hass.states[entity.entity].attributes[entity.text.attribute];
                       toupdate = true;
                     }
-                  } else {
+                  } else if (this._text[i] !== '') {
+                    // Only once: Home Assistant calls this at every change of any entity.
                     this._text[i] = '';
                     toupdate = true;
                   }
@@ -1443,11 +1490,10 @@ export class Floor3dCard extends LitElement {
     console.log('Max Texture Image Units: ' + this._maxtextureimage);
     console.log('Max Texture Image Units: number of lights casting shadow should be less than the above number');
 
-    const availableshadows = Math.max(6, this._maxtextureimage - 4);
-
     this._renderer.domElement.style.width = '100%';
     this._renderer.domElement.style.height = '100%';
     this._renderer.domElement.style.display = 'block';
+    this._renderer.domElement.addEventListener('webglcontextrestored', this._contextRestoredListener);
 
     if (this._config.backgroundColor) {
       if (this._config.backgroundColor == 'transparent') {
@@ -2431,7 +2477,10 @@ export class Floor3dCard extends LitElement {
                 }
               }
               if (entity.type3d == 'cover') {
-                const pane: THREE.Mesh = this._scene.getObjectByName(entity.cover.pane) as THREE.Mesh;
+                // Without pane the first object is the pane, as in _updatecover. Before, such a cover
+                // was not set up and its first update stopped every other update of the card.
+                const pane: THREE.Mesh = (this._scene.getObjectByName(entity.cover.pane) ||
+                  this._scene.getObjectByName(this._object_ids[i].objects[0]?.object_id)) as THREE.Mesh;
 
                 if (pane) {
                   this._object_ids[i].objects.forEach((element) => {
@@ -3081,19 +3130,13 @@ export class Floor3dCard extends LitElement {
   private _updatecover(item: Floor3dCardConfig, state: string, i: number): void {
     let pane = this._scene.getObjectByName(item.cover.pane);
 
-    if (this._position[i] == null) {
-      if (state == 'open') {
-        this._position[i] = 100;
-      }
-      if (state == 'closed') {
-        this._position[i] = 0;
-      }
-    }
-
     if (!pane) {
       pane = this._scene.getObjectByName(this._object_ids[i].objects[0].object_id);
     }
-    this._translatedoor(pane, this._position[i], item.cover.side, i, state);
+    // A cover that reports current_position is drawn there, also while it is opening or closing
+    // (0 is closed); the others are fully open or fully closed.
+    const percentage = this._position[i] != null ? this._position[i] : this._isOpen(state) ? 100 : 0;
+    this._translatedoor(pane, percentage, item.cover.side, i, percentage > 0 ? 'open' : 'closed');
     // Shadows follow the tween in the animation loop.
   }
 
@@ -3159,7 +3202,10 @@ export class Floor3dCard extends LitElement {
         texture.flipY = false;
       }
       if (((_foundobject as THREE.Mesh).material as THREE.MeshBasicMaterial).name.startsWith('f3dmat')) {
-        ((_foundobject as THREE.Mesh).material as THREE.MeshBasicMaterial).map = texture;
+        const material = (_foundobject as THREE.Mesh).material as THREE.MeshBasicMaterial;
+        // The texture of the previous text stays on the GPU until it is disposed: one per update.
+        if (material.map) material.map.dispose();
+        material.map = texture;
       } else {
         const material = new THREE.MeshBasicMaterial({
           map: texture,
@@ -3180,7 +3226,9 @@ export class Floor3dCard extends LitElement {
     texture.repeat.set(1, 1);
 
     if (object.material.name.startsWith('f3dmat')) {
-      (object.material as THREE.SpriteMaterial).map = texture;
+      const material = object.material as THREE.SpriteMaterial;
+      if (material.map) material.map.dispose(); // see _applyTextCanvas
+      material.map = texture;
     } else {
       const material = new THREE.SpriteMaterial({
         map: texture,
@@ -3273,10 +3321,8 @@ export class Floor3dCard extends LitElement {
         light.intensity = 0;
         //light.color = new THREE.Color('#000000');
       }
-      if (this._config.extralightmode) {
-        if (this._config.extralightmode == 'yes') {
-          this._manage_light_shadows(entity, light);
-        }
+      if (this._config.extralightmode == 'yes') {
+        this._manage_light_shadows(light);
       }
       // Brightness and colour do not change the shadow map: it is redrawn only if it is out of date.
       this._refreshLightShadow(light);
@@ -3336,9 +3382,24 @@ export class Floor3dCard extends LitElement {
   // Each shadow is a texture unit in the shaders: past the limit of the GPU (16 on phones) they no
   // longer compile. Two units stay for the textures of a material (picture and glow of the TV); the
   // sun comes first, then the lights in config order.
+  private _shadowBudget(): number {
+    return Math.max(2, this._renderer.capabilities.maxTextures - 2);
+  }
+
   private _applyShadowBudget(): void {
-    const budget = Math.max(2, this._renderer.capabilities.maxTextures - 2);
+    const budget = this._shadowBudget();
     const ordered = this._shadowLights.filter((l) => l === this._sun).concat(this._shadowLights.filter((l) => l !== this._sun));
+    if (this._config.extralightmode == 'yes') {
+      // Every light keeps its shadow set up, and only the lights that are on cast it, up to the
+      // budget (see _manage_light_shadows).
+      let casting = 0;
+      ordered.forEach((light) => {
+        light.castShadow = (light === this._sun || light.intensity > 0) && casting < budget;
+        if (light.castShadow) casting++;
+      });
+      this._shadowLights = ordered;
+      return;
+    }
     const dropped = ordered.slice(budget);
     dropped.forEach((light) => {
       light.castShadow = false;
@@ -3379,15 +3440,23 @@ export class Floor3dCard extends LitElement {
     }
   }
 
-  private _manage_light_shadows(entity: Floor3dCardConfig, light: THREE.Light): void {
-    if (this._config.shadow == 'yes') {
-      if (entity.light.shadow == 'yes') {
-        if (light.intensity > 0) {
-          light.castShadow = true;
-        } else {
-          light.castShadow = false;
-        }
+  // extralightmode: a light casts its shadow only while it is on, and only if the lights already
+  // casting one leave room in the budget of the GPU. Before, a light could go past the budget and
+  // the shaders no longer compiled. A light switched off leaves its place to one that is on
+  // without shadow.
+  private _manage_light_shadows(light: THREE.Light): void {
+    if (this._config.shadow != 'yes' || !this._shadowLights.includes(light as ShadowLight)) return;
+    if (light.intensity <= 0) {
+      if (!light.castShadow) return;
+      light.castShadow = false;
+      const waiting = this._shadowLights.find((l) => l !== light && !l.castShadow && l.intensity > 0);
+      if (waiting) {
+        waiting.castShadow = true;
+        this._refreshLightShadow(waiting, true);
       }
+    } else if (!light.castShadow) {
+      const casting = this._shadowLights.filter((l) => l.castShadow).length;
+      light.castShadow = casting < this._shadowBudget();
     }
   }
 
@@ -3995,6 +4064,14 @@ export class Floor3dCard extends LitElement {
     this._mapMode = ['temperature', 'presence'].includes(initial) ? initial : 'none';
   }
 
+  // current_position of a cover, null when the cover doesn't report it.
+  private _coverPosition(stateObj: HassEntity): number | null {
+    const position = stateObj.attributes['current_position'];
+    if (position === undefined || position === null || position === '') return null;
+    const n = Number(position);
+    return isNaN(n) ? null : n;
+  }
+
   private _isOpen(state: string): boolean {
     return state == 'on' || state == 'open' || state == 'opening';
   }
@@ -4257,6 +4334,7 @@ export class Floor3dCard extends LitElement {
     this._object_ids[index].objects.forEach((element, i) => {
       let _obj: any = this._scene.getObjectByName(element.object_id);
       const originalPosition = this._slidingdoorposition[index][i];
+      if (!_obj || !originalPosition) return; // an object missing from the model
 
       let targetPosition: THREE.Vector3 = new THREE.Vector3(
         originalPosition.x + translate.x,
