@@ -1,6 +1,6 @@
 {
   "name": "floor3d-card",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "description": "Your HA Digital Twin aka floor3d-card",
   "keywords": [
     "home-assistant",
@@ -37,6 +37,7 @@
     "three-spritetext": "^1.6.4"
   },
   "devDependencies": {
+    "@mdi/js": "^7.4.47",
     "@rollup/plugin-commonjs": "^29.0.3",
     "@rollup/plugin-json": "^6.1.0",
     "@rollup/plugin-node-resolve": "^16.0.3",
