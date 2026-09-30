@@ -12,7 +12,7 @@ import {
 // The editor is loaded on demand by getConfigElement(): devices that only show the card never download it.
 import { HassEntity } from 'home-assistant-js-websocket';
 import { createConfigArray, createObjectGroupConfigArray, getLovelace } from './helpers';
-import { normalizeConfig } from './config';
+import { matchObjects, normalizeConfig, objectPattern } from './config';
 import type { Floor3dCardConfig } from './types';
 import { CARD_VERSION, EDITOR_EVENT, PREVIEW_EVENT } from './const';
 import { localize } from './localize/localize';
@@ -37,6 +37,67 @@ const TRACKER_SMOOTHING = 0.25; // seconds: trackers glide to each new position 
 const TRACKER_FADE = 0.35; // seconds to appear or disappear
 const LIGHT_ANIMATION_FRAME_MS = 33; // only trackers or the shower moving: at most 30 frames per second
 const MOVING_SHADOW_MS = 300; // shadows of a moving door: redrawn at most this often, and at the end
+const ROTATE_RAMP = 1.5; // seconds for a fan to reach full speed or to stop, when rotate.ramp is missing
+// Decoder of Draco-compressed models, when draco_decoder_path is missing (the version of three.js 0.186).
+const DRACO_DECODER_PATH = 'https://www.gstatic.com/draco/versioned/decoders/1.5.7/';
+
+// Quantized models (gltf-transform meshopt adds KHR_mesh_quantization) keep their positions as
+// integers, with a scale and an offset on each node. The card moves doors, covers and fans by
+// changing the geometry and the position of the objects, as if every object had no transform of its
+// own: the geometry goes back to floats with the transforms of the nodes in it, like any other model.
+function bakeNodeTransforms(root: THREE.Object3D): void {
+  root.updateMatrixWorld(true);
+  const meshes: THREE.Mesh[] = [];
+  const users = new Map<THREE.BufferGeometry, number>();
+  root.traverse((object) => {
+    const mesh = object as THREE.Mesh;
+    if (!mesh.isMesh || !mesh.geometry) return;
+    meshes.push(mesh);
+    users.set(mesh.geometry, (users.get(mesh.geometry) || 0) + 1);
+  });
+  meshes.forEach((mesh) => {
+    // A geometry used by several objects is copied first, so that each gets its own transform.
+    const geometry = floatGeometry(users.get(mesh.geometry) > 1 ? mesh.geometry.clone() : mesh.geometry);
+    geometry.applyMatrix4(mesh.matrixWorld);
+    mesh.geometry = geometry;
+  });
+  root.traverse((object) => {
+    if (object === root) return;
+    object.position.set(0, 0, 0);
+    object.quaternion.identity();
+    object.scale.set(1, 1, 1);
+  });
+  root.updateMatrixWorld(true);
+}
+
+// The same geometry with float attributes (quantized ones are integers, normalized or not).
+function floatGeometry(geometry: THREE.BufferGeometry): THREE.BufferGeometry {
+  Object.keys(geometry.attributes).forEach((name) => {
+    const attribute = geometry.attributes[name] as THREE.BufferAttribute | THREE.InterleavedBufferAttribute;
+    if (!(attribute instanceof THREE.InterleavedBufferAttribute) && attribute.array instanceof Float32Array) return;
+    const array = new Float32Array(attribute.count * attribute.itemSize);
+    for (let i = 0; i < attribute.count; i++) {
+      for (let k = 0; k < attribute.itemSize; k++) {
+        array[i * attribute.itemSize + k] = attribute.getComponent(i, k);
+      }
+    }
+    geometry.setAttribute(name, new THREE.BufferAttribute(array, attribute.itemSize));
+  });
+  return geometry;
+}
+
+// The glTF extensions a .glb file uses, read from its JSON chunk (the decoders it needs).
+function glbExtensions(buffer: ArrayBuffer): string[] {
+  try {
+    const view = new DataView(buffer);
+    if (buffer.byteLength < 20 || view.getUint32(0, true) !== 0x46546c67) return []; // 'glTF'
+    if (view.getUint32(16, true) !== 0x4e4f534a) return []; // 'JSON'
+    const json = JSON.parse(new TextDecoder().decode(new Uint8Array(buffer, 20, view.getUint32(12, true))));
+    return [...(json.extensionsUsed || []), ...(json.extensionsRequired || [])];
+  } catch {
+    return [];
+  }
+}
 
 // Runs the code of an entity_template (between [[[ and ]]]) with the state as a value, $entity,
 // instead of pasting the state into the code: a state such as "unavailable", or one with quotes,
@@ -141,7 +202,9 @@ export class Floor3dCard extends LitElement {
   private _axis_for_door: THREE.Vector3[];
   private _axis_to_rotate: string[];
   private _round_per_seconds: number[];
-  private _rotation_state: number[];
+  private _rotation_state: number[]; // target speed: 1 full, a fraction with percentage, negative in reverse
+  private _rotation_speed: number[] = []; // speed now, on its way to the target (rotate.ramp)
+  private _rotation_ramp: number[] = []; // seconds from stopped to full speed
   private _rotation_index: number[];
   private _animated_transitions: any[];
   private _lastFrameTime?: number | null; // timestamp of the previous animation frame
@@ -162,6 +225,8 @@ export class Floor3dCard extends LitElement {
   private _pointerUpListener: EventListener;
   private _pointerCancelListener: EventListener;
   private _contextRestoredListener = (): void => this._onContextRestored();
+  private _urlListener = (): void => this._applyUrlView(true);
+  private _urlView?: string | null; // value of the url_parameters.zoom parameter last applied
   private _longpressTimeout: any;
   // A press on the model: becomes a tap or a long press unless the finger moves (then it is a drag).
   private _tap?: { id: number; x: number; y: number; t: number; long: boolean } | null;
@@ -254,6 +319,9 @@ export class Floor3dCard extends LitElement {
   public connectedCallback(): void {
     super.connectedCallback();
     window.addEventListener(EDITOR_EVENT, this._editorListener);
+    // Home Assistant fires location-changed when it navigates; popstate is the back button.
+    window.addEventListener('location-changed', this._urlListener);
+    window.addEventListener('popstate', this._urlListener);
 
     this._intersectionObserver = new IntersectionObserver(
       (entries) => {
@@ -279,11 +347,15 @@ export class Floor3dCard extends LitElement {
       if (this._ispanel() || this._issidebar()) {
         this._resizeCanvas();
       }
+      // The page may have been navigated to another view while the card was not shown.
+      this._applyUrlView(false);
     }
   }
 
   public disconnectedCallback(): void {
     window.removeEventListener(EDITOR_EVENT, this._editorListener);
+    window.removeEventListener('location-changed', this._urlListener);
+    window.removeEventListener('popstate', this._urlListener);
     if (this._intersectionObserver) {
       this._intersectionObserver.disconnect();
     }
@@ -987,6 +1059,24 @@ export class Floor3dCard extends LitElement {
   }
 
   // Names of the objects of the model (without the level prefix), for the object menus of the editor.
+  // Object ids with * (Lamp_*) become the objects of the model they match, as for an object group.
+  // One that matches nothing stays as it is: the entity is then left out as for a missing object.
+  private _expandObjectPatterns(): void {
+    const names = this._modelObjectNames();
+    (this._object_ids || []).forEach((item) => {
+      if (!item.objects.some((o) => objectPattern(o.object_id))) return;
+      item.objects = item.objects.flatMap((o) => {
+        if (!objectPattern(o.object_id)) return [o];
+        const found = matchObjects(o.object_id, names);
+        if (found.length === 0) {
+          console.warn('floor3d-card: no object of the model matches <' + o.object_id + '> (' + item.entity + ')');
+          return [o];
+        }
+        return found.map((object_id) => ({ ...o, object_id }));
+      });
+    });
+  }
+
   private _modelObjectNames(): string[] {
     const names = new Set<string>();
     (this._raycastinglevels || []).forEach((level) => (level || []).forEach((o) => o.name && names.add(o.name)));
@@ -1003,12 +1093,14 @@ export class Floor3dCard extends LitElement {
     });
     this._highlightHelpers = [];
     const names = new Set<string>();
+    const modelNames = this._modelObjectNames();
+    const add = (id: string) => matchObjects(id, modelNames).forEach((name) => names.add(name));
     ids.forEach((id) => {
       const group = /^<(.*)>$/.exec(id);
-      if (!group) names.add(id);
+      if (!group) add(id);
       else {
         const found = (this._config.object_groups || []).find((g) => g.object_group === group[1]);
-        ((found && found.objects) || []).forEach((o) => names.add(o.object_id));
+        ((found && found.objects) || []).forEach((o) => add(o.object_id));
       }
     });
     names.forEach((name) => {
@@ -1547,19 +1639,66 @@ export class Floor3dCard extends LitElement {
         this._modeltype = ModelSource.OBJ;
       } else if (fileExt == 'glb') {
         //glb format
-        const loader = new GLTFLoader().setPath(path);
-        loader.load(
-          this._config.objfile,
-          this._onLoadedGLTF3DModel.bind(this),
-          this._onloadedGLTF3DProgress.bind(this),
-          this._loadError(path + this._config.objfile),
-        );
+        this._loadGLB(path);
         this._modeltype = ModelSource.GLB;
       }
     } else {
       throw new Error('Path is empty');
     }
     console.log('End Build Renderer');
+  }
+
+  // A .glb model, also one compressed with Draco or meshopt (gltf-transform draco / meshopt, 5 to 10
+  // times smaller). The file is read first, and the decoder it needs is loaded only then: meshopt
+  // from a chunk of the card, Draco from draco_decoder_path (Google's CDN by default). Idea from
+  // Steven-D-Morgan/hass-3d-floorplan.
+  private _loadGLB(path: string): void {
+    const file = path + this._config.objfile;
+    const onError = this._loadError(file);
+    const fileLoader = new THREE.FileLoader();
+    fileLoader.setResponseType('arraybuffer');
+    fileLoader.load(
+      file,
+      async (data) => {
+        let draco: { dispose(): void } | undefined;
+        const done = (): void => draco?.dispose(); // its workers
+        try {
+          const buffer = data as ArrayBuffer;
+          const extensions = glbExtensions(buffer);
+          const loader = new GLTFLoader();
+          if (extensions.includes('EXT_meshopt_compression')) {
+            const { MeshoptDecoder } = await import('three/examples/jsm/libs/meshopt_decoder.module.js');
+            loader.setMeshoptDecoder(MeshoptDecoder);
+          }
+          if (extensions.includes('KHR_draco_mesh_compression')) {
+            const { DRACOLoader } = await import('three/examples/jsm/loaders/DRACOLoader.js');
+            let decoderPath = this._config.draco_decoder_path || DRACO_DECODER_PATH;
+            if (!decoderPath.endsWith('/')) decoderPath += '/';
+            const dracoLoader = new DRACOLoader().setDecoderPath(decoderPath);
+            draco = dracoLoader;
+            loader.setDRACOLoader(dracoLoader);
+          }
+          loader.parse(
+            buffer,
+            path,
+            (gltf) => {
+              done();
+              if (extensions.includes('KHR_mesh_quantization')) bakeNodeTransforms(gltf.scene);
+              this._onLoadedGLTF3DModel(gltf);
+            },
+            (error) => {
+              done();
+              onError(error);
+            },
+          );
+        } catch (error) {
+          done();
+          onError(error);
+        }
+      },
+      this._onloadedGLTF3DProgress.bind(this),
+      onError,
+    );
   }
 
   private _onLoadError(event: ErrorEvent): void {
@@ -1621,6 +1760,7 @@ export class Floor3dCard extends LitElement {
       this._renderer.shadowMap.enabled = false;
     }
 
+    this._expandObjectPatterns();
     this._add3dObjects();
 
     console.log('Object loaded end');
@@ -1689,6 +1829,9 @@ export class Floor3dCard extends LitElement {
 
       const initialLevel = typeof this._config.initialLevel === 'undefined' ? -1 : this._config.initialLevel;
       this._setVisibleLevel(initialLevel);
+
+      this._urlView = undefined; // a new model: the view of the page applies again
+      this._applyUrlView(false);
 
       this._resizeCanvas();
 
@@ -1927,6 +2070,11 @@ export class Floor3dCard extends LitElement {
     this._zoomSelect = select;
     const index = parseInt(select.value);
     if (isNaN(index)) return;
+    this._goToView(index);
+  }
+
+  // Shows a view (zoom area); -1 is the initial view. With animate the camera flies there.
+  private _goToView(index: number, animate = true): void {
     if (index == -1) {
       if (this._config.camera_position && this._config.camera_target) {
         this._flyTo(this._config.camera_position, this._config.camera_target);
@@ -1943,7 +2091,40 @@ export class Floor3dCard extends LitElement {
     if (zoom.level != null) {
       this._setVisibleLevel(zoom.level);
     }
-    this._flyTo(zoom.position, zoom.target);
+    if (animate) {
+      this._flyTo(zoom.position, zoom.target);
+      return;
+    }
+    this._stopCameraTweens();
+    this._camera.position.set(zoom.position.x, zoom.position.y, zoom.position.z);
+    this._controls.target.set(zoom.target.x, zoom.target.y, zoom.target.z);
+    this._controls.update();
+    this._updateNearPlane();
+    this._render();
+  }
+
+  // url_parameters.zoom names a query parameter of the page: with zoom: area, ?area=kitchen shows
+  // the view called kitchen (case, spaces, _ and - don't count), for example after a button that
+  // navigates to /dashboard/home?area=kitchen. The camera moves only when the parameter changes, so
+  // it isn't pulled back when a dialog opens or closes. Idea from MephistoJB/floor3d-card.
+  private _applyUrlView(animate: boolean): void {
+    const param = this._config.url_parameters && this._config.url_parameters.zoom;
+    if (!param || !this._modelready) return;
+    const value = new URLSearchParams(window.location.search).get(String(param).trim());
+    if (value === this._urlView) return;
+    this._urlView = value;
+    if (!value) return;
+    const key = (name: string): string =>
+      String(name)
+        .trim()
+        .toLowerCase()
+        .replace(/[\s_-]+/g, '_');
+    const index = this._zoom.findIndex((zoom) => zoom && key(zoom.name) === key(value));
+    if (index < 0) {
+      console.warn('floor3d-card: no view (zoom area) called <' + value + '>, from ?' + param + '=' + value);
+      return;
+    }
+    this._goToView(index, animate);
   }
 
   // Smooth camera move to a view: position and target together.
@@ -2302,6 +2483,8 @@ export class Floor3dCard extends LitElement {
         this._round_per_seconds = [];
         this._axis_to_rotate = [];
         this._rotation_state = [];
+        this._rotation_speed = [];
+        this._rotation_ramp = [];
         this._rotation_index = [];
         this._animated_transitions = [];
         this._pivot = [];
@@ -2326,6 +2509,8 @@ export class Floor3dCard extends LitElement {
                 this._round_per_seconds.push(entity.rotate.round_per_second);
                 this._axis_to_rotate.push(entity.rotate.axis);
                 this._rotation_state.push(0);
+                this._rotation_speed.push(0);
+                this._rotation_ramp.push(Math.max(0, this._num(entity.rotate.ramp, ROTATE_RAMP)));
                 this._rotation_index.push(i);
                 let bbox: THREE.Box3;
                 let hinge: any;
@@ -4491,12 +4676,20 @@ export class Floor3dCard extends LitElement {
     this._startOrStopAnimationLoop();
   }
 
+  // A fan turning, or still speeding up or slowing down.
+  private _rotating(): boolean {
+    return (
+      !!(this._rotation_state && this._rotation_state.some((s) => s !== 0)) ||
+      this._rotation_speed.some((s) => s !== 0)
+    );
+  }
+
   private _needsAnimationLoop() {
     // Showers, rotations, tweens (doors, covers, camera moves) and trackers still gliding or
     // fading (the model may not be loaded yet)
     return (
       !!(this._showers && this._showers.some((shower) => shower && shower.visible)) ||
-      !!(this._rotation_state && this._rotation_state.some((item) => item !== 0)) ||
+      this._rotating() ||
       TWEEN.getAll().length > 0 ||
       this._trackersNeedAnimation() ||
       this._alarmPulse
@@ -4532,26 +4725,32 @@ export class Floor3dCard extends LitElement {
     let rotateBy = clockDelta * Math.PI * 2;
 
     // What moves in this frame, read before TWEEN.update() removes the tweens that end now.
-    const rotating = !!(this._rotation_state && this._rotation_state.some((s) => s !== 0));
+    const rotating = this._rotating();
     const tweening = TWEEN.getAll().length > 0;
     const objectTweens = tweening && TWEEN.getAll().some((t) => !this._cameraTweens.includes(t));
     const showering = !!(this._showers && this._showers.some((shower) => shower && shower.visible));
 
-    (this._rotation_state || []).forEach((state, index) => {
-      if (state == 0) return;
+    (this._rotation_state || []).forEach((target, index) => {
+      // Spin up and coast down at a constant rate: full speed in rotate.ramp seconds (0: at once).
+      const ramp = this._rotation_ramp[index] || 0;
+      const current = this._rotation_speed[index] || 0;
+      const step = ramp > 0 ? clockDelta / ramp : Infinity;
+      const speed = Math.abs(target - current) <= step ? target : current + Math.sign(target - current) * step;
+      this._rotation_speed[index] = speed;
+      if (speed == 0) return;
 
       this._object_ids[this._rotation_index[index]].objects.forEach((element) => {
         let _obj = this._scene.getObjectByName(element.object_id);
         if (_obj) {
           switch (this._axis_to_rotate[index]) {
             case 'x':
-              _obj.rotation.x += this._round_per_seconds[index] * this._rotation_state[index] * rotateBy;
+              _obj.rotation.x += this._round_per_seconds[index] * speed * rotateBy;
               break;
             case 'y':
-              _obj.rotation.y += this._round_per_seconds[index] * this._rotation_state[index] * rotateBy;
+              _obj.rotation.y += this._round_per_seconds[index] * speed * rotateBy;
               break;
             case 'z':
-              _obj.rotation.z += this._round_per_seconds[index] * this._rotation_state[index] * rotateBy;
+              _obj.rotation.z += this._round_per_seconds[index] * speed * rotateBy;
               break;
           }
         }

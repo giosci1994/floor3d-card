@@ -53,6 +53,7 @@ const BLOCK_NUMBERS: { [block: string]: string[] } = {
   door: ['degrees', 'percentage'],
   room: ['transparency', 'elevation', 'width', 'height'],
   image: ['rotate', 'lumens', 'lighting_lumens'],
+  rotate: ['round_per_second', 'ramp'],
   tracker: ['sensor_rotation', 'scale', 'height', 'size'],
   info: ['size'],
   shower: ['velocity', 'count', 'size', 'height', 'width'],
@@ -185,5 +186,25 @@ export function cleanConfig<T>(config: T): T {
     if (c.rooms.length === 0) delete c.rooms;
   }
 
+  if (isObject(c.url_parameters)) {
+    removeEmpty(c.url_parameters);
+    if (Object.keys(c.url_parameters).length === 0) delete c.url_parameters;
+  }
+
   return c;
+}
+
+// An object id with * stands for all the objects of the model whose name matches it, as an object
+// group would: Lamp_* is Lamp_1, Lamp_2, Lamp_kitchen... null for a plain object id.
+export function objectPattern(id: string): RegExp | null {
+  if (typeof id !== 'string' || !id.includes('*')) return null;
+  const escaped = id.replace(/[.+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp('^' + escaped.replace(/\*/g, '.*') + '$');
+}
+
+// The names matching an object id: itself when it is a plain id, the matching names (in the order
+// of the model) when it has *.
+export function matchObjects(id: string, names: string[]): string[] {
+  const pattern = objectPattern(id);
+  return pattern ? names.filter((name) => pattern.test(name)) : [id];
 }

@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { test } from 'node:test';
-import { cleanConfig, normalizeConfig } from '../src/config.ts';
+import { cleanConfig, matchObjects, normalizeConfig, objectPattern } from '../src/config.ts';
 
 const example = JSON.parse(fs.readFileSync(new URL('./config.json', import.meta.url), 'utf8'));
 
@@ -72,6 +72,29 @@ test('numbers written as numbers; zero, entity ids and object ids kept', () => {
   assert.deepEqual(c.entities[0].light, { lumens: 700, decay: 0, color: '#fff' });
   assert.deepEqual(c.entities[1].door, { degrees: -50, percentage: 0, hinge: '12' });
   assert.equal(c.entities[1].object_id, '129');
+});
+
+test('rotate: round_per_second and ramp written as numbers', () => {
+  const c = cleanConfig({ entities: [{ entity: 'fan.a', type3d: 'rotate', rotate: { axis: 'y', round_per_second: '1', ramp: '0' } }] });
+  assert.deepEqual(c.entities[0].rotate, { axis: 'y', round_per_second: 1, ramp: 0 });
+});
+
+test('url_parameters: kept when set, left out when empty', () => {
+  assert.deepEqual(cleanConfig({ url_parameters: { zoom: 'area' }, entities: [] }).url_parameters, { zoom: 'area' });
+  assert.ok(!('url_parameters' in cleanConfig({ url_parameters: { zoom: '' }, entities: [] })));
+  assert.ok(!('url_parameters' in cleanConfig({ url_parameters: {}, entities: [] })));
+});
+
+test('object ids with *: the matching names of the model', () => {
+  const names = ['Lamp_1', 'Lamp_2', 'Lamp_kitchen', 'Lamps', 'Wall', 'a.b(1)', 'axb(1)'];
+  assert.deepEqual(matchObjects('Lamp_*', names), ['Lamp_1', 'Lamp_2', 'Lamp_kitchen']);
+  assert.deepEqual(matchObjects('*all', names), ['Wall']);
+  assert.deepEqual(matchObjects('a.b(*)', names), ['a.b(1)']); // . and ( ) are plain characters
+  assert.deepEqual(matchObjects('Lamp_9*', names), []);
+  assert.deepEqual(matchObjects('Wall', names), ['Wall']); // a plain id stays as it is
+  assert.deepEqual(matchObjects('Door', names), ['Door']);
+  assert.equal(objectPattern('Lamp_1'), null);
+  assert.equal(objectPattern('<group>'), null);
 });
 
 test('the given config is not modified', () => {
