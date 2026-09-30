@@ -8,8 +8,8 @@ A fork of [adizanni/floor3d-card](https://github.com/adizanni/floor3d-card) (MIT
 
 The floor3d-card in the HACS default repository is the original one. To use this fork, install it by hand:
 
-1. Copy **all** the `dist/*.js` files into a new folder of `config/www` named after the version, for example `config/www/floor3d-card-mod/v20260930a/`. There are two files: the card and its editor, which is loaded only when you edit the card.
-2. Add `/local/floor3d-card-mod/v20260930a/floor3d-card.js` as a resource of type **module** (Settings › Dashboards › Resources). If the original card is installed too, remove it first: both define `custom:floor3d-card`.
+1. Copy **all** the `dist/*.js` files into a new folder of `config/www` named after the version, for example `config/www/floor3d-card-mod/v20260930b/`. There are two files: the card and its editor, which is loaded only when you edit the card.
+2. Add `/local/floor3d-card-mod/v20260930b/floor3d-card.js` as a resource of type **module** (Settings › Dashboards › Resources). If the original card is installed too, remove it first: both define `custom:floor3d-card`.
 3. Reload the browser or the app. The version is shown at the top of the card editor and in the browser console.
 
 Use a **new folder for every version** instead of a `?v=` query on the resource. The card imports its editor as `./floor3d-card-editor-<hash>.js`, and with a `?v=` the browser would load the card twice (as two different modules). Home Assistant serves `/local` with a 31-day cache, and so may a proxy in front of it: a new folder is a new address. The folders of older versions can be deleted afterwards.
@@ -144,6 +144,7 @@ rooms:
 - One render per frame. Trackers are recalculated only when their entities change, the marker really disappears when the person leaves, and there are no debug logs.
 - `_zIndexChecker` is disabled: with the current Home Assistant interface it reported false "card covered" states on phones and blocked doors and trackers.
 - TV screen: previous textures are released. The TV light was doubled: a spot with the same name never received any intensity but still computed shadows.
+- Original bug: the light that follows the camera (torch) now lights what the camera looks at. Before, it always pointed at the centre of the model, so close views and zoom areas stayed dark.
 - Original bug: `color_mode` is no longer modified in the Home Assistant states. The colour of `color_temp` lights is compared by value (before, it was redrawn at every update).
 - Guards for `_ispanel`/`_issidebar` without `hui-view`, for configuration rows without objects and for the missing ambient light.
 - The editor accepts a tracker position only if it is a valid `[x, y, z]`; "Entity not found" is logged only once.

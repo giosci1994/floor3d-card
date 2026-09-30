@@ -652,13 +652,17 @@ export class Floor3dCard extends LitElement {
 
   private _render(): void {
     //render the model
-    if (this._torch) {
-      this._torch.position.copy(this._camera.position);
-      this._torch.rotation.copy(this._camera.rotation);
-      this._camera.getWorldDirection(this._torch.target.position);
-      //console.log(this._renderer.info);
-    }
+    if (this._torch) this._aimTorch();
     this._renderer.render(this._scene, this._camera);
+  }
+
+  // The torch lights what the camera looks at: its target is a point in front of the camera.
+  // (getWorldDirection alone gives a unit vector, i.e. a point next to the centre of the model,
+  // so the light always went from the camera towards the centre, whatever the view.)
+  private _aimTorch(): void {
+    this._torch.position.copy(this._camera.position);
+    this._camera.getWorldDirection(this._torch.target.position);
+    this._torch.target.position.add(this._camera.position);
   }
 
   // Objects of the model under a point of the screen (client coordinates), nearest first.
@@ -1307,9 +1311,7 @@ export class Floor3dCard extends LitElement {
 
     this._torch.castShadow = false;
 
-    this._torch.position.copy(this._camera.position);
-    this._torch.rotation.copy(this._camera.rotation);
-    this._camera.getWorldDirection(this._torch.target.position);
+    this._aimTorch();
 
     if (this._hass.states[this._config.globalLightPower]) {
       if (!Number.isNaN(this._hass.states[this._config.globalLightPower].state)) {
