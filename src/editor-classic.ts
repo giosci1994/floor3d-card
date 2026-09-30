@@ -396,7 +396,8 @@ export class Floor3dCardClassicEditor extends LitElement implements LovelaceCard
   // version and the kind of view (in a section view it is inside the shadow root of the section),
   // so the dialog that holds the editor is searched, shadow roots included.
   private _preview_card(): Element {
-    let dialog: Node = this;
+    // The editor itself is not the dialog: the search starts from its parent.
+    let dialog: Node = this.parentNode || (this.getRootNode() as ShadowRoot).host;
     while (dialog && (dialog as Element).localName !== 'hui-dialog-edit-card') {
       dialog = dialog.parentNode || (dialog as ShadowRoot).host;
     }

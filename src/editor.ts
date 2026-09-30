@@ -161,7 +161,7 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
   private _held?: string;
   private _internal?: any;
   private _classic?: any;
-  private _keys = new WeakMap<object, string>();
+  private _keys = new WeakMap<Record<string, unknown>, string>();
   private _objectlist?: string;
   private _previewListener = (ev: Event): void => this._onPreview((ev as CustomEvent).detail);
 

@@ -31,6 +31,7 @@ npx --yes yarn@1.22.22 install --frozen-lockfile
 npm run build        # = rollup -c rollup.config.mjs
 npm start            # rebuilds on every change and serves dist/ on port 5000
 npm test             # tests of src/config.ts (Node 22 or newer)
+npm run lint         # ESLint on src/*.ts
 ```
 
 `CARD_VERSION` in `src/const.ts` is shown in the card editor and in the console: keep it equal to `version` in `package.json` and to the tag of the release (see [Publishing a release](#publishing-a-release)). For test builds between releases add a suffix, for example `v2.0.1-dev.1`.
@@ -46,7 +47,7 @@ npm test             # tests of src/config.ts (Node 22 or newer)
 2. On GitHub, **Releases › Draft a new release**: a new tag named after the version (`v2.0.1`), a description of the changes, **Publish release**.
 3. The Release workflow builds the card and attaches the `.js` files to the release. HACS downloads them from there, and shows the update when it next checks the repository (**Update information** in the menu of the repository checks at once).
 
-The Validate workflow runs the HACS checks at every push and every night; the Build workflow checks that the card builds and runs `npm test`.
+The Validate workflow runs the HACS checks at every push and every night; the Build workflow runs `npm run lint`, builds the card and runs `npm test`.
 
 ## New features
 

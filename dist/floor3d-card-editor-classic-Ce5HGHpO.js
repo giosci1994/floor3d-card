@@ -658,7 +658,7 @@ const ei=c`.mdc-floating-label{-moz-osx-font-smoothing:grayscale;-webkit-font-sm
       ${this._createModelElement()} ${this._createAppearanceElement()}
       ${e?S` ${this._createOverlayElement()} `:""} ${this._createEntitiesElement()}
       ${this._createObjectGroupsElement()} ${this._createZoomAreasElement()}
-    `}_preview_card(){let e=this;for(;e&&"hui-dialog-edit-card"!==e.localName;)e=e.parentNode||e.host;const t=e=>{for(const i of Array.from(e.children)){if("floor3d-card"===i.localName)return i;const e=t(i)||i.shadowRoot&&t(i.shadowRoot);if(e)return e}return null},i=e&&e.shadowRoot;return i?t(i):null}_config_changed(){console.log("Config change start");let e=this._preview_card();e&&e.rerender()}_createObjectGroupsValues(){if(!this.hass||!this._config)return[S``];const e=this._options.object_groups,t=[];for(const i of this._configObjectArray){const o=this._configObjectArray.indexOf(i);t.push(S`
+    `}_preview_card(){let e=this.parentNode||this.getRootNode().host;for(;e&&"hui-dialog-edit-card"!==e.localName;)e=e.parentNode||e.host;const t=e=>{for(const i of Array.from(e.children)){if("floor3d-card"===i.localName)return i;const e=t(i)||i.shadowRoot&&t(i.shadowRoot);if(e)return e}return null},i=e&&e.shadowRoot;return i?t(i):null}_config_changed(){console.log("Config change start");let e=this._preview_card();e&&e.rerender()}_createObjectGroupsValues(){if(!this.hass||!this._config)return[S``];const e=this._options.object_groups,t=[];for(const i of this._configObjectArray){const o=this._configObjectArray.indexOf(i);t.push(S`
         <div class="sub-category" style="display: flex; flex-direction: row; align-items: center;">
           <div style="display: flex; align-items: center; flex-direction: column;">
             <div
