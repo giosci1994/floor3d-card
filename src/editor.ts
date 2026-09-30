@@ -1,3380 +1,926 @@
-/* eslint-disable @typescript-eslint/explicit-module-boundary-types */
-/* eslint-disable @typescript-eslint/ban-types */
-import { LitElement, CSSResultGroup, css } from 'lit';
-import { property, customElement, state } from 'lit/decorators.js';
-import { TemplateResult, html } from 'lit';
-import { HomeAssistant, fireEvent, LovelaceCardEditor } from 'custom-card-helpers';
+/* eslint-disable @typescript-eslint/no-explicit-any */
+// Card editor built on the components of Home Assistant (ha-form and its selectors, ha-sortable,
+// ha-expansion-panel), like the editors of the built-in cards. When Home Assistant doesn't provide
+// them, it shows the editor of version 2.1 (editor-classic.ts) instead.
+//
+// The config goes through normalizeConfig() when it comes in and cleanConfig() when it goes out
+// (config.ts). Home Assistant passes back every config the editor sends; the editor keeps its own
+// copy, which holds the rows still empty (left out of the YAML), and goes on from it.
+//
+// The editor talks to the card shown next to it (the preview) through window events: it asks for
+// the names of the objects of the model and for the current view, and turns on picking objects with
+// a tap and highlighting them (see _onPreview() and the "Editor" part of floor3d-card.ts).
+import { LitElement, html, css, nothing, TemplateResult, CSSResultGroup } from 'lit';
+import { customElement, property, state } from 'lit/decorators.js';
+import { repeat } from 'lit/directives/repeat.js';
+import { fireEvent, HomeAssistant, LovelaceCardEditor } from 'custom-card-helpers';
 import {
-  createEditorConfigArray,
-  arrayMove,
-  createEditorObjectGroupConfigArray,
-  createEditorZoomConfigArray,
-} from './helpers';
-import { loadHaComponents } from './ensureComponents';
+  mdiArrowLeft,
+  mdiCameraOutline,
+  mdiCursorDefaultClickOutline,
+  mdiDelete,
+  mdiDragHorizontalVariant,
+  mdiPencil,
+  mdiPlus,
+  mdiRefresh,
+} from '@mdi/js';
 import { cleanConfig, normalizeConfig } from './config';
-import { Floor3dCardConfig } from './types';
-import { CARD_VERSION } from './const';
-import '../elements/menu';
-import '../elements/formfield';
-import '../elements/select';
-import '../elements/textfield';
+import { CARD_VERSION, EDITOR_EVENT, PREVIEW_EVENT } from './const';
+import {
+  ARRAY_VECTORS,
+  BLOCK_SWITCHES,
+  HEADINGS,
+  SECTIONS,
+  SWITCHES,
+  TYPES,
+  Schema,
+  colorConditionSchema,
+  computeHelper,
+  computeLabel,
+  entityActionsSchema,
+  entitySchema,
+  groupSchema,
+  objectField,
+  objectListField,
+  roomSchema,
+  typeSchema,
+  vector,
+  zoomObjectSchema,
+  zoomSchema,
+} from './editor-schema';
+
+type ListKey = 'entities' | 'object_groups' | 'zoom_areas' | 'rooms';
+type View = { list?: ListKey; index?: number };
+// Where a picked object goes: a field of the config (path of keys), or the objects of a group.
+type PickTarget = { path: (string | number)[]; add?: boolean };
+
+
+const isObject = (value: any): boolean => value !== null && typeof value === 'object' && !Array.isArray(value);
+const copy = <T>(value: T): T => JSON.parse(JSON.stringify(value ?? null));
+
+// Top-level switches: 'yes'/'no' in the config, true/false in the form.
+function switchesToForm(object: any, switches: { [key: string]: 'yes' | 'no' }): any {
+  const data = { ...object };
+  Object.entries(switches).forEach(([key, fallback]) => {
+    const value = data[key] ?? fallback;
+    data[key] = value === true || value === 'yes';
+  });
+  return data;
+}
+
+function switchesFromForm(data: any, original: any, switches: { [key: string]: 'yes' | 'no' }): any {
+  const object = { ...data };
+  Object.entries(switches).forEach(([key, fallback]) => {
+    if (typeof object[key] !== 'boolean') return;
+    const value = object[key] ? 'yes' : 'no';
+    // Left out while it is the default and wasn't written before.
+    if (value === fallback && (original || {})[key] === undefined) delete object[key];
+    else object[key] = value;
+  });
+  return object;
+}
+
+// Values cleared in a form: removed from the config.
+function dropEmpty(object: any): any {
+  Object.keys(object).forEach((key) => {
+    if (object[key] === undefined || object[key] === '' || object[key] === null) delete object[key];
+  });
+  return object;
+}
+
+// An entity in the form: yes/no switches of its options block as toggles, [x, y, z] lists as vectors.
+function entityToForm(entity: any): any {
+  const data = { ...entity };
+  Object.entries(BLOCK_SWITCHES).forEach(([block, switches]) => {
+    if (isObject(data[block]) || data.type3d === block) data[block] = switchesToForm(data[block] || {}, switches);
+  });
+  Object.entries(ARRAY_VECTORS).forEach(([block, keys]) => {
+    if (!isObject(data[block])) return;
+    data[block] = { ...data[block] };
+    keys.forEach((key) => {
+      const value = data[block][key];
+      if (Array.isArray(value)) data[block][key] = { x: value[0], y: value[1], z: value[2] };
+    });
+  });
+  return data;
+}
+
+function entityFromForm(data: any, original: any): any {
+  const entity = dropEmpty({ ...data });
+  Object.entries(BLOCK_SWITCHES).forEach(([block, switches]) => {
+    if (isObject(entity[block])) entity[block] = switchesFromForm(entity[block], (original || {})[block], switches);
+  });
+  Object.entries(ARRAY_VECTORS).forEach(([block, keys]) => {
+    if (!isObject(entity[block])) return;
+    keys.forEach((key) => {
+      const value = entity[block][key];
+      if (!isObject(value)) return;
+      const list = [value.x, value.y, value.z];
+      // Written as [x, y, z] once complete; while being typed it stays { x, y, z }.
+      if (list.every((n) => typeof n === 'number' && isFinite(n))) entity[block][key] = list;
+      else if (list.every((n) => n === undefined || n === null)) delete entity[block][key];
+    });
+  });
+  Object.keys(entity).forEach((key) => {
+    if (isObject(entity[key])) dropEmpty(entity[key]);
+  });
+  return entity;
+}
+
+// Components of Home Assistant used by the editor. They are defined once any built-in editor with
+// forms has been loaded: in the card dialog they usually are; otherwise the editors of the entities
+// and tile cards load them.
+async function loadHaComponents(): Promise<boolean> {
+  if (customElements.get('ha-form') && customElements.get('ha-expansion-panel')) return true;
+  try {
+    const helpers = await (window as any).loadCardHelpers();
+    for (const config of [{ type: 'entities', entities: [] }, { type: 'tile', entity: 'sun.sun' }]) {
+      const card = await helpers.createCardElement(config);
+      await (card.constructor as any).getConfigElement?.();
+    }
+  } catch (e) {
+    // Home Assistant without loadCardHelpers: the classic editor is used.
+  }
+  const defined = await Promise.race([
+    customElements.whenDefined('ha-form').then(() => true),
+    new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 5000)),
+  ]);
+  return defined && !!customElements.get('ha-expansion-panel');
+}
 
 @customElement('floor3d-card-editor')
 export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor {
   @property({ attribute: false }) public hass?: HomeAssistant;
-  @state() private _config?: Floor3dCardConfig;
-  @state() private _toggle?: boolean;
-  @state() private _helpers?: any;
-  private _configArray: any[] = [];
-  private _configObjectArray: any[] = [];
-  private _configZoomArray: any[] = [];
-  private _entityOptionsArray: object[] = [];
-  private _entityOptionsGroupArray: object[] = [];
-  private _entityOptionsZoomArray: object[] = [];
-  private _options: any;
-  private _initialized = false;
-  private _objects: any;
-  private _entity_ids: string[];
-  private _visible: any[];
-  // The config Home Assistant holds (the last one received or sent), and the editor's own copy of
-  // the last one sent (see setConfig()).
+  @state() private _config?: any;
+  @state() private _view: View = {};
+  @state() private _expanded: string[] = [];
+  @state() private _mode: 'loading' | 'ready' | 'classic' = 'loading';
+  @state() private _modelObjects: string[] = [];
+  @state() private _listObjects: string[] = [];
+  @state() private _picking?: PickTarget;
   private _held?: string;
-  private _internal?: Floor3dCardConfig;
+  private _internal?: any;
+  private _classic?: any;
+  private _keys = new WeakMap<object, string>();
+  private _objectlist?: string;
+  private _previewListener = (ev: Event): void => this._onPreview((ev as CustomEvent).detail);
 
-  // eslint-disable-next-line @typescript-eslint/explicit-module-boundary-types
-
-  connectedCallback() {
+  public connectedCallback(): void {
     super.connectedCallback();
-    void loadHaComponents();
+    window.addEventListener(PREVIEW_EVENT, this._previewListener);
+    this._toPreview({ request: 'objects' });
+    if (this._mode === 'loading') {
+      loadHaComponents().then((ready) => {
+        this._mode = ready ? 'ready' : 'classic';
+        if (!ready) this._showClassic();
+      });
+    }
   }
 
-  public setConfig(config: Floor3dCardConfig): void {
-    console.log('Start editor config');
+  public disconnectedCallback(): void {
+    super.disconnectedCallback();
+    window.removeEventListener(PREVIEW_EVENT, this._previewListener);
+    this._toPreview({ pick: false, highlight: [] });
+  }
 
-    // Home Assistant passes back every config the editor sends. The YAML leaves out the rows still
-    // empty (a new entity, group or zoom area), so the editor goes on from its own copy, which keeps
-    // them. Any other config (the YAML edited by hand) is read as it is, short forms included.
+  public setConfig(config: any): void {
     const json = JSON.stringify(config);
     const own = this._internal && json === this._held;
     this._held = json;
-    config = normalizeConfig(own ? this._internal : config);
+    const normalized: any = normalizeConfig(own ? this._internal : config);
+    if (!Array.isArray(normalized.entities)) normalized.entities = [];
+    if (!this._config) this._expanded = normalized.entities.length ? ['entities'] : ['model'];
+    this._config = normalized;
+    if (this._classic) this._classic.setConfig(config);
+    this._loadObjectList();
+  }
 
-    this._config = { ...config };
+  // --- Config changes -------------------------------------------------------------------------
 
-    if (!config.entities) {
-      this._config.entities = [{ entity: '' }];
+  private _update(config: any): void {
+    this._config = config;
+    this._internal = normalizeConfig(config);
+    const clean = cleanConfig(config);
+    const json = JSON.stringify(clean);
+    if (json === this._held) return; // same YAML (a row still empty was added): nothing to send
+    this._held = json;
+    fireEvent(this, 'config-changed', { config: clean });
+  }
+
+  private _setTop(data: any): void {
+    this._update(dropEmpty(switchesFromForm(data, this._config, SWITCHES)));
+  }
+
+  private _list(key: ListKey): any[] {
+    return Array.isArray(this._config[key]) ? this._config[key] : [];
+  }
+
+  private _setList(key: ListKey, list: any[]): void {
+    this._update({ ...this._config, [key]: list });
+  }
+
+  private _setItem(key: ListKey, index: number, item: any): void {
+    const list = this._list(key).slice();
+    list[index] = item;
+    this._setList(key, list);
+  }
+
+  // A stable key for each row, so that dragging and editing keep the row elements.
+  private _key(item: any): string {
+    if (!isObject(item)) return String(item);
+    if (!this._keys.has(item)) this._keys.set(item, Math.random().toString(36).slice(2));
+    return this._keys.get(item) as string;
+  }
+
+  // --- Preview (the card next to the editor) ------------------------------------------------------
+
+  private _toPreview(detail: any): void {
+    window.dispatchEvent(new CustomEvent(EDITOR_EVENT, { detail }));
+  }
+
+  private _onPreview(detail: any): void {
+    if (!detail) return;
+    if (detail.objects) {
+      this._modelObjects = detail.objects;
+      // The preview is created again at every change of the config: it gets the state again.
+      if (this._picking) this._toPreview({ pick: true });
+      this._highlightCurrent();
     }
-
-    if (!config.object_groups) {
-      this._config.object_groups = [{ object_group: '' }];
+    if (detail.picked && this._picking) this._onPicked(detail.picked);
+    if (detail.camera && this._cameraTarget) {
+      const target = this._cameraTarget;
+      this._cameraTarget = undefined;
+      this._applyCamera(target, detail.camera);
     }
+  }
 
-    if (!config.zoom_areas) {
-      this._config.zoom_areas = [{ zoom: '' }];
-    }
+  private _cameraTarget?: { list?: ListKey; index?: number };
 
-    this._configArray = createEditorConfigArray(this._config);
-    this._configObjectArray = createEditorObjectGroupConfigArray(this._config);
-    this._configZoomArray = createEditorZoomConfigArray(this._config);
+  private _useCurrentView(list?: ListKey, index?: number): void {
+    this._cameraTarget = { list, index };
+    this._toPreview({ request: 'camera' });
+  }
 
-    for (const entityConfig of this._configArray) {
-      if (entityConfig.light) {
-        if (Object.entries(entityConfig.light).length === 0) {
-          delete entityConfig.light;
-        }
-      }
-      if (entityConfig.hide) {
-        if (Object.entries(entityConfig.hide).length === 0) {
-          delete entityConfig.hide;
-        }
-      }
-      if (entityConfig.show) {
-        if (Object.entries(entityConfig.show).length === 0) {
-          delete entityConfig.show;
-        }
-      }
-      if (entityConfig.room) {
-        if (Object.entries(entityConfig.room).length === 0) {
-          delete entityConfig.room;
-        }
-      }
-      if (entityConfig.image) {
-        if (Object.entries(entityConfig.image).length === 0) {
-          delete entityConfig.image;
-        }
-      }
-    }
-    this._config.object_groups = this._configObjectArray;
-    this._config.entities = this._configArray;
-    this._config.zoom_areas = this._configZoomArray;
-
-    //console.log(JSON.stringify(this._config));
-
-    const typeOptions = {
-      icon: 'book-variant',
-      name: 'Type and Object',
-      secondary: 'Type and Object settings.',
-      show: false,
-    };
-
-    const appearanceOptions = {
-      icon: 'palette',
-      name: 'Appearance',
-      secondary: 'Appearance settings.',
-      show: false,
-    };
-
-    const overlayOptions = {
-      icon: 'checkbox-multiple-blank-outline',
-      name: 'Overlay',
-      secondary: 'Overlay settings.',
-      show: false,
-    };
-
-    const colorOptions = {
-      icon: 'format-color-fill',
-      name: 'Color',
-      secondary: 'Color condition.',
-      show: false,
-      visible: false,
-    };
-
-    this.hass.resources;
-    const hideOptions = {
-      icon: 'eye-off',
-      name: 'Hide',
-      secondary: 'Hide options.',
-      show: false,
-      visible: false,
-    };
-
-    const showOptions = {
-      icon: 'eye',
-      name: 'Show',
-      secondary: 'Show options.',
-      show: false,
-      visible: false,
-    };
-
-    const rotateOptions = {
-      icon: 'fan',
-      name: 'Rotate',
-      secondary: 'Rotate options.',
-      show: false,
-      visible: false,
-    };
-
-    const lightOptions = {
-      icon: 'lightbulb-on-outline',
-      name: 'Light',
-      secondary: 'Light options',
-      show: false,
-      visible: false,
-    };
-
-    const roomOptions = {
-      icon: 'floor-plan',
-      name: 'Room',
-      secondary: 'Room options',
-      show: false,
-      visible: false,
-    };
-
-    const zoomOptions = {
-      icon: 'magnify-plus',
-      name: 'Zoom Area',
-      secondary: 'Zoom Area options',
-      show: false,
-      visible: false,
-    };
-
-    const textOptions = {
-      icon: 'format-text',
-      name: 'Text',
-      secondary: 'Text options.',
-      show: false,
-      visible: false,
-    };
-
-    const doorOptions = {
-      icon: 'door',
-      name: 'Door',
-      secondary: 'Door options.',
-      show: false,
-      visible: false,
-    };
-
-    const coverOptions = {
-      icon: 'window-shutter',
-      name: 'Cover',
-      secondary: 'Cover options.',
-      show: false,
-      visible: false,
-    };
-
-    const gestureOptions = {
-      icon: 'gesture-tap',
-      name: 'Gesture',
-      secondary: 'Gesture options.',
-      show: false,
-      visible: false,
-    };
-
-    const imageOptions = {
-      icon: 'image',
-      name: 'Image',
-      secondary: 'Image options.',
-      show: false,
-      visible: false,
-    };
-
-    const objectGroupOptions = {
-      icon: 'cube-unfolded',
-      name: 'Objects',
-      secondary: 'Objects.',
-      show: false,
-      visible: false,
-    };
-
-    const actionsOptions = {
-      icon: 'gesture-tap',
-      name: 'Actions',
-      secondary: 'Coming soon... Use code editor for Actions.',
-      show: false,
-    };
-
-    const zoomAreaOptions = {
-      show: false,
-      options: {
-        zoom: { ...zoomOptions },
+  private _applyCamera(target: { list?: ListKey; index?: number }, camera: any): void {
+    const round = (v: any): any => ({ x: +v.x.toFixed(2), y: +v.y.toFixed(2), z: +v.z.toFixed(2) });
+    const values = {
+      camera_position: round(camera.camera_position),
+      camera_target: round(camera.camera_target),
+      camera_rotate: {
+        x: +camera.camera_rotate.x.toFixed(4),
+        y: +camera.camera_rotate.y.toFixed(4),
+        z: +camera.camera_rotate.z.toFixed(4),
       },
     };
-
-    const entityOptions = {
-      show: false,
-      options: {
-        threed: { ...typeOptions },
-        light: { ...lightOptions },
-        room: { ...roomOptions },
-        color: { ...colorOptions },
-        hide: { ...hideOptions },
-        show: { ...showOptions },
-        text: { ...textOptions },
-        door: { ...doorOptions },
-        cover: { ...coverOptions },
-        rotate: { ...rotateOptions },
-        gesture: { ...gestureOptions },
-        image: { ...imageOptions },
-      },
-    };
-
-    for (const objectconfig of this._configObjectArray) {
-      this._entityOptionsGroupArray.push({ ...objectGroupOptions });
+    if (target.list) {
+      const item = { ...this._list(target.list)[target.index as number], ...values };
+      this._setItem(target.list, target.index as number, item);
+    } else {
+      this._update({ ...this._config, ...values });
     }
-
-    for (const config of this._configArray) {
-      this._entityOptionsArray.push({ ...entityOptions });
-    }
-
-    for (const zoomconfig of this._configZoomArray) {
-      this._entityOptionsZoomArray.push({ ...zoomAreaOptions });
-    }
-
-    if (!this._options) {
-      this._options = {
-        object_groups: {
-          icon: 'group',
-          name: 'Object Groups',
-          secondary: 'Manage card Object Groups.',
-          show: false,
-          options: {
-            object_groups: this._entityOptionsGroupArray,
-          },
-        },
-        zoom_areas: {
-          icon: 'magnify-expand',
-          name: 'Zoom Areas',
-          secondary: 'Manage card Zoom Areas.',
-          show: false,
-          options: {
-            zoom_areas: this._entityOptionsZoomArray,
-          },
-        },
-        entities: {
-          icon: 'tune',
-          name: 'Entities',
-          secondary: 'Manage card entities.',
-          show: false,
-          options: {
-            entities: this._entityOptionsArray,
-          },
-        },
-        model: {
-          icon: 'video-3d',
-          name: '3D Model',
-          secondary: 'Reference your Waterfront 3D model',
-          show: false,
-        },
-        appearance: {
-          icon: 'palette',
-          name: 'Appearance',
-          secondary: 'Customize the global appearance and behavior settings',
-          show: false,
-        },
-        overlay: {
-          icon: 'checkbox-multiple-blank-outline',
-          name: 'Overlay',
-          secondary: 'Customize the overlay appearance and behavior settings',
-          show: false,
-        },
-      };
-    }
-
-    if (this._config.objectlist && !this._objects) {
-      this._fetchObjectList();
-    }
-
-    console.log('End editor config');
-
-    //fireEvent(this, 'config-changed', { config: this._config });
   }
 
-  get _show_warning(): boolean {
-    return this._config?.show_warning || false;
+  private _startPick(target: PickTarget): void {
+    const same = this._picking && JSON.stringify(this._picking) === JSON.stringify(target);
+    this._picking = same ? undefined : target;
+    this._toPreview({ pick: !same });
   }
 
-  get _show_error(): boolean {
-    return this._config?.show_error || false;
-  }
-
-  private _fetchObjectList(): void {
-    let path = this._config.path;
-    const lastChar = path.substr(-1);
-    if (lastChar != '/') {
-      path = path + '/';
+  private _onPicked(name: string): void {
+    const target = this._picking as PickTarget;
+    if (target.add) {
+      // Objects of a group: a tap adds the object, a second tap takes it out.
+      const [list, index] = target.path as [ListKey, number];
+      const group = { ...this._list(list)[index] };
+      const objects = (group.objects || []).slice();
+      const at = objects.findIndex((o) => (isObject(o) ? o.object_id : o) === name);
+      if (at >= 0) objects.splice(at, 1);
+      else objects.push({ object_id: name });
+      this._setItem(list, index, { ...group, objects });
+    } else {
+      this._picking = undefined;
+      this._toPreview({ pick: false });
+      this._setPath(target.path, name);
     }
-    fetch(path + this._config.objectlist)
-      .then(function (response): any {
-        if (!response.ok) {
-          throw Error(response.statusText);
-        }
-        return response.json();
+  }
+
+  // Sets config[path[0]][path[1]]... = value.
+  private _setPath(path: (string | number)[], value: any): void {
+    const config = copy(this._config);
+    let object = config;
+    path.slice(0, -1).forEach((key) => {
+      if (object[key] === undefined) object[key] = {};
+      object = object[key];
+    });
+    object[path[path.length - 1]] = value;
+    this._update(config);
+  }
+
+  // The objects shown in the preview while a row is under the mouse or an item is edited.
+  private _highlight(ids: string[]): void {
+    this._toPreview({ highlight: ids.filter((id) => typeof id === 'string' && id !== '') });
+  }
+
+  private _highlightCurrent(): void {
+    const { list, index } = this._view;
+    this._highlight(list && index !== undefined ? this._itemObjects(list, this._list(list)[index]) : []);
+  }
+
+  private _itemObjects(list: ListKey, item: any): string[] {
+    if (!isObject(item)) return [];
+    if (list === 'object_groups') return (item.objects || []).map((o) => (isObject(o) ? o.object_id : o));
+    return [item.object_id];
+  }
+
+  // Objects offered in the object menus: groups first, then the objects of the model.
+  private _objectOptions(): string[] {
+    const groups = this._list('object_groups')
+      .filter((g) => isObject(g) && g.object_group)
+      .map((g) => '<' + g.object_group + '>');
+    const names = Array.from(new Set([...this._modelObjects, ...this._listObjects])).sort((a, b) =>
+      a.toLowerCase().localeCompare(b.toLowerCase()),
+    );
+    return [...groups, ...names];
+  }
+
+  // objectlist: a JSON file next to the model whose keys are the names of the objects.
+  private _loadObjectList(): void {
+    const { path, objectlist } = this._config || {};
+    const url = objectlist && path ? path.replace(/\/?$/, '/') + objectlist : undefined;
+    if (url === this._objectlist) return;
+    this._objectlist = url;
+    this._listObjects = [];
+    if (!url) return;
+    fetch(url)
+      .then((response) => (response.ok ? response.json() : {}))
+      .then((json) => {
+        if (this._objectlist === url) this._listObjects = Object.keys(json || {});
       })
-      .then(this._onobjectloaded.bind(this));
+      .catch(() => undefined);
   }
 
-  private _onobjectloaded(json: any): void {
-    this._objects = Object.keys(json).sort(function (a, b) {
-      return a.toLowerCase().localeCompare(b.toLowerCase());
+  // --- Classic editor ---------------------------------------------------------------------------
+
+  private async _showClassic(): Promise<void> {
+    await import('./editor-classic');
+    const classic: any = document.createElement('floor3d-card-editor-classic');
+    classic.hass = this.hass;
+    if (this._config) classic.setConfig(this._config);
+    this._classic = classic;
+    this.requestUpdate();
+  }
+
+  protected updated(changed: Map<string, any>): void {
+    if (changed.has('hass') && this._classic) this._classic.hass = this.hass;
+    if (changed.has('_view')) this._highlightCurrent();
+  }
+
+  // --- Rendering ---------------------------------------------------------------------------------
+
+  protected render(): TemplateResult | typeof nothing {
+    if (!this.hass || !this._config) return nothing;
+    if (this._mode === 'classic') return html`${this._classic || nothing}`;
+    if (this._mode === 'loading') return html`<div class="loading">Loading…</div>`;
+    const { list, index } = this._view;
+    if (list && index !== undefined && this._list(list)[index] !== undefined) {
+      return this._renderItemEditor(list, index);
+    }
+    return html`
+      <div class="version">
+        floor3d-card ${CARD_VERSION}
+        <ha-icon-button .label=${'Reload the preview'} .path=${mdiRefresh} @click=${() => this._toPreview({ request: 'reload' })}></ha-icon-button>
+      </div>
+      ${SECTIONS.map((section) => this._renderPanel(section.key, section.title, section.icon, () =>
+        this._renderContent(section.content(this._config), this._config, (data) => this._setTop(data), true),
+      ))}
+      ${this._renderPanel('entities', `Entities (${this._list('entities').length})`, 'mdi:format-list-bulleted', () =>
+        this._renderList('entities', 'Add entity', { entity: '' }),
+      )}
+      ${this._renderPanel('object_groups', `Object groups (${this._list('object_groups').length})`, 'mdi:group', () =>
+        this._renderList('object_groups', 'Add group', { object_group: '', objects: [] }),
+      )}
+      ${this._renderPanel('zoom_areas', `Views (${this._list('zoom_areas').length})`, 'mdi:magnify-expand', () =>
+        this._renderList('zoom_areas', 'Add view', { zoom: '' }),
+      )}
+    `;
+  }
+
+  private _renderPanel(key: string, title: string, icon: string, content: () => TemplateResult | TemplateResult[]): TemplateResult {
+    const expanded = this._expanded.includes(key);
+    return html`
+      <ha-expansion-panel
+        outlined
+        .header=${title}
+        .expanded=${expanded}
+        @expanded-changed=${(ev: CustomEvent) => {
+          const now = ev.detail.expanded;
+          if (now !== this._expanded.includes(key)) {
+            this._expanded = now ? [...this._expanded, key] : this._expanded.filter((k) => k !== key);
+          }
+        }}
+      >
+        <ha-icon slot="leading-icon" .icon=${icon}></ha-icon>
+        <div class="panel">${expanded ? content() : nothing}</div>
+      </ha-expansion-panel>
+    `;
+  }
+
+  // Forms, headings and the parts that aren't plain fields, in the order of the schema.
+  private _renderContent(
+    items: (Schema[] | string)[],
+    data: any,
+    onChange: (data: any) => void,
+    top = false,
+    list?: ListKey,
+    index?: number,
+  ): TemplateResult[] {
+    return items.map((item) => {
+      if (typeof item !== 'string') {
+        return this._form(item, top ? switchesToForm(data, SWITCHES) : entityToForm(data), (value) =>
+          onChange(top ? value : entityFromForm(value, data)),
+        );
+      }
+      switch (item) {
+        case 'sun_roof':
+          return this._form(
+            [objectListField('sun_roof', this._objectOptions())],
+            { sun_roof: Array.isArray(data.sun_roof) ? data.sun_roof : [] },
+            (value) => onChange({ ...switchesToForm(data, SWITCHES), sun_roof: value.sun_roof?.length ? value.sun_roof : undefined }),
+            'Indoor floors: roof for the sun',
+          );
+        case 'rooms':
+          return html`
+            <div class="heading">Rooms</div>
+            ${this._renderList('rooms', 'Add room', { name: '' })}
+          `;
+        case 'colorcondition':
+          return this._renderColorConditions(list as ListKey, index as number, data);
+        default:
+          if (item in HEADINGS) {
+            // A vector inside the options block: block.key
+            const [block, key] = item.split('.');
+            return this._form(
+              [{ name: block, type: 'grid', schema: [vector(key)] }],
+              entityToForm(data),
+              (value) => onChange(entityFromForm(value, data)),
+              HEADINGS[item],
+            );
+          }
+          return html`<div class="heading">${item}</div>`;
+      }
     });
   }
 
-  protected shouldUpdate(): boolean {
-    console.log('Should Update start');
-    if (!this._initialized) {
-      this._initialize();
-    }
-    return true;
-  }
-
-  protected render(): TemplateResult | void {
-    const show = this._config.overlay ? this._config.overlay == 'yes' : false;
+  private _form(schema: Schema[], data: any, onChange: (data: any) => void, heading?: string): TemplateResult {
+    // A vector alone gets its name above it (ha-form shows no label for a grid).
+    const title = heading ?? (schema.length === 1 && HEADINGS[schema[0].name] ? HEADINGS[schema[0].name] : undefined);
     return html`
-      <div class="sub-category" style="display: flex; flex-direction: row; align-items: center;">
-        <ha-icon @click=${this._config_changed} icon="mdi:refresh" class="ha-icon-large"> </ha-icon>
-        <span class="version">floor3d-card ${CARD_VERSION}</span>
-      </div>
-      ${this._createModelElement()} ${this._createAppearanceElement()}
-      ${show ? html` ${this._createOverlayElement()} ` : ``} ${this._createEntitiesElement()}
-      ${this._createObjectGroupsElement()} ${this._createZoomAreasElement()}
+      ${title ? html`<div class="heading">${title}</div>` : nothing}
+      <ha-form
+        .hass=${this.hass}
+        .data=${data}
+        .schema=${schema}
+        .computeLabel=${computeLabel}
+        .computeHelper=${computeHelper}
+        @value-changed=${(ev: CustomEvent) => {
+          ev.stopPropagation();
+          onChange(ev.detail.value);
+        }}
+      ></ha-form>
     `;
   }
 
-  // The card shown next to the editor. Its place in the dialog changes with the Home Assistant
-  // version and the kind of view (in a section view it is inside the shadow root of the section),
-  // so the dialog that holds the editor is searched, shadow roots included.
-  private _preview_card(): Element {
-    let dialog: Node = this;
-    while (dialog && (dialog as Element).localName !== 'hui-dialog-edit-card') {
-      dialog = dialog.parentNode || (dialog as ShadowRoot).host;
+  // --- Lists ---------------------------------------------------------------------------------------
+
+  // An object id that the model doesn't have (a group: that the card doesn't define).
+  private _missing(id: string): boolean {
+    if (!id) return false;
+    const group = /^<(.*)>$/.exec(id);
+    if (group) return !this._list('object_groups').some((g) => isObject(g) && g.object_group === group[1]);
+    const known = [...this._modelObjects, ...this._listObjects];
+    return known.length > 0 && !known.includes(id);
+  }
+
+  private _describe(list: ListKey, item: any): { icon: string; primary: string; secondary: string; warning?: boolean } {
+    if (list === 'entities') {
+      const entity = isObject(item) ? item : { entity: item };
+      const type = TYPES.find(([value]) => value === entity.type3d);
+      const state = entity.entity && this.hass?.states[entity.entity];
+      const name = state ? state.attributes.friendly_name || entity.entity : entity.entity || 'No entity';
+      const missing = this._missing(entity.object_id);
+      const parts = [type ? type[1] : 'No type', entity.object_id ? entity.object_id + (missing ? ' (not in the model)' : '') : 'no object'];
+      if (entity.entity && !state) parts.unshift('Entity not found');
+      return {
+        icon: type ? type[2] : 'mdi:help-circle-outline',
+        primary: name,
+        secondary: parts.join(' · '),
+        warning: !state || !type || !entity.object_id || missing,
+      };
     }
-    const find = (node: Element | ShadowRoot): Element => {
-      for (const child of Array.from(node.children)) {
-        if (child.localName === 'floor3d-card') return child;
-        const found = find(child) || (child.shadowRoot && find(child.shadowRoot));
-        if (found) return found;
-      }
-      return null;
+    if (list === 'object_groups') {
+      const count = (item.objects || []).length;
+      return { icon: 'mdi:group', primary: item.object_group || 'No name', secondary: `${count} object${count === 1 ? '' : 's'}`, warning: !item.object_group };
+    }
+    if (list === 'zoom_areas') {
+      const kind = item.object_id ? 'Around ' + item.object_id : item.camera_position ? 'Camera position' : 'Not set';
+      return { icon: 'mdi:magnify-expand', primary: item.zoom || 'No name', secondary: kind, warning: !item.zoom };
+    }
+    const missing = this._missing(item.object_id);
+    return {
+      icon: 'mdi:floor-plan',
+      primary: item.name || 'No name',
+      secondary: item.object_id ? item.object_id + (missing ? ' (not in the model)' : '') : 'no object',
+      warning: !item.object_id || missing,
     };
-    const root = dialog && (dialog as Element).shadowRoot;
-    return root ? find(root) : null;
   }
 
-  private _config_changed(): void {
-    console.log('Config change start');
-    let preview_card: any = this._preview_card();
-
-    if (preview_card) {
-      preview_card.rerender();
-    }
-  }
-
-  private _createObjectGroupsValues(): TemplateResult[] {
-    if (!this.hass || !this._config) {
-      return [html``];
-    }
-
-    const options = this._options.object_groups;
-    //console.log('options group values: ' + JSON.stringify(options));
-    const valueElementArray: TemplateResult[] = [];
-    for (const config of this._configObjectArray) {
-      const index = this._configObjectArray.indexOf(config);
-      valueElementArray.push(html`
-        <div class="sub-category" style="display: flex; flex-direction: row; align-items: center;">
-          <div style="display: flex; align-items: center; flex-direction: column;">
-            <div
-              style="font-size: 10px; margin-bottom: -8px; opacity: 0.5;"
-              @click=${this._toggleThing}
-              .options=${options.options.object_groups[index]}
-              .optionsTarget=${options.options.object_groups}
-              .index=${index}
-            >
-              options
-            </div>
-            <ha-icon
-              icon="mdi:chevron-${options.options.object_groups[index].show ? 'up' : 'down'}"
-              @click=${this._toggleThing}
-              .options=${options.options.object_groups[index]}
-              .optionsTarget=${options.options.object_groups}
-              .index=${index}
-            ></ha-icon>
-          </div>
-          <div class="card-options" style="display: flex; flex-direction: column; align-items: left;">
-            <floor3d-textfield
-              label="Object Group"
-              @input=${this._valueChanged}
-              .configAttribute=${'object_group'}
-              .configObject=${this._configObjectArray[index]}
-              .value=${config.object_group ? config.object_group : ''}
-            >
-            </floor3d-textfield>
-          </div>
-          ${index !== 0
-            ? html`
-                <ha-icon
-                  class="ha-icon-large"
-                  icon="mdi:arrow-up"
-                  @click=${this._moveObject_Group}
-                  .configDirection=${'up'}
-                  .configArray=${this._config!.object_groups}
-                  .arrayAttribute=${'object_groups'}
-                  .arraySource=${this._config}
-                  .index=${index}
-                ></ha-icon>
-              `
-            : html` <ha-icon icon="mdi:arrow-up" style="opacity: 25%;" class="ha-icon-large"></ha-icon> `}
-          ${index !== this._configObjectArray.length - 1
-            ? html`
-                <ha-icon
-                  class="ha-icon-large"
-                  icon="mdi:arrow-down"
-                  @click=${this._moveObject_Group}
-                  .configDirection=${'down'}
-                  .configArray=${this._config!.object_groups}
-                  .arrayAttribute=${'object_groups'}
-                  .arraySource=${this._config}
-                  .index=${index}
-                ></ha-icon>
-              `
-            : html` <ha-icon icon="mdi:arrow-down" style="opacity: 25%;" class="ha-icon-large"></ha-icon> `}
-          <ha-icon
-            class="ha-icon-large"
-            icon="mdi:close"
-            @click=${this._removeObject_Group}
-            .configAttribute=${'object_group'}
-            .configArray=${'object_groups'}
-            .configIndex=${index}
-          ></ha-icon>
-        </div>
-        ${options.options.object_groups[index].show
-          ? html` <div class="options">${this._createObject_GroupElement(index)}</div> `
-          : ''}
-      `);
-    }
-    return valueElementArray;
-  }
-
-  private _createActionsElement(): TemplateResult {
-    const options = this._options.actions;
+  private _renderList(list: ListKey, addLabel: string, newItem: any): TemplateResult {
+    const items = this._list(list);
     return html`
-      <div class="sub-category" style="opacity: 0.5;">
-        <div>
-          <div class="row">
-            <ha-icon .icon=${`mdi:${options.icon}`}></ha-icon>
-            <div class="title">${options.name}</div>
-          </div>
-          <div class="secondary">${options.secondary}</div>
-        </div>
-      </div>
-    `;
-  }
-
-  private _createZoomAreasValues(): TemplateResult[] {
-    if (!this.hass || !this._config) {
-      return [html``];
-    }
-
-    const options = this._options.zoom_areas;
-
-    const valueElementArray: TemplateResult[] = [];
-    for (const config of this._configZoomArray) {
-      const index = this._configZoomArray.indexOf(config);
-      valueElementArray.push(html`
-        <div class="sub-category" style="display: flex; flex-direction: row; align-items: center;">
-          <div style="display: flex; align-items: center; flex-direction: column;">
-            <div
-              style="font-size: 10px; margin-bottom: -8px; opacity: 0.5;"
-              @click=${this._toggleThing}
-              .options=${options.options.zoom_areas[index]}
-              .optionsTarget=${options.options.zoom_areas}
-              .index=${index}
-            >
-              options
-            </div>
-            <ha-icon
-              icon="mdi:chevron-${options.options.zoom_areas[index].show ? 'up' : 'down'}"
-              @click=${this._toggleThing}
-              .options=${options.options.zoom_areas[index]}
-              .optionsTarget=${options.options.zoom_areas}
-              .index=${index}
-            ></ha-icon>
-          </div>
-          <div class="values" style="flex-grow: 1;">
-            <floor3d-textfield
-              label="Zoom"
-              @input=${this._valueChanged}
-              .configAttribute=${'zoom'}
-              .configObject=${this._configZoomArray[index]}
-              .value=${config.zoom ? config.zoom : ''}
-            >
-            </floor3d-textfield>
-          </div>
-          ${index !== 0
-            ? html`
-                <ha-icon
-                  class="ha-icon-large"
-                  icon="mdi:arrow-up"
-                  @click=${this._moveZoomArea}
-                  .configDirection=${'up'}
-                  .configArray=${this._config!.zoom_areas}
-                  .arrayAttribute=${'zoom_areas'}
-                  .arraySource=${this._config}
-                  .index=${index}
-                ></ha-icon>
-              `
-            : html` <ha-icon icon="mdi:arrow-up" style="opacity: 25%;" class="ha-icon-large"></ha-icon> `}
-          ${index !== this._configZoomArray.length - 1
-            ? html`
-                <ha-icon
-                  class="ha-icon-large"
-                  icon="mdi:arrow-down"
-                  @click=${this._moveZoomArea}
-                  .configDirection=${'down'}
-                  .configArray=${this._config!.zoom_areas}
-                  .arrayAttribute=${'zoom_areas'}
-                  .arraySource=${this._config}
-                  .index=${index}
-                ></ha-icon>
-              `
-            : html` <ha-icon icon="mdi:arrow-down" style="opacity: 25%;" class="ha-icon-large"></ha-icon> `}
-          <ha-icon
-            class="ha-icon-large"
-            icon="mdi:close"
-            @click=${this._removeZoomArea}
-            .configAttribute=${'zoom'}
-            .configArray=${'zoom_areas'}
-            .configIndex=${index}
-          ></ha-icon>
-        </div>
-        ${options.options.zoom_areas[index].show
-          ? html` <div class="options">${this._createZoomElement(index)}</div> `
-          : ''}
-      `);
-    }
-    return valueElementArray;
-  }
-
-  private _createEntitiesValues(): TemplateResult[] {
-    if (!this.hass || !this._config) {
-      return [html``];
-    }
-
-    const options = this._options.entities;
-    if (!this._entity_ids) {
-      this._entity_ids = Object.keys(this.hass.states).sort(function (a, b) {
-        return a.toLowerCase().localeCompare(b.toLowerCase());
-      });
-    }
-    const valueElementArray: TemplateResult[] = [];
-    for (const config of this._configArray) {
-      const index = this._configArray.indexOf(config);
-      valueElementArray.push(html`
-        <div class="sub-category" style="display: flex; flex-direction: row; align-items: center;">
-          <div style="display: flex; align-items: center; flex-direction: column;">
-            <div
-              style="font-size: 10px; margin-bottom: -8px; opacity: 0.5;"
-              @click=${this._toggleThing}
-              .options=${options.options.entities[index]}
-              .optionsTarget=${options.options.entities}
-              .index=${index}
-            >
-              options
-            </div>
-            <ha-icon
-              icon="mdi:chevron-${options.options.entities[index].show ? 'up' : 'down'}"
-              @click=${this._toggleThing}
-              .options=${options.options.entities[index]}
-              .optionsTarget=${options.options.entities}
-              .index=${index}
-            ></ha-icon>
-          </div>
-          <div class="values" style="flex-grow: 1;">
-            ${this._entity_ids.length * this._configArray.length < 5000
-              ? html` <floor3d-select
-                  label="Entity (Required)"
-                  .value=${config.entity}
-                  @selected=${this._valueChanged}
-                  .configAttribute=${'entity'}
-                  .configObject=${this._configArray[index]}
-                  .ignoreNull=${false}
-                  @closed=${(ev) => ev.stopPropagation()}
-                  fixedMenuPosition
-                  naturalMenuWidth
-                  required
-                  id="entity"
+      <ha-sortable handle-selector=".handle" @item-moved=${(ev: CustomEvent) => this._moveItem(list, ev.detail.oldIndex, ev.detail.newIndex)}>
+        <div class="rows">
+          ${repeat(
+            items,
+            (item) => this._key(item),
+            (item, index) => {
+              const d = this._describe(list, item);
+              return html`
+                <div
+                  class="row"
+                  @mouseenter=${() => this._highlight(this._itemObjects(list, item))}
+                  @mouseleave=${() => this._highlight([])}
                 >
-                  ${this._entity_ids.map((entity) => {
-                    return html` <mwc-list-item .value=${entity}>${entity}</mwc-list-item> `;
-                  })}
-                </floor3d-select>`
-              : html`
-                  <floor3d-textfield
-                    label="Entity"
-                    @input=${this._valueChanged}
-                    .configAttribute=${'entity'}
-                    .configObject=${this._configArray[index]}
-                    .value=${config.entity ? config.entity : ''}
-                  >
-                  </floor3d-textfield>
-                `}
-          </div>
-          ${index !== 0
-            ? html`
-                <ha-icon
-                  class="ha-icon-large"
-                  icon="mdi:arrow-up"
-                  @click=${this._moveEntity}
-                  .configDirection=${'up'}
-                  .configArray=${this._config!.entities}
-                  .arrayAttribute=${'entities'}
-                  .arraySource=${this._config}
-                  .index=${index}
-                ></ha-icon>
-              `
-            : html` <ha-icon icon="mdi:arrow-up" style="opacity: 25%;" class="ha-icon-large"></ha-icon> `}
-          ${index !== this._configArray.length - 1
-            ? html`
-                <ha-icon
-                  class="ha-icon-large"
-                  icon="mdi:arrow-down"
-                  @click=${this._moveEntity}
-                  .configDirection=${'down'}
-                  .configArray=${this._config!.entities}
-                  .arrayAttribute=${'entities'}
-                  .arraySource=${this._config}
-                  .index=${index}
-                ></ha-icon>
-              `
-            : html` <ha-icon icon="mdi:arrow-down" style="opacity: 25%;" class="ha-icon-large"></ha-icon> `}
-          <ha-icon
-            class="ha-icon-large"
-            icon="mdi:close"
-            @click=${this._removeEntity}
-            .configAttribute=${'entity'}
-            .configArray=${'entities'}
-            .configIndex=${index}
-          ></ha-icon>
-        </div>
-        ${options.options.entities[index].show
-          ? html`
-              <div class="options">
-                ${this._createTypeElement(index)} ${this._createLightElement(index)} ${this._createRoomElement(index)}
-                ${this._createColorConditionElement(index)} ${this._createHideElement(index)}
-                ${this._createShowElement(index)} ${this._createTextElement(index)} ${this._createGestureElement(index)}
-                ${this._createDoorElement(index)} ${this._createCoverElement(index)} ${this._createRotateElement(index)}
-                ${this._createImageElement(index)} ${this._createTrackerElement(index)} ${this._createInfoElement(index)} ${this._createShowerElement(index)}
-              </div>
-            `
-          : ''}
-      `);
-    }
-    return valueElementArray;
-  }
-
-  private _createZoomAreasElement(): TemplateResult {
-    if (!this.hass || !this._config) {
-      return html``;
-    }
-    const options = this._options.zoom_areas;
-
-    return html`
-      <div class="card-config">
-        <div class="option" @click=${this._toggleThing} .options=${options} .optionsTarget=${this._options}>
-          <div class="row">
-            <ha-icon .icon=${`mdi:${options.icon}`}></ha-icon>
-            <div class="title">${options.name}</div>
-            <ha-icon .icon=${options.show ? `mdi:chevron-up` : `mdi:chevron-down`} style="margin-left: auto;"></ha-icon>
-          </div>
-          <div class="secondary">${options.secondary}</div>
-        </div>
-        ${options.show
-          ? html`
-              <div class="card-background" style="max-height: 400px; overflow: auto;">
-                ${this._createZoomAreasValues()}
-                <div class="sub-category" style="display: flex; flex-direction: column; align-items: flex-end;">
-                  <ha-icon
-                    class="ha-icon-large"
-                    icon="mdi:plus"
-                    .configArray=${this._configZoomArray}
-                    .configAddValue=${'zoom'}
-                    .sourceArray=${this._config.zoom_areas}
-                    @click=${this._addZoomArea}
-                  ></ha-icon>
+                  <div class="handle"><ha-svg-icon .path=${mdiDragHorizontalVariant}></ha-svg-icon></div>
+                  <ha-icon class="type" .icon=${d.icon}></ha-icon>
+                  <div class="info" @click=${() => this._edit(list, index)}>
+                    <span class="primary">${d.primary}</span>
+                    <span class="secondary ${d.warning ? 'warning' : ''}">${d.secondary}</span>
+                  </div>
+                  <ha-icon-button .label=${'Edit'} .path=${mdiPencil} @click=${() => this._edit(list, index)}></ha-icon-button>
+                  <ha-icon-button .label=${'Remove'} .path=${mdiDelete} @click=${() => this._removeItem(list, index)}></ha-icon-button>
                 </div>
-              </div>
-            `
-          : ''}
-      </div>
-    `;
-  }
-
-  private _createObjectGroupsElement(): TemplateResult {
-    if (!this.hass || !this._config) {
-      return html``;
-    }
-    const options = this._options.object_groups;
-
-    return html`
-      <div class="card-config">
-        <div class="option" @click=${this._toggleThing} .options=${options} .optionsTarget=${this._options}>
-          <div class="row">
-            <ha-icon .icon=${`mdi:${options.icon}`}></ha-icon>
-            <div class="title">${options.name}</div>
-            <ha-icon .icon=${options.show ? `mdi:chevron-up` : `mdi:chevron-down`} style="margin-left: auto;"></ha-icon>
-          </div>
-          <div class="secondary">${options.secondary}</div>
+              `;
+            },
+          )}
         </div>
-        ${options.show
-          ? html`
-              <div class="card-background" style="max-height: 400px; overflow: auto;">
-                ${this._createObjectGroupsValues()}
-                <div class="sub-category" style="display: flex; flex-direction: column; align-items: flex-end;">
-                  <ha-icon
-                    class="ha-icon-large"
-                    icon="mdi:plus"
-                    .configArray=${this._configObjectArray}
-                    .configAddValue=${'object_group'}
-                    .sourceArray=${this._config.object_groups}
-                    @click=${this._addObject_Group}
-                  ></ha-icon>
-                </div>
-              </div>
-            `
-          : ''}
-      </div>
+      </ha-sortable>
+      <ha-button class="add" @click=${() => this._addItem(list, newItem)}>
+        <ha-svg-icon slot="start" .path=${mdiPlus}></ha-svg-icon>${addLabel}
+      </ha-button>
     `;
   }
 
-  private _createEntitiesElement(): TemplateResult {
-    if (!this.hass || !this._config) {
-      return html``;
-    }
-    const options = this._options.entities;
+  private _moveItem(list: ListKey, from: number, to: number): void {
+    const items = this._list(list).slice();
+    items.splice(to, 0, items.splice(from, 1)[0]);
+    this._setList(list, items);
+  }
 
+  private _removeItem(list: ListKey, index: number): void {
+    const items = this._list(list).slice();
+    items.splice(index, 1);
+    this._highlight([]);
+    this._setList(list, items);
+  }
+
+  private _addItem(list: ListKey, item: any): void {
+    const items = [...this._list(list), copy(item)];
+    this._setList(list, items);
+    this._edit(list, items.length - 1);
+  }
+
+  private _edit(list: ListKey, index: number): void {
+    this._view = { list, index };
+  }
+
+  private _back(): void {
+    if (this._picking) this._startPick(this._picking);
+    this._view = {};
+    this._highlight([]);
+  }
+
+  // --- Item editors --------------------------------------------------------------------------------
+
+  private _renderItemEditor(list: ListKey, index: number): TemplateResult {
+    const item = this._list(list)[index];
+    const titles = { entities: 'Entity', object_groups: 'Object group', zoom_areas: 'View', rooms: 'Room' };
+    const set = (value: any): void => this._setItem(list, index, value);
+    let content: TemplateResult | TemplateResult[];
+    if (list === 'entities') content = this._renderEntity(index, isObject(item) ? item : { entity: item }, set);
+    else if (list === 'object_groups') content = this._renderGroup(index, item, set);
+    else if (list === 'zoom_areas') content = this._renderZoom(index, item, set);
+    else content = this._renderRoom(index, item, set);
     return html`
-      <div class="card-config">
-        <div class="option" @click=${this._toggleThing} .options=${options} .optionsTarget=${this._options}>
-          <div class="row">
-            <ha-icon .icon=${`mdi:${options.icon}`}></ha-icon>
-            <div class="title">${options.name}</div>
-            <ha-icon .icon=${options.show ? `mdi:chevron-up` : `mdi:chevron-down`} style="margin-left: auto;"></ha-icon>
-          </div>
-          <div class="secondary">${options.secondary}</div>
-        </div>
-        ${options.show
-          ? html`
-              <div class="card-background" style="max-height: 400px; overflow: auto;">
-                ${this._createEntitiesValues()}
-                <div class="sub-category" style="display: flex; flex-direction: column; align-items: flex-end;">
-                  <ha-icon
-                    class="ha-icon-large"
-                    icon="mdi:plus"
-                    .configArray=${this._configArray}
-                    .configAddValue=${'entity'}
-                    .sourceArray=${this._config.entities}
-                    @click=${this._addEntity}
-                  ></ha-icon>
-                </div>
-              </div>
-            `
-          : ''}
+      <div class="subheader">
+        <ha-icon-button .label=${'Back'} .path=${mdiArrowLeft} @click=${() => this._back()}></ha-icon-button>
+        <span>${titles[list]}</span>
       </div>
+      ${content}
     `;
   }
 
-  private _createModelElement(): TemplateResult {
-    if (!this.hass) {
-      return html``;
-    }
-    const config: any = this._config;
-    const index = null;
-    const options = this._options.model;
+  // Object field with the button that picks the object in the preview.
+  private _objectRow(path: (string | number)[], schema: Schema[], data: any, onChange: (data: any) => void): TemplateResult {
+    const active = this._picking && JSON.stringify(this._picking.path) === JSON.stringify(path);
     return html`
-      <div class="category" id="card">
-        <div class="sub-category" @click=${this._toggleThing} .options=${options} .optionsTarget=${this._options}>
-          <div class="row">
-            <ha-icon .icon=${`mdi:${options.icon}`}></ha-icon>
-            <div class="title">${options.name}</div>
-            <ha-icon .icon=${options.show ? `mdi:chevron-up` : `mdi:chevron-down`} style="margin-left: auto;"></ha-icon>
-          </div>
-          <div class="secondary">${options.secondary}</div>
-        </div>
-        ${options.show
-          ? html`
-              <div class="card-options" style="display: flex; flex-direction: column; align-items: left;">
-                <floor3d-textfield
-                  label="Name"
-                  fullwidth
-                  .value=${config.name ? config.name : ''}
-                  .configObject=${config}
-                  .configAttribute=${'name'}
-                  @input=${this._valueChanged}
-                >
-                </floor3d-textfield>
-                <floor3d-textfield
-                  label="Path"
-                  fullwidth
-                  .value=${config.path ? config.path : ''}
-                  .configObject=${config}
-                  .configAttribute=${'path'}
-                  @input=${this._valueChanged}
-                ></floor3d-textfield>
-                <floor3d-textfield
-                  label="Obj/Glb file"
-                  fullwidth
-                  .value=${config.objfile ? config.objfile : ''}
-                  .configObject=${config}
-                  .configAttribute=${'objfile'}
-                  @input=${this._valueChanged}
-                ></floor3d-textfield>
-                <floor3d-textfield
-                  label="Mtl Wavefront file"
-                  fullwidth
-                  .value=${config.mtlfile ? config.mtlfile : ''}
-                  .configObject=${config}
-                  .configAttribute=${'mtlfile'}
-                  @input=${this._valueChanged}
-                ></floor3d-textfield>
-                <floor3d-textfield
-                  label="Object list JSON"
-                  .value=${config.objectlist ? config.objectlist : ''}
-                  .configObject=${config}
-                  .configAttribute=${'objectlist'}
-                  @input=${this._valueChanged}
-                ></floor3d-textfield>
-              </div>
-            `
-          : ''}
+      <div class="object-row">
+        ${this._form(schema, data, onChange)}
+        <ha-icon-button
+          class=${active ? 'picking' : ''}
+          .label=${'Pick in the preview'}
+          .path=${mdiCursorDefaultClickOutline}
+          @click=${() => this._startPick({ path })}
+        ></ha-icon-button>
       </div>
+      ${active ? html`<div class="hint">Tap an object in the preview</div>` : nothing}
     `;
   }
 
-  private _createOverlayElement(): TemplateResult {
-    if (!this.hass) {
-      return html``;
-    }
-    const config: any = this._config;
-    const index = null;
-    const options = this._options.overlay;
-    return html`
-      <div class="category" id="card">
-        <div class="sub-category" @click=${this._toggleThing} .options=${options} .optionsTarget=${this._options}>
-          <div class="row">
-            <ha-icon .icon=${`mdi:${options.icon}`}></ha-icon>
-            <div class="title">${options.name}</div>
-            <ha-icon .icon=${options.show ? `mdi:chevron-up` : `mdi:chevron-down`} style="margin-left: auto;"></ha-icon>
-          </div>
-          <div class="secondary">${options.secondary}</div>
-        </div>
-        ${options.show
-          ? html`
-              <div class="card-options" style="display: flex; flex-direction: column; align-items: left;">
-                <floor3d-textfield
-                  label="Overlay Background color"
-                  fullwidth
-                  size="20"
-                  .value=${config.overlay_bgcolor ? config.overlay_bgcolor : 'transparent'}
-                  .configObject=${config}
-                  .configAttribute=${'overlay_bgcolor'}
-                  @input=${this._valueChanged}
-                ></floor3d-textfield>
-                <floor3d-textfield
-                  label="Overlay Foreground color"
-                  fullwidth
-                  size="20"
-                  .value=${config.overlay_fgcolor ? config.overlay_fgcolor : 'black'}
-                  .configObject=${config}
-                  .configAttribute=${'overlay_fgcolor'}
-                  @input=${this._valueChanged}
-                ></floor3d-textfield>
-                <ha-select
-                  label="Overlay Alignment"
-                  size="40"
-                  @selected=${this._valueChanged}
-                  .value=${config.overlay_alignment ? config.overlay_alignment : 'top-left'}
-                  .configObject=${config}
-                  .configAttribute=${'overlay_alignment'}
-                  .ignoreNull=${false}
-                  @closed=${(ev) => ev.stopPropagation()}
-                >
-                  <ha-list-item></ha-list-item>
-                  <ha-list-item value="top-left">top-left</ha-list-item>
-                  <ha-list-item value="top-right">top-right</ha-list-item>
-                  <ha-list-item value="bottom-left">bottom-left</ha-list-item>
-                  <ha-list-item value="bottom-right">bottom-right</ha-list-item>
-                </ha-select>
-                <floor3d-formfield alignEnd label="Overlay Width %">
-                  <floor3d-textfield
-                    type="number"
-                    min="0"
-                    max="100"
-                    fullwidth
-                    .ignoreNull=${false}
-                    .value=${config.overlay_width ? config.overlay_width : '33'}
-                    .configObject=${config}
-                    .configAttribute=${'overlay_width'}
-                    @input=${this._valueChanged}
-                  ></floor3d-textfield>
-                </floor3d-formfield>
-                <floor3d-formfield alignEnd label="Overlay Height %">
-                  <floor3d-textfield
-                    type="number"
-                    min="0"
-                    max="100"
-                    fullwidth
-                    .ignoreNull=${false}
-                    .value=${config.overlay_height ? config.overlay_height : '20'}
-                    .configObject=${config}
-                    .configAttribute=${'overlay_height'}
-                    @input=${this._valueChanged}
-                  ></floor3d-textfield>
-                </floor3d-formfield>
-                <floor3d-textfield
-                  label="Overlay Font"
-                  size="40"
-                  .value="${config.overlay_font ? config.overlay_font : ''}"
-                  .configObject=${config}
-                  .configAttribute=${'overlay_font'}
-                  @input=${this._valueChanged}
-                ></floor3d-textfield>
-                <floor3d-textfield
-                  label="Overlay Font size"
-                  .value="${config.overlay_fontsize ? config.overlay_fontsize : ''}"
-                  .configObject=${config}
-                  .configAttribute=${'overlay_fontsize'}
-                  @input=${this._valueChanged}
-                ></floor3d-textfield>
-              </div>
-            `
-          : ''}
-      </div>
-    `;
-  }
-
-  private _createAppearanceElement(): TemplateResult {
-    if (!this.hass) {
-      return html``;
-    }
-    const config: any = this._config;
-    const index = null;
-    const options = this._options.appearance;
-    return html`
-      <div class="category" id="card">
-        <div class="sub-category" @click=${this._toggleThing} .options=${options} .optionsTarget=${this._options}>
-          <div class="row">
-            <ha-icon .icon=${`mdi:${options.icon}`}></ha-icon>
-            <div class="title">${options.name}</div>
-            <ha-icon .icon=${options.show ? `mdi:chevron-up` : `mdi:chevron-down`} style="margin-left: auto;"></ha-icon>
-          </div>
-          <div class="secondary">${options.secondary}</div>
-        </div>
-        ${options.show
-          ? html`
-             <div class="card-options" style="display: flex; flex-direction: column; align-items: left;">
-                <floor3d-textfield
-                  label="Style"
-                  .value=${config.style ? config.style : ''}
-                  .configObject=${config}
-                  .configAttribute=${'style'}
-                  @input=${this._valueChanged}
-                ></floor3d-textfield>
-                <floor3d-select
-                  label="Lock Camera (yes/<no>)"
-                  @selected=${this._valueChanged}
-                  .value=${config.lock_camera ? config.lock_camera : 'no'}
-                  .configObject=${config}
-                  .configAttribute=${'lock_camera'}
-                  .ignoreNull=${false}
-                  @closed=${(ev) => ev.stopPropagation()}
-                >
-                    <mwc-list-item></mwc-list-item>
-                    <mwc-list-item value="yes">yes</mwc-list-item>
-                    <mwc-list-item value="no">no</mwc-list-item>
-                </floor3d-select>
-                <floor3d-select
-                  label="Selection Mode (yes/<no>)"
-                  @selected=${this._valueChanged}
-                  .value=${config.selectionMode ? config.selectionMode : 'no'}
-                  .configObject=${config}
-                  .configAttribute=${'selectionMode'}
-                  .ignoreNull=${false}
-                  @closed=${(ev) => ev.stopPropagation()}
-                >
-                    <mwc-list-item></mwc-list-item>
-                    <mwc-list-item value="yes">yes</mwc-list-item>
-                    <mwc-list-item value="no">no</mwc-list-item>
-                </floor3d-select>
-                <floor3d-select
-                  label="Edit Mode PopUp (<yes>/no)"
-                  @selected=${this._valueChanged}
-                  .value=${config.editModeNotifications ? config.editModeNotifications : 'yes'}
-                  .configObject=${config}
-                  .configAttribute=${'editModeNotifications'}
-                  .ignoreNull=${false}
-                  @closed=${(ev) => ev.stopPropagation()}
-                >
-                    <mwc-list-item></mwc-list-item>
-                    <mwc-list-item value="yes">yes</mwc-list-item>
-                    <mwc-list-item value="no">no</mwc-list-item>
-                </floor3d-select>
-                <floor3d-select
-                  label="Header (<yes>/no)"
-                  @selected=${this._valueChanged}
-                  .value=${config.header ? config.header : 'yes'}
-                  .configObject=${config}
-                  .configAttribute=${'header'}
-                  .ignoreNull=${false}
-                  @closed=${(ev) => ev.stopPropagation()}
-                >
-                    <mwc-list-item></mwc-list-item>
-                    <mwc-list-item value="yes">yes</mwc-list-item>
-                    <mwc-list-item value="no">no</mwc-list-item>
-                </floor3d-select>
-                <floor3d-select
-                  label="Click (no dblclick, yes/<no>)"
-                  @selected=${this._valueChanged}
-                  .value=${config.click ? config.click : 'no'}
-                  .configObject=${config}
-                  .configAttribute=${'click'}
-                  .ignoreNull=${false}
-                  @closed=${(ev) => ev.stopPropagation()}
-                >
-                    <mwc-list-item></mwc-list-item>
-                    <mwc-list-item value="yes">yes</mwc-list-item>
-                    <mwc-list-item value="no">no</mwc-list-item>
-                </floor3d-select>
-                <floor3d-select
-                  label="Overlay (yes/<no>)"
-                  @selected=${this._valueChanged}
-                  .value=${config.overlay ? config.overlay : 'no'}
-                  .configObject=${config}
-                  .configAttribute=${'overlay'}
-                  .ignoreNull=${false}
-                  @closed=${(ev) => ev.stopPropagation()}
-                >
-                    <mwc-list-item></mwc-list-item>
-                    <mwc-list-item value="yes">yes</mwc-list-item>
-                    <mwc-list-item value="no">no</mwc-list-item>
-                </floor3d-select>
-
-                <floor3d-select
-                  label="Hide Levels Menu (yes/<no>)"
-                  @selected=${this._valueChanged}
-                  .value=${config.hideLevelsMenu ? config.hideLevelsMenu : 'no'}
-                  .configObject=${config}
-                  .configAttribute=${'hideLevelsMenu'}
-                  .ignoreNull=${false}
-                  @closed=${(ev) => ev.stopPropagation()}
-                >
-                    <mwc-list-item></mwc-list-item>
-                    <mwc-list-item value="yes">yes</mwc-list-item>
-                    <mwc-list-item value="no">no</mwc-list-item>
-                </floor3d-select>
-                <floor3d-select
-                  label="Hide Zoom Menu (yes/<no>)"
-                  @selected=${this._valueChanged}
-                  .value=${config.hideZoomMenu ? config.hideZoomMenu : 'no'}
-                  .configObject=${config}
-                  .configAttribute=${'hideZoomMenu'}
-                  .ignoreNull=${false}
-                  @closed=${(ev) => ev.stopPropagation()}
-                >
-                    <mwc-list-item></mwc-list-item>
-                    <mwc-list-item value="yes">yes</mwc-list-item>
-                    <mwc-list-item value="no">no</mwc-list-item>
-                </floor3d-select>
-                <floor3d-formfield alignEnd label="Global Scene Light (0..1)" >
-                  <floor3d-textfield
-                    type="number"
-                    min=0.00
-                    max=1.00
-                    step=0.01
-                    .value=${config.globalLightPower ? config.globalLightPower : '0.8'}
-                    .configObject=${config}
-                    .configAttribute=${'globalLightPower'}
-                    .ignoreNull=${false}
-                    @input=${this._valueChanged}
-                  ></floor3d-textfield>
-                </floor3d-formfield>
-                <floor3d-select
-                  label="Shadow (yes/<no>)"
-                  @selected=${this._valueChanged}
-                  .value=${config.shadow ? config.shadow : 'no'}
-                  .configObject=${config}
-                  .configAttribute=${'shadow'}
-                  .ignoreNull=${false}
-                  @closed=${(ev) => ev.stopPropagation()}
-                >
-                    <mwc-list-item></mwc-list-item>
-                    <mwc-list-item value="yes">yes</mwc-list-item>
-                    <mwc-list-item value="no">no</mwc-list-item>
-                </floor3d-select>
-                ${this._textField('Exposure (<1>)', config, 'exposure', 1, 'number')}
-                ${this._choiceField('Tone mapping (<neutral>)', config, 'tone_mapping', 'neutral', ['neutral', 'agx', 'aces', 'linear'])}
-                ${this._textField('Lamp Power (<1>)', config, 'light_power', 1, 'number')}
-                ${this._yesNoField('Sun from sun.sun (yes/<no>)', config, 'sun', 'no')}
-                ${this._textField('Sun Power (<1>)', config, 'sun_power', 1, 'number')}
-                ${this._textField('Max Pixel Ratio (<2>)', config, 'max_pixel_ratio', 2, 'number')}
-                ${this._yesNoField('Log depth (yes/<no>)', config, 'log_depth', 'no')}
-                ${this._yesNoField('Highlight Open Doors/Windows (yes/<no>)', config, 'state_colors', 'no')}
-                ${this._textField('Alarm Entity (e.g. alarm_control_panel.home)', config, 'alarm_entity', '')}
-                ${this._choiceField('Initial Room Map (<none>)', config, 'room_colors', 'none', ['none', 'temperature', 'presence'])}
-                <floor3d-select
-                  label="+ Lights - Perf (yes/<no>)"
-                  @selected=${this._valueChanged}
-                  .value=${config.extralightmode ? config.extralightmode : 'no'}
-                  .configObject=${config}
-                  .configAttribute=${'extralightmode'}
-                  .ignoreNull=${false}
-                  @closed=${(ev) => ev.stopPropagation()}
-                >
-                    <mwc-list-item></mwc-list-item>
-                    <mwc-list-item value="yes">yes</mwc-list-item>
-                    <mwc-list-item value="no">no</mwc-list-item>
-                </floor3d-select>
-                <floor3d-select
-                  label="Show Axes (yes/<no>)"
-                  @selected=${this._valueChanged}
-                  .value=${config.show_axes ? config.show_axes : 'no'}
-                  .configObject=${config}
-                  .configAttribute=${'show_axes'}
-                  .ignoreNull=${false}
-                  @closed=${(ev) => ev.stopPropagation()}
-                >
-                    <mwc-list-item></mwc-list-item>
-                    <mwc-list-item value="yes">yes</mwc-list-item>
-                    <mwc-list-item value="no">no</mwc-list-item>
-                </floor3d-select>
-
-                <paper-input
-                  editable
-                  label="North Direction {x: xxxx,z: zzzzzz }"
-                  .value=${config.north ? config.north : null}
-                  .configObject=${config}
-                  .configAttribute=${'north'}
-                  @value-changed=${this._valueChanged}
-                ></paper-input>
-                <paper-input
-                  editable
-                  label="Camera Position"
-                  .value=${config.camera_position ? config.camera_position : null}
-                  .configObject=${config}
-                  .configAttribute=${'camera_position'}
-                  @value-changed=${this._valueChanged}
-                ></paper-input>
-                <paper-input
-                  editable
-                  label="Camera Rotation"
-                  .value=${config.camera_rotate ? config.camera_rotate : null}
-                  .configObject=${config}
-                  .configAttribute=${'camera_rotate'}
-                  @value-changed=${this._valueChanged}
-                ></paper-input>
-                <paper-input
-                  editable
-                  label="Camera Target"
-                  .value=${config.camera_target ? config.camera_target : null}
-                  .configObject=${config}
-                  .configAttribute=${'camera_target'}
-                  @value-changed=${this._valueChanged}
-                ></paper-input>
-              </div>
-            `
-          : ''}
-      </div>
-    `;
-  }
-
-  private _toggleThing(ev): void {
-    const options = ev.target.options;
-    const show = !options.show;
-    if (ev.target.optionsTarget) {
-      if (Array.isArray(ev.target.optionsTarget)) {
-        for (const options of ev.target.optionsTarget) {
-          options.show = false;
-        }
-      } else {
-        for (const [key] of Object.entries(ev.target.optionsTarget)) {
-          ev.target.optionsTarget[key].show = false;
-        }
+  private _renderEntity(index: number, entity: any, set: (value: any) => void): TemplateResult[] {
+    const onChange = (value: any): void => {
+      // A new type: the options block of the previous one goes away.
+      if (value.type3d !== entity.type3d && entity.type3d && value[entity.type3d] !== undefined) {
+        delete value[entity.type3d];
       }
-    }
-    options.show = show;
-    this._toggle = !this._toggle;
-  }
-
-  private _addObject_Group(ev): void {
-    if (!this._config || !this.hass) {
-      return;
-    }
-    const target = ev.target;
-    let newObject;
-    if (target.configAddObject) {
-      newObject = target.configAddObject;
-    } else {
-      newObject = { [target.configAddValue]: '' };
-    }
-    const newArray = target.configArray.slice();
-    newArray.push(newObject);
-    this._config.object_groups = newArray;
-    this._fireConfigChanged();
-  }
-
-  private _addEntity(ev): void {
-    if (!this._config || !this.hass) {
-      return;
-    }
-    const target = ev.target;
-    let newObject;
-    if (target.configAddObject) {
-      newObject = target.configAddObject;
-    } else {
-      newObject = { [target.configAddValue]: '' };
-    }
-    const newArray = target.configArray.slice();
-    newArray.push(newObject);
-    this._config.entities = newArray;
-    this._fireConfigChanged();
-  }
-
-  private _addZoomArea(ev): void {
-    if (!this._config || !this.hass) {
-      return;
-    }
-    const target = ev.target;
-    let newObject;
-    if (target.configAddObject) {
-      newObject = target.configAddObject;
-    } else {
-      newObject = { [target.configAddValue]: '' };
-    }
-    const newArray = target.configArray.slice();
-    newArray.push(newObject);
-    this._config.zoom_areas = newArray;
-    this._fireConfigChanged();
-  }
-
-  private _moveEntity(ev): void {
-    if (!this._config || !this.hass) {
-      return;
-    }
-    const target = ev.target;
-    let newArray = target.configArray.slice();
-    if (target.configDirection == 'up') newArray = arrayMove(newArray, target.index, target.index - 1);
-    else if (target.configDirection == 'down') newArray = arrayMove(newArray, target.index, target.index + 1);
-    this._config.entities = newArray;
-    this._fireConfigChanged();
-  }
-
-  private _moveZoomArea(ev): void {
-    if (!this._config || !this.hass) {
-      return;
-    }
-    const target = ev.target;
-    let newArray = target.configArray.slice();
-    if (target.configDirection == 'up') newArray = arrayMove(newArray, target.index, target.index - 1);
-    else if (target.configDirection == 'down') newArray = arrayMove(newArray, target.index, target.index + 1);
-    this._config.zoom_areas = newArray;
-    this._fireConfigChanged();
-  }
-
-  private _moveObject_Group(ev): void {
-    if (!this._config || !this.hass) {
-      return;
-    }
-    const target = ev.target;
-    let newArray = target.configArray.slice();
-    if (target.configDirection == 'up') newArray = arrayMove(newArray, target.index, target.index - 1);
-    else if (target.configDirection == 'down') newArray = arrayMove(newArray, target.index, target.index + 1);
-    this._config.object_groups = newArray;
-    this._fireConfigChanged();
-  }
-
-  private _removeEntity(ev): void {
-    if (!this._config || !this.hass) {
-      return;
-    }
-    const target = ev.target;
-    const entitiesArray: Floor3dCardConfig[] = [];
-    let index = 0;
-    for (const config of this._configArray) {
-      if (target.configIndex !== index) {
-        entitiesArray.push(config);
-      }
-      index++;
-    }
-    const newConfig = { [target.configArray]: entitiesArray };
-    this._config = Object.assign(this._config, newConfig);
-    this._fireConfigChanged();
-  }
-
-  private _removeZoomArea(ev): void {
-    if (!this._config || !this.hass) {
-      return;
-    }
-    const target = ev.target;
-    const zoomareasArray: Floor3dCardConfig[] = [];
-    let index = 0;
-    for (const config of this._configZoomArray) {
-      if (target.configIndex !== index) {
-        zoomareasArray.push(config);
-      }
-      index++;
-    }
-    const newConfig = { [target.configArray]: zoomareasArray };
-    this._config = Object.assign(this._config, newConfig);
-    this._fireConfigChanged();
-  }
-
-  private _removeObject_Group(ev): void {
-    if (!this._config || !this.hass) {
-      return;
-    }
-    const target = ev.target;
-    const object_groupsArray: Floor3dCardConfig[] = [];
-    let index = 0;
-    for (const config of this._configObjectArray) {
-      if (target.configIndex !== index) {
-        object_groupsArray.push(config);
-      }
-      index++;
-    }
-    const newConfig = { [target.configArray]: object_groupsArray };
-    this._config = Object.assign(this._config, newConfig);
-    this._fireConfigChanged();
-  }
-
-  private _createTypeElement(index): TemplateResult {
-    const options = this._options.entities.options.entities[index].options.threed;
-    const config = this._configArray[index];
-    return html`
-      <div class="category" id="type">
-        <div
-          class="sub-category"
-          @click=${this._toggleThing}
-          .options=${options}
-          .optionsTarget=${this._options.entities.options.entities[index].options}
-        >
-          <div class="row">
-            <ha-icon .icon=${`mdi:${options.icon}`}></ha-icon>
-            <div class="title">${options.name}</div>
-            <ha-icon .icon=${options.show ? `mdi:chevron-up` : `mdi:chevron-down`} style="margin-left: auto;"></ha-icon>
+      set(value);
+    };
+    const objects = this._objectOptions();
+    return [
+      this._form(entitySchema(), entityToForm(entity), (value) => onChange(entityFromForm(value, entity))),
+      this._objectRow(['entities', index, 'object_id'], [objectField('object_id', objects)], entity, (value) =>
+        onChange(dropEmpty({ ...entity, object_id: value.object_id })),
+      ),
+      ...(entity.type3d
+        ? [
+            html`<div class="heading">${(TYPES.find(([value]) => value === entity.type3d) || [])[1] || ''} options</div>`,
+            ...this._renderContent(typeSchema(entity.type3d, objects), entity, onChange, false, 'entities', index),
+          ]
+        : []),
+      html`
+        <ha-expansion-panel outlined .header=${'Tap, long press and template'}>
+          <div class="panel">
+            ${this._form(entityActionsSchema(), entity, (value) => onChange(dropEmpty({ ...value })))}
           </div>
-          <div class="secondary">${options.secondary}</div>
-        </div>
-        ${options.show
-          ? html`
-              <div class="card-options" style="display: flex; flex-direction: column; align-items: left;">
-                <floor3d-textfield
-                  label="Entity template"
-                  fullwidth
-                  .value=${config.entity_template ? config.entity_template : ''}
-                  .configAttribute=${'entity_template'}
-                  .configObject=${config}
-                  @input=${this._valueChanged}
-                ></floor3d-textfield>
-                <floor3d-select
-                  label="Action"
-                  @selected=${this._valueChanged}
-                  .value=${config.action ? config.action : null}
-                  .optionTgt=${this._options.entities.options.entities[index].options}
-                  .configObject=${config}
-                  .configAttribute=${'action'}
-                  .ignoreNull=${false}
-                  @closed=${(ev) => ev.stopPropagation()}
-                >
-                  <mwc-list-item></mwc-list-item>
-                  <mwc-list-item value="more-info">more-info</mwc-list-item>
-                  <mwc-list-item value="overlay">overlay</mwc-list-item>
-                  <mwc-list-item value="default">default</mwc-list-item>
-                </floor3d-select>
-                <floor3d-select
-                  label="3D Type"
-                  @selected=${this._typeChanged}
-                  .value=${config.type3d ? config.type3d : null}
-                  .optionTgt=${this._options.entities.options.entities[index].options}
-                  .configObject=${config}
-                  .configAttribute=${'type3d'}
-                  .ignoreNull=${false}
-                  .configIndex=${index}
-                  fixedMenuPosition
-                  naturalMenuWidth
-                  @closed=${(ev) => ev.stopPropagation()}
-                >
-                  <mwc-list-item></mwc-list-item>
-                  <mwc-list-item value="light">light</mwc-list-item>
-                  <mwc-list-item value="color">color</mwc-list-item>
-                  <mwc-list-item value="room">room</mwc-list-item>
-                  <mwc-list-item value="hide">hide</mwc-list-item>
-                  <mwc-list-item value="image">image</mwc-list-item>
-                  <mwc-list-item value="show">show</mwc-list-item>
-                  <mwc-list-item value="text">text</mwc-list-item>
-                  <mwc-list-item value="door">door</mwc-list-item>
-                  <mwc-list-item value="cover">cover</mwc-list-item>
-                  <mwc-list-item value="rotate">rotate</mwc-list-item>
-                  <mwc-list-item value="gesture">gesture</mwc-list-item>
-                  <mwc-list-item value="camera">camera</mwc-list-item>
-                  <mwc-list-item value="info">info</mwc-list-item>
-                  <mwc-list-item value="shower">shower</mwc-list-item>
-                </floor3d-select>
-                ${!this._objects
-                  ? html`
-                      <floor3d-textfield
-                        label="Object"
-                        .value=${config.object_id ? config.object_id : ''}
-                        .configAttribute=${'object_id'}
-                        .configObject=${config}
-                        @input=${this._valueChanged}
-                        required
-                      ></floor3d-textfield>
-                    `
-                  : html`
-                      <floor3d-select
-                        label="Object id"
-                        @selected=${this._valueChanged}
-                        .value=${config.object_id}
-                        .configAttribute=${'object_id'}
-                        .configObject=${config}
-                        .ignoreNull=${false}
-                        required
-                        @closed=${(ev) => ev.stopPropagation()}
-                      >
-                        ${this._objects.map((object_id) => {
-                          return html` <mwc-list-item value="${object_id}">${object_id}</mwc-list-item> `;
-                        })}
-                        ${this._configObjectArray.map((object_group) => {
-                          return html`
-                            <mwc-list-item value="${'<' + object_group.object_group + '>'}"
-                              >${'<' + object_group.object_group + '>'}</mwc-list-item
-                            >
-                          `;
-                        })}
-                      </floor3d-select>
-                    `}
-              </div>
-            `
-          : ''}
-      </div>
-    `;
+        </ha-expansion-panel>
+      `,
+    ];
   }
 
-  private _createObject_GroupElement(index): TemplateResult {
-    const options = this._options.object_groups.options.object_groups[index];
-    const config = this._configObjectArray[index];
-    const arrayLength = config.objects ? config.objects.length : 0;
-    const visible = true;
+  private _renderColorConditions(list: ListKey, index: number, entity: any): TemplateResult {
+    const conditions: any[] = Array.isArray(entity.colorcondition) ? entity.colorcondition : [];
+    const set = (next: any[]): void => this._setItem(list, index, { ...entity, colorcondition: next });
     return html`
-      ${visible
-        ? html`
-            <div class="category" id="bar">
-              <div
-                class="sub-category"
-                @click=${this._toggleThing}
-                .options=${options}
-                .optionsTarget=${this._options.object_groups.options.object_groups}
-              >
-                <div class="row">
-                  <ha-icon .icon=${`mdi:${options.icon}`}></ha-icon>
-                  <div class="title">${options.name}</div>
-                  <ha-icon
-                    .icon=${options.show ? `mdi:chevron-up` : `mdi:chevron-down`}
-                    style="margin-left: auto;"
-                  ></ha-icon>
-                </div>
-                <div class="secondary">${options.secondary}</div>
-              </div>
-              ${options.show
-                ? html`
-                    <div class="card-background" style="overflow: auto; max-height: 420px;">
-                      ${arrayLength > 0 ? html` ${this._createObjectValues(index)} ` : ''}
-                      <div class="sub-category" style="display: flex; flex-direction: column; align-items: flex-end;">
-                        <ha-icon
-                          class="ha-icon-large"
-                          icon="mdi:plus"
-                          .index=${index}
-                          @click=${this._addObject}
-                        ></ha-icon>
-                      </div>
-                    </div>
-                  `
-                : ''}
-            </div>
-          `
-        : ''}
-    `;
-  }
-
-  private _createColorConditionElement(index): TemplateResult {
-    const options = this._options.entities.options.entities[index].options.color;
-    const config = this._configArray[index];
-    const visible: boolean = config.type3d ? config.type3d === 'color' || config.type3d === 'room' : false;
-    const arrayLength = config.colorcondition ? config.colorcondition.length : 0;
-    return html`
-      ${visible
-        ? html`
-            <div class="category" id="bar">
-              <div
-                class="sub-category"
-                @click=${this._toggleThing}
-                .options=${options}
-                .optionsTarget=${this._options.entities.options.entities[index].options}
-              >
-                <div class="row">
-                  <ha-icon .icon=${`mdi:${options.icon}`}></ha-icon>
-                  <div class="title">${options.name}</div>
-                  <ha-icon
-                    .icon=${options.show ? `mdi:chevron-up` : `mdi:chevron-down`}
-                    style="margin-left: auto;"
-                  ></ha-icon>
-                </div>
-                <div class="secondary">${options.secondary}</div>
-              </div>
-              ${options.show
-                ? html`
-                    <div class="card-background" style="overflow: auto; max-height: 420px;">
-                      ${arrayLength > 0 ? html` ${this._createColorConditionValues(index)} ` : ''}
-                      <div class="sub-category" style="display: flex; flex-direction: column; align-items: flex-end;">
-                        <ha-icon
-                          class="ha-icon-large"
-                          icon="mdi:plus"
-                          .index=${index}
-                          @click=${this._addColorCondition}
-                        ></ha-icon>
-                      </div>
-                    </div>
-                  `
-                : ''}
-            </div>
-          `
-        : ''}
-    `;
-  }
-
-  private _createObjectValues(index): TemplateResult[] {
-    const config = this._configObjectArray[index];
-
-    const objectValuesArray: TemplateResult[] = [];
-    for (const object_id of config.objects) {
-      const objectIndex = config.objects.indexOf(object_id);
-      objectValuesArray.push(html`
-        <div class="sub-category" style="display: flex; flex-direction: row; align-items: center;">
-          <div class="value">
-            <div style="display:flex;">
-              <floor3d-textfield
-                label="Object Id"
-                .value="${object_id.object_id ? object_id.object_id : ''}"
-                .objectAttribute=${'object_id'}
-                .index=${index}
-                .objectIndex=${objectIndex}
-                @input=${this._updateObject}
-              ></floor3d-textfield>
-            </div>
-          </div>
-          <div style="display: flex;">
-            ${objectIndex !== 0
-              ? html`
-                  <ha-icon
-                    class="ha-icon-large"
-                    icon="mdi:arrow-up"
-                    @click=${this._moveObject}
-                    .configDirection=${'up'}
-                    .index=${index}
-                    .objectIndex=${objectIndex}
-                  ></ha-icon>
-                `
-              : html` <ha-icon icon="mdi:arrow-up" style="opacity: 25%;" class="ha-icon-large"></ha-icon> `}
-            ${objectIndex !== config.objects.length - 1
-              ? html`
-                  <ha-icon
-                    class="ha-icon-large"
-                    icon="mdi:arrow-down"
-                    @click=${this._moveObject}
-                    .configDirection=${'down'}
-                    .index=${index}
-                    .objectIndex=${objectIndex}
-                  ></ha-icon>
-                `
-              : html` <ha-icon icon="mdi:arrow-down" style="opacity: 25%;" class="ha-icon-large"></ha-icon> `}
-            <ha-icon
-              class="ha-icon-large"
-              icon="mdi:close"
-              @click=${this._removeObject}
-              .index=${index}
-              .objectIndex=${objectIndex}
-            ></ha-icon>
-          </div>
-        </div>
-      `);
-    }
-    return objectValuesArray;
-  }
-
-  private _createColorConditionValues(index): TemplateResult[] {
-    const config = this._configArray[index];
-
-    const colorconditionValuesArray: TemplateResult[] = [];
-    for (const colorcondition of config.colorcondition) {
-      const colorconditionIndex = config.colorcondition.indexOf(colorcondition);
-      colorconditionValuesArray.push(html`
-        <div class="sub-category" style="display: flex; flex-direction: row; align-items: center;">
-          <div class="value">
-            <div style="display:flex;">
-              <floor3d-textfield
-                label="Color"
-                .value="${colorcondition.color ? colorcondition.color : ''}"
-                .colorconditionAttribute=${'color'}
-                .index=${index}
-                .colorconditionIndex=${colorconditionIndex}
-                @input=${this._updateColorCondition}
-              ></floor3d-textfield>
-              <floor3d-textfield
-                label="State"
-                .value="${colorcondition.state ? colorcondition.state : ''}"
-                .colorconditionAttribute=${'state'}
-                .index=${index}
-                .colorconditionIndex=${colorconditionIndex}
-                @input=${this._updateColorCondition}
-              ></floor3d-textfield>
-            </div>
-          </div>
-          <div style="display: flex;">
-            ${colorconditionIndex !== 0
-              ? html`
-                  <ha-icon
-                    class="ha-icon-large"
-                    icon="mdi:arrow-up"
-                    @click=${this._moveColorCondition}
-                    .configDirection=${'up'}
-                    .index=${index}
-                    .colorconditionIndex=${colorconditionIndex}
-                  ></ha-icon>
-                `
-              : html` <ha-icon icon="mdi:arrow-up" style="opacity: 25%;" class="ha-icon-large"></ha-icon> `}
-            ${colorconditionIndex !== config.colorcondition.length - 1
-              ? html`
-                  <ha-icon
-                    class="ha-icon-large"
-                    icon="mdi:arrow-down"
-                    @click=${this._moveColorCondition}
-                    .configDirection=${'down'}
-                    .index=${index}
-                    .colorconditionIndex=${colorconditionIndex}
-                  ></ha-icon>
-                `
-              : html` <ha-icon icon="mdi:arrow-down" style="opacity: 25%;" class="ha-icon-large"></ha-icon> `}
-            <ha-icon
-              class="ha-icon-large"
-              icon="mdi:close"
-              @click=${this._removeColorCondition}
-              .index=${index}
-              .colorconditionIndex=${colorconditionIndex}
-            ></ha-icon>
-          </div>
-        </div>
-      `);
-    }
-    return colorconditionValuesArray;
-  }
-
-  private _addObject(ev): void {
-    if (!this._config || !this.hass) {
-      return;
-    }
-    const target = ev.target;
-
-    let objectArray = this._config.object_groups[target.index].objects;
-
-    if (!objectArray) {
-      objectArray = [];
-    }
-
-    const newObject = { object_id: '' };
-    const newArray = objectArray.slice();
-    newArray.push(newObject);
-
-    this._configObjectArray[target.index].objects = newArray;
-
-    this._config.object_groups = this._configObjectArray;
-    this._fireConfigChanged();
-  }
-
-  private _addColorCondition(ev): void {
-    if (!this._config || !this.hass) {
-      return;
-    }
-    const target = ev.target;
-
-    let colorconditionArray = this._config.entities[target.index].colorcondition;
-
-    if (!colorconditionArray) {
-      colorconditionArray = [];
-    }
-
-    const newObject = { state: '', color: '' };
-    const newArray = colorconditionArray.slice();
-    newArray.push(newObject);
-
-    this._configArray[target.index].colorcondition = newArray;
-
-    this._config.entities = this._configArray;
-    this._fireConfigChanged();
-  }
-
-  private _moveObject(ev): void {
-    if (!this._config || !this.hass) {
-      return;
-    }
-    const target = ev.target;
-
-    const objectArray = this._config.object_groups[target.index].objects;
-
-    let newArray = objectArray.slice();
-    if (target.configDirection == 'up') {
-      newArray = arrayMove(newArray, target.objectIndex, target.objectIndex - 1);
-    } else if (target.configDirection == 'down') {
-      newArray = arrayMove(newArray, target.objectIndex, target.objectIndex + 1);
-    }
-
-    this._configObjectArray[target.index].objects = newArray;
-
-    this._config.object_groups = this._configObjectArray;
-    this._fireConfigChanged();
-  }
-
-  private _moveColorCondition(ev): void {
-    if (!this._config || !this.hass) {
-      return;
-    }
-    const target = ev.target;
-
-    const colorconditionArray = this._config.entities[target.index].colorcondition;
-
-    let newArray = colorconditionArray.slice();
-    if (target.configDirection == 'up') {
-      newArray = arrayMove(newArray, target.colorconditionIndex, target.colorconditionIndex - 1);
-    } else if (target.configDirection == 'down') {
-      newArray = arrayMove(newArray, target.colorconditionIndex, target.colorconditionIndex + 1);
-    }
-
-    this._configArray[target.index].colorcondition = newArray;
-
-    this._config.entities = this._configArray;
-    this._fireConfigChanged();
-  }
-
-  private _removeObject(ev): void {
-    if (!this._config || !this.hass) {
-      return;
-    }
-    const target = ev.target;
-
-    const objectArray = this._configObjectArray[target.index].objects;
-
-    const clonedArray = objectArray.slice();
-    const newArray: any = [];
-    let arrayIndex = 0;
-    for (const config of clonedArray) {
-      if (target.objectIndex !== arrayIndex) {
-        newArray.push(clonedArray[arrayIndex]);
-      }
-      arrayIndex++;
-    }
-    if (newArray.length === 0) {
-      delete this._configObjectArray[target.index].objects;
-    } else {
-      this._configObjectArray[target.index].objects = newArray;
-    }
-    this._config.object_groups = this._configObjectArray;
-    this._fireConfigChanged();
-  }
-
-  private _removeColorCondition(ev): void {
-    if (!this._config || !this.hass) {
-      return;
-    }
-    const target = ev.target;
-
-    const colorconditionArray = this._configArray[target.index].colorcondition;
-
-    const clonedArray = colorconditionArray.slice();
-    const newArray: any = [];
-    let arrayIndex = 0;
-    for (const config of clonedArray) {
-      if (target.colorconditionIndex !== arrayIndex) {
-        newArray.push(clonedArray[arrayIndex]);
-      }
-      arrayIndex++;
-    }
-    if (newArray.length === 0) {
-      delete this._configArray[target.index].colorcondition;
-    } else {
-      this._configArray[target.index].colorcondition = newArray;
-    }
-    this._config.entities = this._configArray;
-    this._fireConfigChanged();
-  }
-
-  private _updateObject(ev): void {
-    const target = ev.target;
-
-    const objectArray = this._configObjectArray[target.index].objects;
-
-    const newobjectArray: any = [];
-    for (const index in objectArray) {
-      if (target.objectIndex == index) {
-        const clonedObject = { ...objectArray[index] };
-        const newObject = { [target.objectAttribute]: target.value };
-        const mergedObject = Object.assign(clonedObject, newObject);
-        if (target.value == '') {
-          delete mergedObject[target.objectAttribute];
-        }
-        newobjectArray.push(mergedObject);
-      } else {
-        newobjectArray.push(objectArray[index]);
-      }
-    }
-
-    this._configObjectArray[target.index].objects = newobjectArray;
-
-    this._config.object_groups = this._configObjectArray;
-    this._fireConfigChanged();
-  }
-
-  private _updateColorCondition(ev): void {
-    const target = ev.target;
-
-    const colorconditionArray = this._configArray[target.index].colorcondition;
-
-    const newcolorconditionArray: any = [];
-    for (const index in colorconditionArray) {
-      if (target.colorconditionIndex == index) {
-        const clonedObject = { ...colorconditionArray[index] };
-        const newObject = { [target.colorconditionAttribute]: target.value };
-        const mergedObject = Object.assign(clonedObject, newObject);
-        if (target.value == '') {
-          delete mergedObject[target.colorconditionAttribute];
-        }
-        newcolorconditionArray.push(mergedObject);
-      } else {
-        newcolorconditionArray.push(colorconditionArray[index]);
-      }
-    }
-
-    this._configArray[target.index].colorcondition = newcolorconditionArray;
-
-    this._config.entities = this._configArray;
-    this._fireConfigChanged();
-  }
-
-  private _createImageElement(index): TemplateResult {
-    const options = this._options.entities.options.entities[index].options.image;
-    const config = this._configArray[index];
-    const isImage = !!config.type3d && config.type3d === 'image';
-    if (isImage) {
-      config.image = { ...config.image };
-    }
-    return html`
-      ${isImage ? html`
-            <div class="category" id="image">
-              <div
-                class="sub-category"
-                @click=${this._toggleThing}
-                .options=${options}
-                .optionsTarget=${this._options.entities.options.entities[index].options}
-              >
-                <div class="row">
-                  <ha-icon .icon=${`mdi:${options.icon}`}></ha-icon>
-                  <div class="title">${options.name}</div>
-                  <ha-icon .icon=${options.show ? 'mdi:chevron-up' : 'mdi:chevron-down'} style="margin-left: auto;"></ha-icon>
-                </div>
-                <div class="secondary">${options.secondary}</div>
-              </div>
-              ${options.show ? html`
-                    <div class="card-options" style="display: flex; flex-direction: column; align-items: left;">
-                      <floor3d-textfield
-                        label="Image Attribute (Optional)"
-                        .value=${config.image && config.image.attribute ? config.image.attribute : ''}
-                        .configAttribute=${'attribute'}
-                        .configObject=${config.image}
-                        @input=${this._valueChanged}
-                      ></floor3d-textfield>
-                      <floor3d-textfield
-                        label="Rotation (Degrees)"
-                        .value=${config.image && config.image.rotate ? config.image.rotate : ''}
-                        .configAttribute=${'rotate'}
-                        .configObject=${config.image}
-                        @input=${this._valueChanged}
-                        type="number"
-                      ></floor3d-textfield>
-                      <floor3d-textfield
-                        label="Lumens (Emission)"
-                        .value=${config.image && config.image.lumens ? config.image.lumens : ''}
-                        .configAttribute=${'lumens'}
-                        .configObject=${config.image}
-                        @input=${this._valueChanged}
-                        type="number"
-                      ></floor3d-textfield>
-                      <ha-formfield .label=${'Mirror'}>
-                        <ha-switch
-                          .checked=${config.image && config.image.mirror ? config.image.mirror : false}
-                          .configAttribute=${'mirror'}
-                          .configObject=${config.image}
-                          @change=${this._valueChanged}
-                        ></ha-switch>
-                      </ha-formfield>
-                      <floor3d-textfield
-                        label="Lighting Lumens (Room Light)"
-                        .value=${config.image && config.image.lighting_lumens ? config.image.lighting_lumens : ''}
-                        .configAttribute=${'lighting_lumens'}
-                        .configObject=${config.image}
-                        @input=${this._valueChanged}
-                        type="number"
-                      ></floor3d-textfield>
-                      <ha-formfield label="Light Direction">
-                        <ha-select
-                          .label=${'Light Direction'}
-                          .configValue=${'lighting_direction'}
-                          .value=${config.image && config.image.lighting_direction ? config.image.lighting_direction : 'positive_z'}
-                          .configAttribute=${'lighting_direction'}
-                          .configObject=${config.image}
-                          @selected=${this._valueChanged}
-                          @closed=${(ev) => ev.stopPropagation()}
-                        >
-                          <mwc-list-item value="positive_z">Front (+Z)</mwc-list-item>
-                          <mwc-list-item value="negative_z">Back (-Z)</mwc-list-item>
-                          <mwc-list-item value="positive_x">Right (+X)</mwc-list-item>
-                          <mwc-list-item value="negative_x">Left (-X)</mwc-list-item>
-                          <mwc-list-item value="positive_y">Top (+Y)</mwc-list-item>
-                          <mwc-list-item value="negative_y">Bottom (-Y)</mwc-list-item>
-                        </ha-select>
-                      </ha-formfield>
-                      <ha-formfield label="Light Off State">
-                        <ha-select
-                          .label=${'Light Off State'}
-                          .configValue=${'lighting_off_state'}
-                          .value=${config.image && config.image.lighting_off_state ? config.image.lighting_off_state : 'unavailable'}
-                          .configAttribute=${'lighting_off_state'}
-                          .configObject=${config.image}
-                          @selected=${this._valueChanged}
-                          @closed=${(ev) => ev.stopPropagation()}
-                        >
-                          <mwc-list-item value="unavailable">Unavailable</mwc-list-item>
-                          <mwc-list-item value="off">Off</mwc-list-item>
-                          <mwc-list-item value="idle">Idle</mwc-list-item>
-                          <mwc-list-item value="paused">Paused</mwc-list-item>
-                          <mwc-list-item value="standby">Standby</mwc-list-item>
-                        </ha-select>
-                      </ha-formfield>
-                    </div>
-                  ` : ''}
-            </div>
-          ` : ''}
-    `;
-  }
-
-  private _createLightElement(index): TemplateResult {
-    const options = this._options.entities.options.entities[index].options.light;
-    const config = this._configArray[index];
-    const visible: boolean = config.type3d ? config.type3d === 'light' : false;
-    if (visible) {
-      config.light = { ...config.light };
-    }
-    return html`
-      ${visible
-        ? html`
-            <div class="category" id="light">
-              <div
-                class="sub-category"
-                @click=${this._toggleThing}
-                .options=${options}
-                .optionsTarget=${this._options.entities.options.entities[index].options}
-              >
-                <div class="row">
-                  <ha-icon .icon=${`mdi:${options.icon}`}></ha-icon>
-                  <div class="title">${options.name}</div>
-                  <ha-icon
-                    .icon=${options.show ? `mdi:chevron-up` : `mdi:chevron-down`}
-                    style="margin-left: auto;"
-                  ></ha-icon>
-                </div>
-                <div class="secondary">${options.secondary}</div>
-              </div>
-              ${options.show
-                ? html`
-                    <div class="card-options" style="display: flex; flex-direction: column; align-items: left;">
-                      ${index !== null
-                        ? html`
-                            <floor3d-formfield alignEnd label="Lumens (0-5000) <800>">
-                              <floor3d-textfield
-                                type="number"
-                                min="0"
-                                max="5000"
-                                step="50"
-                                .value=${config.light.lumens ? config.light.lumens : null}
-                                .configObject=${config.light}
-                                .configAttribute=${'lumens'}
-                                .ignoreNull=${false}
-                                @input=${this._valueChanged}
-                              ></floor3d-textfield>
-                            </floor3d-formfield>
-                            <floor3d-textfield
-                              label="Color"
-                              .value=${config.light.color ? config.light.color : ''}
-                              .configObject=${config.light}
-                              .configAttribute=${'color'}
-                              @input=${this._valueChanged}
-                            ></floor3d-textfield>
-                            <floor3d-formfield alignEnd label="Decay (0-inifinity, <2>)">
-                              <floor3d-textfield
-                                type="number"
-                                min="0"
-                                .value=${config.light.decay ? config.light.decay : null}
-                                .configObject=${config.light}
-                                .configAttribute=${'decay'}
-                                .ignoreNull=${false}
-                                @input=${this._valueChanged}
-                              ></floor3d-textfield>
-                            </floor3d-formfield>
-                            <floor3d-formfield alignEnd label="Distance (cm: 0=inifinity, <600>)">
-                              <floor3d-textfield
-                                type="number"
-                                min="0"
-                                .value=${config.light.distance ? config.light.distance : null}
-                                .configObject=${config.light}
-                                .configAttribute=${'distance'}
-                                .ignoreNull=${false}
-                                @input=${this._valueChanged}
-                              ></floor3d-textfield>
-                            </floor3d-formfield>
-                            <floor3d-select
-                              label="Shadow (yes/<no>)"
-                              @selected=${this._valueChanged}
-                              .value=${config.light.shadow ? config.light.shadow : null}
-                              .configObject=${config.light}
-                              .configAttribute=${'shadow'}
-                              .ignoreNull=${false}
-                              @closed=${(ev) => ev.stopPropagation()}
-                            >
-                              <mwc-list-item></mwc-list-item>
-                              <mwc-list-item value="yes">yes</mwc-list-item>
-                              <mwc-list-item value="no">no</mwc-list-item>
-                            </floor3d-select>
-                            <paper-input
-                              editable
-                              label="Light Direction (spot)"
-                              .value=${config.light.light_direction ? config.light.light_direction : ''}
-                              .configObject=${config.light}
-                              .configAttribute=${'light_direction'}
-                              @value-changed=${this._valueChanged}
-                            ></paper-input>
-                            <floor3d-textfield
-                              label="Light Target Object (spot)"
-                              .value=${config.light.light_target ? config.light.light_target : ''}
-                              .configObject=${config.light}
-                              .configAttribute=${'light_target'}
-                              @input=${this._valueChanged}
-                            ></floor3d-textfield>
-                            <floor3d-formfield alignEnd label="Angle degrees (spot)">
-                              <floor3d-textfield
-                                type="number"
-                                min="0"
-                                max="180"
-                                .value=${config.light.angle ? config.light.angle : null}
-                                .configObject=${config.light}
-                                .configAttribute=${'angle'}
-                                .ignoreNull=${false}
-                                @input=${this._valueChanged}
-                              ></floor3d-textfield>
-                            </floor3d-formfield>
-                            <floor3d-select
-                              label="Light Vertical Alignment"
-                              @selected=${this._valueChanged}
-                              .value=${config.light.vertical_alignment ? config.light.vertical_alignment : null}
-                              .configObject=${config.light}
-                              .configAttribute=${'vertical_alignment'}
-                              .ignoreNull=${false}
-                              @closed=${(ev) => ev.stopPropagation()}
-                            >
-                              <mwc-list-item></mwc-list-item>
-                              <mwc-list-item value="bottom">bottom</mwc-list-item>
-                              <mwc-list-item value="middle">middle</mwc-list-item>
-                              <mwc-list-item value="top">top</mwc-list-item>
-                            </floor3d-select>
-                          `
-                        : ''}
-                    </div>
-                  `
-                : ''}
-            </div>
-          `
-        : ''}
-    `;
-  }
-
-  private _createRoomElement(index): TemplateResult {
-    const options = this._options.entities.options.entities[index].options.room;
-    const config = this._configArray[index];
-    const visible: boolean = config.type3d ? config.type3d === 'room' : false;
-    if (visible) {
-      config.room = { ...config.room };
-    }
-    return html`
-      ${visible
-        ? html`
-            <div class="category" id="light">
-              <div
-                class="sub-category"
-                @click=${this._toggleThing}
-                .options=${options}
-                .optionsTarget=${this._options.entities.options.entities[index].options}
-              >
-                <div class="row">
-                  <ha-icon .icon=${`mdi:${options.icon}`}></ha-icon>
-                  <div class="title">${options.name}</div>
-                  <ha-icon
-                    .icon=${options.show ? `mdi:chevron-up` : `mdi:chevron-down`}
-                    style="margin-left: auto;"
-                  ></ha-icon>
-                </div>
-                <div class="secondary">${options.secondary}</div>
-              </div>
-              ${options.show
-                ? html`
-                    <div class="card-options" style="display: flex; flex-direction: column; align-items: left;">
-                      ${index !== null
-                        ? html` <floor3d-formfield alignEnd label="Transparency %">
-                              <floor3d-textfield
-                                type="number"
-                                min="0"
-                                max="100"
-                                .value=${config.room.transparency ? config.room.transparency : null}
-                                .configObject=${config.room}
-                                .configAttribute=${'transparency'}
-                                .ignoreNull=${false}
-                                @input=${this._valueChanged}
-                              ></floor3d-textfield>
-                            </floor3d-formfield>
-                            <floor3d-textfield
-                              label="Color"
-                              .value=${config.room.color ? config.room.color : ''}
-                              .configObject=${config.room}
-                              .configAttribute=${'color'}
-                              @input=${this._valueChanged}
-                            ></floor3d-textfield>
-                            <floor3d-formfield alignEnd label="Elevation (cm)">
-                              <floor3d-textfield
-                                type="number"
-                                min="0"
-                                .value=${config.room.elevation ? config.room.elevation : ''}
-                                .configObject=${config.room}
-                                .configAttribute=${'elevation'}
-                                .ignoreNull=${false}
-                                @input=${this._valueChanged}
-                              ></floor3d-textfield>
-                            </floor3d-formfield>
-                            <floor3d-textfield
-                              label="Label"
-                              fullwidth
-                              .value=${config.room.label ? config.room.label : ''}
-                              .configObject=${config.room}
-                              .configAttribute=${'label'}
-                              @input=${this._valueChanged}
-                            ></floor3d-textfield>
-                            <floor3d-select
-                              label="Label text (state or template)"
-                              @selected=${this._valueChanged}
-                              .value=${config.room.label_text ? config.room.label_text : null}
-                              .configObject=${config.room}
-                              .configAttribute=${'label_text'}
-                              .ignoreNull=${false}
-                              @closed=${(ev) => ev.stopPropagation()}
-                            >
-                              <mwc-list-item></mwc-list-item>
-                              <mwc-list-item value="state">state</mwc-list-item>
-                              <mwc-list-item value="template">template</mwc-list-item>
-                            </floor3d-select>
-                            <floor3d-formfield alignEnd label="Label Width (scaled cm)">
-                              <floor3d-textfield
-                                type="number"
-                                min="0"
-                                .value=${config.room.width ? config.room.width : null}
-                                .configObject=${config.room}
-                                .configAttribute=${'width'}
-                                .ignoreNull=${false}
-                                @input=${this._valueChanged}
-                              ></floor3d-textfield>
-                            </floor3d-formfield>
-                            <floor3d-formfield alignEnd label="Label Height (scaled cm)">
-                              <floor3d-textfield
-                                type="number"
-                                min="0"
-                                .value=${config.room.height ? config.room.height : null}
-                                .configObject=${config.room}
-                                .configAttribute=${'height'}
-                                .ignoreNull=${false}
-                                @input=${this._valueChanged}
-                              ></floor3d-textfield>
-                            </floor3d-formfield>
-                            ${this._createTextSubElement(config.room)}`
-                        : ''}
-                    </div>
-                  `
-                : ''}
-            </div>
-          `
-        : ''}
-    `;
-  }
-
-  private _createZoomElement(index): TemplateResult {
-    const options = this._options.zoom_areas.options.zoom_areas[index].options.zoom;
-    const config = this._configZoomArray[index];
-    return html`
-      <div class="category" id="light">
-        <div
-          class="sub-category"
-          @click=${this._toggleThing}
-          .options=${options}
-          .optionsTarget=${this._options.zoom_areas.options.zoom_areas[index].options}
-        >
-          <div class="row">
-            <ha-icon .icon=${`mdi:${options.icon}`}></ha-icon>
-            <div class="title">${options.name}</div>
-            <ha-icon .icon=${options.show ? `mdi:chevron-up` : `mdi:chevron-down`} style="margin-left: auto;"></ha-icon>
-          </div>
-          <div class="secondary">${options.secondary}</div>
-        </div>
-        ${options.show
-          ? html`
-              <div class="card-options" style="display: flex; flex-direction: column; align-items: left;">
-                ${index !== null
-                  ? html`
-                      ${!this._objects
-                        ? html`
-                            <floor3d-textfield
-                              label="Object"
-                              .value=${config.object_id ? config.object_id : ''}
-                              .configAttribute=${'object_id'}
-                              .configObject=${config}
-                              @input=${this._valueChanged}
-                              required
-                            ></floor3d-textfield>
-                          `
-                        : html`
-                            <floor3d-select
-                              label="Object id"
-                              @selected=${this._valueChanged}
-                              .value=${config.object_id}
-                              .configAttribute=${'object_id'}
-                              .configObject=${config}
-                              .ignoreNull=${false}
-                              required
-                              @closed=${(ev) => ev.stopPropagation()}
-                            >
-                              ${this._objects.map((object_id) => {
-                                return html` <mwc-list-item value="${object_id}">${object_id}</mwc-list-item> `;
-                              })}
-                              ${this._configObjectArray.map((object_group) => {
-                                return html`
-                                  <mwc-list-item value="${'<' + object_group.object_group + '>'}"
-                                    >${'<' + object_group.object_group + '>'}</mwc-list-item
-                                  >
-                                `;
-                              })}
-                            </floor3d-select>
-                          `}
-                      <paper-input
-                        editable
-                        label="Zoom Direction {x: xxxx,y: yyyy, z: zzzz }"
-                        .value=${config.direction ? config.direction : null}
-                        .configObject=${config}
-                        .configAttribute=${'direction'}
-                        @value-changed=${this._valueChanged}
-                      ></paper-input>
-                      <paper-input
-                        editable
-                        label="Zoom Rotation {x: xxxx,y: yyyy, z: zzzz }"
-                        .value=${config.rotation ? config.rotation : null}
-                        .configObject=${config}
-                        .configAttribute=${'rotation'}
-                        @value-changed=${this._valueChanged}
-                      ></paper-input>
-                      <floor3d-formfield alignEnd label="Distance (cm)">
-                        <floor3d-textfield
-                          type="number"
-                          min="0"
-                          .value=${config.distance ? config.distance : null}
-                          .configObject=${config}
-                          .configAttribute=${'distance'}
-                          .ignoreNull=${false}
-                          @input=${this._valueChanged}
-                        ></floor3d-textfield>
-                      </floor3d-formfield>
-                    `
-                  : ''}
-              </div>
-            `
-          : ''}
-      </div>
-    `;
-  }
-
-  private _createTextSubElement(subconfig: Floor3dCardConfig): TemplateResult {
-    return html`
-      <floor3d-textfield
-        label="Attribute"
-        fullwidth
-        .value=${subconfig.attribute ? subconfig.room.attribute : ''}
-        .configObject=${subconfig}
-        .configAttribute=${'attribute'}
-        @input=${this._valueChanged}
-      ></floor3d-textfield>
-      <floor3d-textfield
-        label="font"
-        fullwidth
-        .value=${subconfig.font ? subconfig.font : ''}
-        .configObject=${subconfig}
-        .configAttribute=${'font'}
-        @input=${this._valueChanged}
-      ></floor3d-textfield>
-      <floor3d-formfield alignEnd label="Span percentage">
-        <floor3d-textfield
-          label="Span percentage"
-          type="number"
-          min="0"
-          max="100"
-          .value=${subconfig.span ? subconfig.span : null}
-          .configObject=${subconfig}
-          .configAttribute=${'span'}
-          .ignoreNull=${false}
-          @input=${this._valueChanged}
-        ></floor3d-textfield>
-      </floor3d-formfield>
-      <floor3d-textfield
-        label="Text Background Color"
-        .value=${subconfig.textbgcolor ? subconfig.textbgcolor : ''}
-        .configObject=${subconfig}
-        .configAttribute=${'textbgcolor'}
-        @input=${this._valueChanged}
-      ></floor3d-textfield>
-      <floor3d-textfield
-        label="Text Foreground Color"
-        .value=${subconfig.textfgcolor ? subconfig.textfgcolor : ''}
-        .configObject=${subconfig}
-        .configAttribute=${'textfgcolor'}
-        @input=${this._valueChanged}
-      ></floor3d-textfield>
-    `;
-  }
-
-  private _createTextElement(index): TemplateResult {
-    const options = this._options.entities.options.entities[index].options.text;
-    const config = this._configArray[index];
-    const visible: boolean = config.type3d ? config.type3d === 'text' : false;
-    if (visible) {
-      config.text = { ...config.text };
-    }
-    return html`
-      ${visible
-        ? html`
-            <div class="category" id="text">
-              <div
-                class="sub-category"
-                @click=${this._toggleThing}
-                .options=${options}
-                .optionsTarget=${this._options.entities.options.entities[index].options}
-              >
-                <div class="row">
-                  <ha-icon .icon=${`mdi:${options.icon}`}></ha-icon>
-                  <div class="title">${options.name}</div>
-                  <ha-icon
-                    .icon=${options.show ? `mdi:chevron-up` : `mdi:chevron-down`}
-                    style="margin-left: auto;"
-                  ></ha-icon>
-                </div>
-                <div class="secondary">${options.secondary}</div>
-              </div>
-              ${options.show
-                ? html`
-                    <div class="card-options" style="display: flex; flex-direction: column; align-items: left;">
-                      ${index !== null ? html` ${this._createTextSubElement(config.text)} ` : ''}
-                    </div>
-                  `
-                : ''}
-            </div>
-          `
-        : ''}
-    `;
-  }
-
-  private _createDoorElement(index): TemplateResult {
-    const options = this._options.entities.options.entities[index].options.door;
-    const config = this._configArray[index];
-    const visible: boolean = config.type3d ? config.type3d === 'door' : false;
-    if (visible) {
-      config.door = { ...config.door };
-    }
-    return html`
-      ${visible
-        ? html`
-            <div class="category" id="door">
-              <div
-                class="sub-category"
-                @click=${this._toggleThing}
-                .options=${options}
-                .optionsTarget=${this._options.entities.options.entities[index].options}
-              >
-                <div class="row">
-                  <ha-icon .icon=${`mdi:${options.icon}`}></ha-icon>
-                  <div class="title">${options.name}</div>
-                  <ha-icon
-                    .icon=${options.show ? `mdi:chevron-up` : `mdi:chevron-down`}
-                    style="margin-left: auto;"
-                  ></ha-icon>
-                </div>
-                <div class="secondary">${options.secondary}</div>
-              </div>
-              ${options.show
-                ? html`
-                    <div class="card-options" style="display: flex; flex-direction: column; align-items: left;">
-                      ${index !== null
-                        ? html`
-                            <floor3d-select
-                              label="Door Type"
-                              @selected=${this._valueChanged}
-                              .value=${config.door.doortype ? config.door.doortype : null}
-                              .configObject=${config.door}
-                              .configAttribute=${'doortype'}
-                              .ignoreNull=${false}
-                              @closed=${(ev) => ev.stopPropagation()}
-                            >
-                              <mwc-list-item></mwc-list-item>
-                              <mwc-list-item value="swing">swing</mwc-list-item>
-                              <mwc-list-item value="slide">slide</mwc-list-item>
-                            </floor3d-select>
-                            <floor3d-select
-                              label="Side"
-                              @selected=${this._valueChanged}
-                              .value=${config.door.side ? config.door.side : null}
-                              .configObject=${config.door}
-                              .configAttribute=${'side'}
-                              .ignoreNull=${false}
-                              @closed=${(ev) => ev.stopPropagation()}
-                            >
-                              <mwc-list-item></mwc-list-item>
-                              <mwc-list-item value="up">up</mwc-list-item>
-                              <mwc-list-item value="down">down</mwc-list-item>
-                              <mwc-list-item value="left">left</mwc-list-item>
-                              <mwc-list-item value="right">right</mwc-list-item>
-                            </floor3d-select>
-                            <floor3d-select
-                              label="Direction"
-                              @selected=${this._valueChanged}
-                              .value=${config.door.direction ? config.door.direction : null}
-                              .configObject=${config.door}
-                              .configAttribute=${'direction'}
-                              .ignoreNull=${false}
-                              @closed=${(ev) => ev.stopPropagation()}
-                            >
-                              <mwc-list-item></mwc-list-item>
-                              <mwc-list-item value="inner">inner</mwc-list-item>
-                              <mwc-list-item value="outer">outer</mwc-list-item>
-                            </floor3d-select>
-                            <floor3d-formfield alignEnd label="Degrees (for Swing)">
-                              <floor3d-textfield
-                                type="number"
-                                min="0"
-                                max="180"
-                                .value=${config.door.degrees ? config.door.degrees : null}
-                                .configObject=${config.door}
-                                .configAttribute=${'degrees'}
-                                .ignoreNull=${false}
-                                @input=${this._valueChanged}
-                              ></floor3d-textfield>
-                            </floor3d-formfield>
-                            <floor3d-formfield alignEnd label="Percentage open (for slide)">
-                              <floor3d-textfield
-                                type="number"
-                                min="0"
-                                max="100"
-                                label="Percentage open (for slide)"
-                                .value=${config.door.percentage ? config.door.percentage : null}
-                                .configObject=${config.door}
-                                .configAttribute=${'percentage'}
-                                .ignoreNull=${false}
-                                @input=${this._valueChanged}
-                              ></floor3d-textfield>
-                            </floor3d-formfield>
-                            <floor3d-textfield
-                              label="Pane object"
-                              .value=${config.door.pane ? config.door.pane : ''}
-                              .configObject=${config.door}
-                              .configAttribute=${'pane'}
-                              @input=${this._valueChanged}
-                            ></floor3d-textfield>
-                            <floor3d-textfield
-                              label="Hinge object"
-                              .value=${config.door.hinge ? config.door.hinge : ''}
-                              .configObject=${config.door}
-                              .configAttribute=${'hinge'}
-                              @input=${this._valueChanged}
-                            ></floor3d-textfield>
-                          `
-                        : ''}
-                    </div>
-                  `
-                : ''}
-            </div>
-          `
-        : ''}
-    `;
-  }
-
-  private _createCoverElement(index): TemplateResult {
-    const options = this._options.entities.options.entities[index].options.cover;
-    const config = this._configArray[index];
-    const visible: boolean = config.type3d ? config.type3d === 'cover' : false;
-    if (visible) {
-      config.cover = { ...config.cover };
-    }
-    return html`
-      ${visible
-        ? html`
-            <div class="category" id="cover">
-              <div
-                class="sub-category"
-                @click=${this._toggleThing}
-                .options=${options}
-                .optionsTarget=${this._options.entities.options.entities[index].options}
-              >
-                <div class="row">
-                  <ha-icon .icon=${`mdi:${options.icon}`}></ha-icon>
-                  <div class="title">${options.name}</div>
-                  <ha-icon
-                    .icon=${options.show ? `mdi:chevron-up` : `mdi:chevron-down`}
-                    style="margin-left: auto;"
-                  ></ha-icon>
-                </div>
-                <div class="secondary">${options.secondary}</div>
-              </div>
-              ${options.show
-                ? html`
-                    <div class="card-options" style="display: flex; flex-direction: column; align-items: left;">
-                      ${index !== null
-                        ? html`
-                            <floor3d-textfield
-                              label="Pane object"
-                              .value=${config.cover.pane ? config.cover.pane : ''}
-                              .configObject=${config.cover}
-                              .configAttribute=${'pane'}
-                              @input=${this._valueChanged}
-                            ></floor3d-textfield>
-                          `
-                        : ''}
-                    </div>
-                  `
-                : ''}
-            </div>
-          `
-        : ''}
-    `;
-  }
-
-  // Compact fields for the options added in the three.js 0.186 build.
-  private _yesNoField(label: string, object: any, attribute: string, fallback: string): TemplateResult {
-    const current = object[attribute];
-    return this._choiceField(label, object, attribute, fallback, ['yes', 'no'], current === true ? 'yes' : current === false ? 'no' : undefined);
-  }
-
-  private _choiceField(
-    label: string,
-    object: any,
-    attribute: string,
-    fallback: string,
-    choices: string[],
-    value?: string,
-  ): TemplateResult {
-    return html`
-      <floor3d-select
-        label=${label}
-        @selected=${this._valueChanged}
-        .value=${value !== undefined ? value : object[attribute] ? object[attribute] : fallback}
-        .configObject=${object}
-        .configAttribute=${attribute}
-        .ignoreNull=${false}
-        @closed=${(ev) => ev.stopPropagation()}
-        style="flex: 1;"
+      <div class="heading">Colour by state</div>
+      <ha-sortable
+        handle-selector=".handle"
+        @item-moved=${(ev: CustomEvent) => {
+          const next = conditions.slice();
+          next.splice(ev.detail.newIndex, 0, next.splice(ev.detail.oldIndex, 1)[0]);
+          set(next);
+        }}
       >
-        <mwc-list-item></mwc-list-item>
-        ${choices.map((c) => html`<mwc-list-item value=${c}>${c}</mwc-list-item>`)}
-      </floor3d-select>
-    `;
-  }
-
-  private _textField(label: string, object: any, attribute: string, fallback: any, type = 'text'): TemplateResult {
-    return html`
-      <floor3d-textfield
-        label=${label}
-        type=${type}
-        step="any"
-        .value=${object[attribute] !== undefined ? object[attribute] : fallback}
-        .configObject=${object}
-        .configAttribute=${attribute}
-        @input=${this._valueChanged}
-      ></floor3d-textfield>
-    `;
-  }
-
-  private _createTrackerElement(index): TemplateResult {
-    if (this._configArray[index].type3d == 'tracker') {
-      if (!this._configArray[index].tracker) {
-        this._configArray[index].tracker = {};
-      }
-      const tracker = this._configArray[index].tracker;
-      return html`
-        <div class="card-options">
-          <floor3d-textfield
-            label="Y Sensor Entity (e.g. sensor.y)"
-            .value=${tracker.sensor_y ? tracker.sensor_y : ''}
-            .configAttribute=${'sensor_y'}
-            .configObject=${tracker}
-            @input=${this._valueChanged}
-          ></floor3d-textfield>
-          <floor3d-textfield
-            label="Sensor Position [X, Y, Z]"
-            .value=${tracker.sensor_position ? JSON.stringify(tracker.sensor_position) : '[0, 0, 0]'}
-            .configAttribute=${'sensor_position'}
-            .configObject=${tracker}
-            @input=${this._valueChanged}
-          ></floor3d-textfield>
-          <div style="display: flex; gap: 8px;">
-            <floor3d-textfield
-              label="Rotation (Degrees)"
-              type="number"
-              .value=${tracker.sensor_rotation !== undefined ? tracker.sensor_rotation : 0}
-              .configAttribute=${'sensor_rotation'}
-              .configObject=${tracker}
-              @input=${this._valueChanged}
-              style="flex: 1;"
-            ></floor3d-textfield>
-            <floor3d-textfield
-              label="Scale"
-              type="number"
-              step="0.001"
-              .value=${tracker.scale !== undefined ? tracker.scale : 0.001}
-              .configAttribute=${'scale'}
-              .configObject=${tracker}
-              @input=${this._valueChanged}
-              style="flex: 1;"
-            ></floor3d-textfield>
-          </div>
-          <div style="display: flex; gap: 8px;">
-            <floor3d-textfield
-              label="Height (cm)"
-              type="number"
-              .value=${tracker.height !== undefined ? tracker.height : 150}
-              .configAttribute=${'height'}
-              .configObject=${tracker}
-              @input=${this._valueChanged}
-              style="flex: 1;"
-            ></floor3d-textfield>
-            <floor3d-textfield
-              label="Size"
-              type="number"
-              .value=${tracker.size !== undefined ? tracker.size : 0.15}
-              .configAttribute=${'size'}
-              .configObject=${tracker}
-              @input=${this._valueChanged}
-              style="flex: 1;"
-            ></floor3d-textfield>
-          </div>
-          <floor3d-textfield
-            label="Color (Hex)"
-            .value=${tracker.color ? tracker.color : '#FF5500'}
-            .configAttribute=${'color'}
-            .configObject=${tracker}
-            @input=${this._valueChanged}
-          ></floor3d-textfield>
-          <div style="display: flex; gap: 8px;">
-            ${this._choiceField('Coordinate Unit (<mm>)', tracker, 'unit', 'mm', ['mm', 'cm', 'm'])}
-            ${this._yesNoField('Mirror X (yes/<no>)', tracker, 'flip_x', 'no')}
-          </div>
-          ${this._textField('Zone Entity (Optional)', tracker, 'zone', '')}
+        <div class="rows">
+          ${repeat(
+            conditions,
+            (c) => this._key(c),
+            (c, i) => html`
+              <div class="row condition">
+                <div class="handle"><ha-svg-icon .path=${mdiDragHorizontalVariant}></ha-svg-icon></div>
+                ${this._form(colorConditionSchema(), c, (value) => {
+                  const next = conditions.slice();
+                  next[i] = dropEmpty({ ...value });
+                  set(next);
+                })}
+                <ha-icon-button
+                  .label=${'Remove'}
+                  .path=${mdiDelete}
+                  @click=${() => set(conditions.filter((_, j) => j !== i))}
+                ></ha-icon-button>
+              </div>
+            `,
+          )}
         </div>
-      `;
-    }
-    return html``;
-  }
-
-  private _createGestureElement(index): TemplateResult {
-    const options = this._options.entities.options.entities[index].options.gesture;
-    const config = this._configArray[index];
-    const visible: boolean = config.type3d ? config.type3d === 'gesture' : false;
-    if (visible) {
-      config.gesture = { ...config.gesture };
-    }
-    return html`
-      ${visible
-        ? html`
-            <div class="category" id="text">
-              <div
-                class="sub-category"
-                @click=${this._toggleThing}
-                .options=${options}
-                .optionsTarget=${this._options.entities.options.entities[index].options}
-              >
-                <div class="row">
-                  <ha-icon .icon=${`mdi:${options.icon}`}></ha-icon>
-                  <div class="title">${options.name}</div>
-                  <ha-icon
-                    .icon=${options.show ? `mdi:chevron-up` : `mdi:chevron-down`}
-                    style="margin-left: auto;"
-                  ></ha-icon>
-                </div>
-                <div class="secondary">${options.secondary}</div>
-              </div>
-              ${options.show
-                ? html`
-                    <div class="card-options" style="display: flex; flex-direction: column; align-items: left;">
-                      ${index !== null
-                        ? html`
-                            <floor3d-textfield
-                              label="domain"
-                              fullwidth
-                              .value=${config.gesture.domain ? config.gesture.domain : ''}
-                              .configObject=${config.gesture}
-                              .configAttribute=${'domain'}
-                              @input=${this._valueChanged}
-                            ></floor3d-textfield>
-                            <floor3d-textfield
-                              label="service"
-                              fullwidth
-                              .value=${config.gesture.service ? config.gesture.service : ''}
-                              .configObject=${config.gesture}
-                              .configAttribute=${'service'}
-                              @input=${this._valueChanged}
-                            ></floor3d-textfield>
-                          `
-                        : ''}
-                    </div>
-                  `
-                : ''}
-            </div>
-          `
-        : ''}
+      </ha-sortable>
+      <ha-button class="add" @click=${() => set([...conditions, { state: '', color: '' }])}>
+        <ha-svg-icon slot="start" .path=${mdiPlus}></ha-svg-icon>Add colour
+      </ha-button>
     `;
   }
 
-  private _createRotateElement(index): TemplateResult {
-    const options = this._options.entities.options.entities[index].options.rotate;
-    const config = this._configArray[index];
-    const visible: boolean = config.type3d ? config.type3d === 'rotate' : false;
-    if (visible) {
-      config.rotate = { ...config.rotate };
-    }
-    return html`
-      ${visible
-        ? html`
-            <div class="category" id="text">
-              <div
-                class="sub-category"
-                @click=${this._toggleThing}
-                .options=${options}
-                .optionsTarget=${this._options.entities.options.entities[index].options}
-              >
-                <div class="row">
-                  <ha-icon .icon=${`mdi:${options.icon}`}></ha-icon>
-                  <div class="title">${options.name}</div>
-                  <ha-icon
-                    .icon=${options.show ? `mdi:chevron-up` : `mdi:chevron-down`}
-                    style="margin-left: auto;"
-                  ></ha-icon>
+  private _renderGroup(index: number, group: any, set: (value: any) => void): TemplateResult[] {
+    const objects: any[] = group.objects || [];
+    const idOf = (o: any): string => (isObject(o) ? o.object_id : o);
+    const path = ['object_groups', index, 'objects'];
+    const active = this._picking && JSON.stringify(this._picking.path) === JSON.stringify(path);
+    const setObjects = (next: any[]): void => set({ ...group, objects: next });
+    return [
+      this._form(groupSchema(), group, (value) => set(dropEmpty({ ...value }))),
+      html`
+        <div class="heading">Objects</div>
+        <ha-sortable
+          handle-selector=".handle"
+          @item-moved=${(ev: CustomEvent) => {
+            const next = objects.slice();
+            next.splice(ev.detail.newIndex, 0, next.splice(ev.detail.oldIndex, 1)[0]);
+            setObjects(next);
+          }}
+        >
+          <div class="rows">
+            ${repeat(
+              objects,
+              (o) => this._key(o),
+              (o, i) => html`
+                <div class="row" @mouseenter=${() => this._highlight([idOf(o)])} @mouseleave=${() => this._highlightCurrent()}>
+                  <div class="handle"><ha-svg-icon .path=${mdiDragHorizontalVariant}></ha-svg-icon></div>
+                  <div class="info"><span class="primary">${idOf(o) || 'No object'}</span></div>
+                  <ha-icon-button
+                    .label=${'Remove'}
+                    .path=${mdiDelete}
+                    @click=${() => setObjects(objects.filter((_, j) => j !== i))}
+                  ></ha-icon-button>
                 </div>
-                <div class="secondary">${options.secondary}</div>
-              </div>
-              ${options.show
-                ? html`
-                    <div class="card-options" style="display: flex; flex-direction: column; align-items: left;">
-                      ${index !== null
-                        ? html`
-                            <floor3d-select
-                              label="Axis"
-                              @selected=${this._valueChanged}
-                              .value=${config.rotate.axis ? config.rotate.axis : null}
-                              .configObject=${config.rotate}
-                              .configAttribute=${'axis'}
-                              .ignoreNull=${false}
-                              @closed=${(ev) => ev.stopPropagation()}
-                            >
-                              <mwc-list-item></mwc-list-item>
-                              <mwc-list-item value="x">x</mwc-list-item>
-                              <mwc-list-item value="y">y</mwc-list-item>
-                              <mwc-list-item value="z">z</mwc-list-item>
-                            </floor3d-select>
-                            <floor3d-textfield
-                              label="Hinge-pivot object "
-                              .value=${config.rotate.hinge ? config.rotate.hinge : ''}
-                              .configObject=${config.rotate}
-                              .configAttribute=${'hinge'}
-                              @input=${this._valueChanged}
-                            ></floor3d-textfield>
-                            <floor3d-textfield
-                              label="Round per seconds (2 or less recommended)"
-                              .value=${config.rotate.round_per_second ? config.rotate.round_per_second : ''}
-                              .configObject=${config.rotate}
-                              .configAttribute=${'round_per_second'}
-                              @input=${this._valueChanged}
-                            ></floor3d-textfield>
-                          `
-                        : ''}
-                    </div>
-                  `
-                : ''}
-            </div>
-          `
-        : ''}
-    `;
-  }
-
-  private _createHideElement(index): TemplateResult {
-    const options = this._options.entities.options.entities[index].options.hide;
-    const config = this._configArray[index];
-
-    const visible: boolean = config.type3d ? config.type3d === 'hide' : false;
-
-    if (visible) {
-      config.hide = { ...config.hide };
-    }
-    return html`
-      ${visible
-        ? html`
-            <div class="category" id="hide">
-              <div
-                class="sub-category"
-                @click=${this._toggleThing}
-                .options=${options}
-                .optionsTarget=${this._options.entities.options.entities[index].options}
-              >
-                <div class="row">
-                  <ha-icon .icon=${`mdi:${options.icon}`}></ha-icon>
-                  <div class="title">${options.name}</div>
-                  <ha-icon
-                    .icon=${options.show ? `mdi:chevron-up` : `mdi:chevron-down`}
-                    style="margin-left: auto;"
-                  ></ha-icon>
-                </div>
-                <div class="secondary">${options.secondary}</div>
-              </div>
-              ${options.show
-                ? html`
-                    <div class="card-options" style="display: flex; flex-direction: column; align-items: left;">
-                      ${index !== null
-                        ? html`
-                            <floor3d-textfield
-                              label="state"
-                              .value=${config.hide.state ? config.hide.state : ''}
-                              .configAttribute=${'state'}
-                              .configObject=${config.hide}
-                              @input=${this._valueChanged}
-                            ></floor3d-textfield>
-                          `
-                        : ''}
-                    </div>
-                  `
-                : ''}
-            </div>
-          `
-        : ''}
-    `;
-  }
-
-  private _createShowElement(index): TemplateResult {
-    const options = this._options.entities.options.entities[index].options.show;
-    const config = this._configArray[index];
-
-    const visible: boolean = config.type3d ? config.type3d === 'show' : false;
-
-    if (visible) {
-      config.show = { ...config.show };
-    }
-    return html`
-      ${visible
-        ? html`
-            <div class="category" id="show">
-              <div
-                class="sub-category"
-                @click=${this._toggleThing}
-                .options=${options}
-                .optionsTarget=${this._options.entities.options.entities[index].options}
-              >
-                <div class="row">
-                  <ha-icon .icon=${`mdi:${options.icon}`}></ha-icon>
-                  <div class="title">${options.name}</div>
-                  <ha-icon
-                    .icon=${options.show ? `mdi:chevron-up` : `mdi:chevron-down`}
-                    style="margin-left: auto;"
-                  ></ha-icon>
-                </div>
-                <div class="secondary">${options.secondary}</div>
-              </div>
-              ${options.show
-                ? html`
-                    <div class="card-options" style="display: flex; flex-direction: column; align-items: left;">
-                      ${index !== null
-                        ? html`
-                            <floor3d-textfield
-                              label="state"
-                              .value=${config.show.state ? config.show.state : ''}
-                              .configAttribute=${'state'}
-                              .configObject=${config.show}
-                              @input=${this._valueChanged}
-                            ></floor3d-textfield>
-                          `
-                        : ''}
-                    </div>
-                  `
-                : ''}
-            </div>
-          `
-        : ''}
-    `;
-  }
-
-  private _initialize(): void {
-    if (this.hass === undefined) return;
-    if (this._config === undefined) return;
-    if (this._helpers === undefined) return;
-    this._initialized = true;
-  }
-
-  private async loadCardHelpers(): Promise<void> {
-    this._helpers = await (window as any).loadCardHelpers();
-  }
-
-  private _toggleAction(ev): void {
-    this._toggleThing(ev);
-  }
-
-  private _toggleOption(ev): void {
-    this._toggleThing(ev);
-  }
-
-  private _typeChanged(ev): void {
-    if (!this._config || !this.hass) {
-      return;
-    }
-
-    const target = ev.target;
-
-    if (target.configObject[target.configAttribute] == target.value) {
-      return;
-    }
-
-    let initialtype3d: string = target.configObject[target.configAttribute];
-
-    this._valueChanged(ev);
-
-    console.log('Type3D changed start');
-
-    if (target.configObject[initialtype3d]) {
-      const entityArray = this._configArray;
-
-      const newentityArray: any = [];
-
-      entityArray.forEach((entity, index) => {
-        if (ev.target.configIndex == index) {
-          let newobject;
-
-          switch (initialtype3d) {
-            case 'light':
-              const { light, ...lightObject } = ev.target.configObject;
-              newobject = lightObject;
-              break;
-            case 'image':
-              const { image, ...imageObject } = ev.target.configObject;
-              newobject = imageObject;
-              break;
-            case 'room':
-              let { room, ...roomObject } = ev.target.configObject;
-              newobject = roomObject;
-              break;
-            case 'zoom':
-              let { zoom, ...zoomObject } = ev.target.configObject;
-              newobject = zoomObject;
-              break;
-            case 'color':
-              let { colorcondition, ...colorObject } = ev.target.configObject;
-              newobject = colorObject;
-              break;
-            case 'hide':
-              let { hide, ...hideObject } = ev.target.configObject;
-              newobject = hideObject;
-              break;
-            case 'show':
-              let { show, ...showObject } = ev.target.configObject;
-              newobject = showObject;
-              break;
-            case 'door':
-              let { door, ...doorObject } = ev.target.configObject;
-              newobject = doorObject;
-              break;
-            case 'gesture':
-              let { gesture, ...gestureObject } = ev.target.configObject;
-              newobject = gestureObject;
-              break;
-            case 'camera':
-              let { camera, ...cameraObject } = ev.target.configObject;
-              newobject = cameraObject;
-              break;
-            case 'text':
-              let { text, ...textObject } = ev.target.configObject;
-              newobject = textObject;
-              break;
-            case 'rotate':
-              let { rotate, ...rotateObject } = ev.target.configObject;
-              newobject = rotateObject;
-              break;
-            case 'cover':
-              let { cover, ...coverObject } = ev.target.configObject;
-              newobject = coverObject;
-              break;
-          }
-          console.log(newobject);
-          newentityArray.push(newobject);
-        } else {
-          newentityArray.push(entity);
-        }
-      });
-
-      this._configArray = newentityArray;
-    }
-
-    if (ev.target.optionTgt.color) {
-      ev.target.optionTgt.color.visible = false;
-    }
-
-    if (ev.target.optionTgt.hide) {
-      ev.target.optionTgt.hide.visible = false;
-    }
-    if (ev.target.optionTgt.show) {
-      ev.target.optionTgt.show.visible = false;
-    }
-    if (ev.target.optionTgt.room) {
-      ev.target.optionTgt.room.visible = false;
-    }
-    if (ev.target.optionTgt.zoom) {
-      ev.target.optionTgt.zoom.visible = false;
-    }
-    if (ev.target.optionTgt.door) {
-      ev.target.optionTgt.door.visible = false;
-    }
-
-    if (ev.target.optionTgt.text) {
-      ev.target.optionTgt.text.visible = false;
-    }
-
-    if (ev.target.optionTgt.cover) {
-      ev.target.optionTgt.cover.visible = false;
-    }
-
-    if (ev.target.optionTgt.gesture) {
-      ev.target.optionTgt.gesture.visible = false;
-    }
-
-    if (ev.target.optionTgt.rotate) {
-      ev.target.optionTgt.rotate.visible = false;
-    }
-
-    if (ev.target.optionTgt.camera) {
-      ev.target.optionTgt.camera.visible = false;
-    }
-    if (ev.target.optionTgt.light) {
-      ev.target.optionTgt.light.visible = false;
-    }
-
-    console.log('Type3D changed end');
-  }
-
-  // Sends the config to Home Assistant without empty rows and blocks, and without the switches left
-  // at their default (cleanConfig()).
-  private _fireConfigChanged(): void {
-    this._internal = normalizeConfig(this._config);
-    const config = cleanConfig(this._config);
-    const json = JSON.stringify(config);
-    if (json === this._held) {
-      // Same YAML as before (an empty row was added): Home Assistant would not pass it back, so the
-      // editor rebuilds itself from its own copy.
-      this.setConfig(config);
-      return;
-    }
-    this._held = json;
-    fireEvent(this, 'config-changed', { config });
-  }
-
-  private _valueChanged(ev): void {
-    if (!this._config || !this.hass) {
-      return;
-    }
-    const target = ev.target;
-    let value = target.checked !== undefined ? target.checked : target.value;
-    // Number fields are saved as numbers (700, not '700').
-    if (target.type === 'number' && value !== '' && Number.isFinite(Number(value))) {
-      value = Number(value);
-    }
-    const current = target.configObject[target.configAttribute];
-    if (current === value || (current != null && String(current) === String(value))) {
-      return;
-    }
-
-    if (target.configAdd && value !== '') {
-      target.configObject = Object.assign(target.configObject, {
-        [target.configAdd]: { [target.configAttribute]: value },
-      });
-    }
-    if (target.configAttribute && target.configObject && !target.configAdd) {
-      if (value === '' || value === false) {
-        if (target.ignoreNull == true) return;
-        delete target.configObject[target.configAttribute];
-      } else if (target.configAttribute === 'sensor_position') {
-        // Accept only a valid [x, y, z]: while typing, keep the last valid value.
-        let position;
-        try {
-          position = JSON.parse(value);
-        } catch (e) {
-          return;
-        }
-        if (
-          !Array.isArray(position) ||
-          position.length !== 3 ||
-          !position.every((n) => typeof n === 'number' && isFinite(n))
-        ) {
-          return;
-        }
-        target.configObject[target.configAttribute] = position;
-      } else {
-        target.configObject[target.configAttribute] = value;
-      }
-    }
-    this._config.entities = this._configArray;
-    this._config.object_groups = this._configObjectArray;
-    this._config.zoom_areas = this._configZoomArray;
-    this._fireConfigChanged();
-  }
-
-  private _createInfoElement(index): TemplateResult {
-    if (this._configArray[index].type3d == 'info') {
-      if (!this._configArray[index].info) {
-        this._configArray[index].info = {};
-      }
-      const info = this._configArray[index].info;
-      return html`
-        <div class="card-options">
-          <floor3d-textfield
-            label="Template/Text"
-            .value=${info.text ? info.text : ''}
-            .configAttribute=${'text'}
-            .configObject=${info}
-            @input=${this._valueChanged}
-          ></floor3d-textfield>
-          <floor3d-textfield
-            label="Position [X, Y, Z] (Optional)"
-            .value=${info.position ? JSON.stringify(info.position) : ''}
-            .configAttribute=${'position'}
-            .configObject=${info}
-            @input=${this._valueChanged}
-          ></floor3d-textfield>
-          <floor3d-textfield
-            label="Text Color"
-            .value=${info.textfgcolor ? info.textfgcolor : 'white'}
-            .configAttribute=${'textfgcolor'}
-            .configObject=${info}
-            @input=${this._valueChanged}
-          ></floor3d-textfield>
-          <floor3d-textfield
-            label="Background Color"
-            .value=${info.textbgcolor ? info.textbgcolor : 'transparent'}
-            .configAttribute=${'textbgcolor'}
-            .configObject=${info}
-            @input=${this._valueChanged}
-          ></floor3d-textfield>
-          <floor3d-textfield
-             label="Font"
-             .value=${info.font ? info.font : 'monospace'}
-             .configAttribute=${'font'}
-             .configObject=${info}
-             @input=${this._valueChanged}
-          ></floor3d-textfield>
-          <floor3d-textfield
-            label="Size"
-            type="number"
-            .value=${info.size !== undefined ? info.size : 100}
-            .configAttribute=${'size'}
-            .configObject=${info}
-            @input=${this._valueChanged}
-          ></floor3d-textfield>
+              `,
+            )}
+          </div>
+        </ha-sortable>
+        <div class="object-row">
+          ${this._form([objectField('add', this._objectOptions().filter((o) => !o.startsWith('<')))], {}, (value) => {
+            if (value.add) setObjects([...objects, { object_id: value.add }]);
+          }, '')}
+          <ha-icon-button
+            class=${active ? 'picking' : ''}
+            .label=${'Pick in the preview'}
+            .path=${mdiCursorDefaultClickOutline}
+            @click=${() => this._startPick({ path, add: true })}
+          ></ha-icon-button>
         </div>
-      `;
-    }
-    return html``;
+        ${active ? html`<div class="hint">Tap objects in the preview to add them, tap again to take them out</div>` : nothing}
+      `,
+    ];
   }
 
-  private _createShowerElement(index): TemplateResult {
-    if (this._configArray[index].type3d == 'shower') {
-      if (!this._configArray[index].shower) {
-        this._configArray[index].shower = {};
-      }
-      const shower = this._configArray[index].shower;
-      return html`
-        <div class="card-options">
-          <floor3d-textfield
-            label="Speed"
-            type="number"
-            .value=${shower.velocity !== undefined ? shower.velocity : 5}
-            .configAttribute=${'velocity'}
-            .configObject=${shower}
-            @input=${this._valueChanged}
-          ></floor3d-textfield>
-          <floor3d-textfield
-            label="Drop Count"
-            type="number"
-            .value=${shower.count !== undefined ? shower.count : 200}
-            .configAttribute=${'count'}
-            .configObject=${shower}
-            @input=${this._valueChanged}
-          ></floor3d-textfield>
-          <floor3d-textfield
-            label="Color"
-            .value=${shower.color ? shower.color : '#aaaaaa'}
-            .configAttribute=${'color'}
-            .configObject=${shower}
-            @input=${this._valueChanged}
-          ></floor3d-textfield>
-          <floor3d-textfield
-            label="Drop Size"
-            type="number"
-            .value=${shower.size !== undefined ? shower.size : 1}
-            .configAttribute=${'size'}
-            .configObject=${shower}
-            @input=${this._valueChanged}
-          ></floor3d-textfield>
-          <floor3d-textfield
-            label="Height (cm)"
-            type="number"
-            .value=${shower.height !== undefined ? shower.height : 100}
-            .configAttribute=${'height'}
-            .configObject=${shower}
-            @input=${this._valueChanged}
-          ></floor3d-textfield>
-          <floor3d-textfield
-            label="Spray Area Side (cm)"
-            type="number"
-            .value=${shower.width !== undefined ? shower.width : 20}
-            .configAttribute=${'width'}
-            .configObject=${shower}
-            @input=${this._valueChanged}
-          ></floor3d-textfield>
+  private _renderZoom(index: number, zoom: any, set: (value: any) => void): TemplateResult[] {
+    const onChange = (value: any): void => set(entityFromForm(value, zoom));
+    return [
+      this._form(zoomSchema(), zoom, onChange),
+      html`
+        <div class="heading-row">
+          <div class="heading">Camera</div>
+          <ha-button appearance="plain" size="s" @click=${() => this._useCurrentView('zoom_areas', index)}>
+            <ha-svg-icon slot="start" .path=${mdiCameraOutline}></ha-svg-icon>Use the current view
+          </ha-button>
         </div>
-      `;
-    }
-    return html``;
+      `,
+      this._form([vector('camera_position')], zoom, onChange),
+      this._form([vector('camera_target')], zoom, onChange),
+      this._form([vector('camera_rotate')], zoom, onChange),
+      html`<div class="heading">Or around an object</div>
+        <div class="hint">With an object, the camera looks at it from the direction and distance below.</div>`,
+      this._objectRow(['zoom_areas', index, 'object_id'], zoomObjectSchema(this._objectOptions()), zoom, onChange),
+      this._form([vector('direction')], zoom, onChange, 'Direction'),
+      this._form([vector('rotation')], zoom, onChange, 'Rotation'),
+    ];
+  }
+
+  private _renderRoom(index: number, room: any, set: (value: any) => void): TemplateResult[] {
+    // presence: one entity or a list. The picker of several entities works on a list (given a single
+    // entity, it would change it into a list at once); one entity is written back as it was.
+    const presence = room.presence ? (Array.isArray(room.presence) ? room.presence : [room.presence]) : [];
+    return [
+      this._objectRow(['rooms', index, 'object_id'], roomSchema(this._objectOptions()), { ...room, presence }, (value) => {
+        const next = dropEmpty({ ...value });
+        if (Array.isArray(next.presence)) {
+          if (next.presence.length === 0) delete next.presence;
+          else if (next.presence.length === 1) next.presence = next.presence[0];
+        }
+        set(next);
+      }),
+    ];
   }
 
   static get styles(): CSSResultGroup {
     return css`
-      .version {
-        margin-left: auto;
-        color: var(--secondary-text-color);
-        font-size: 12px;
+      :host {
+        display: block;
       }
-      .option {
-        padding: 4px 0px;
-        cursor: pointer;
+      .version {
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        font-size: 12px;
+        color: var(--secondary-text-color);
+        margin-bottom: 4px;
+      }
+      .loading {
+        padding: 16px;
+        color: var(--secondary-text-color);
+      }
+      ha-expansion-panel {
+        display: block;
+        margin-bottom: 8px;
+        --expansion-panel-content-padding: 0;
+        border-radius: 6px;
+      }
+      ha-expansion-panel ha-icon[slot='leading-icon'] {
+        color: var(--secondary-text-color);
+      }
+      .panel {
+        padding: 12px;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .heading {
+        font-weight: 500;
+        margin-top: 8px;
+        color: var(--primary-text-color);
+      }
+      .heading-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-top: 8px;
+      }
+      .heading-row .heading {
+        margin-top: 0;
+      }
+      .hint {
+        font-size: 12px;
+        color: var(--secondary-text-color);
+      }
+      .rows {
+        display: flex;
+        flex-direction: column;
       }
       .row {
         display: flex;
-        margin-bottom: -14px;
-        pointer-events: none;
+        align-items: center;
+        gap: 4px;
+        border-bottom: 1px solid var(--divider-color);
+        min-height: 52px;
       }
-      .title {
-        padding-left: 16px;
-        margin-top: -6px;
-        pointer-events: none;
+      .row.condition ha-form {
+        flex: 1;
+      }
+      .row:hover {
+        background: var(--secondary-background-color);
+      }
+      .handle {
+        cursor: grab;
+        padding: 0 8px;
+        color: var(--secondary-text-color);
+        display: flex;
+      }
+      .row ha-icon.type {
+        color: var(--secondary-text-color);
+        margin-right: 8px;
+      }
+      .info {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        cursor: pointer;
+        overflow: hidden;
+        padding: 6px 0;
+      }
+      .info span {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
       }
       .secondary {
-        padding-left: 40px;
+        font-size: 12px;
         color: var(--secondary-text-color);
-        pointer-events: none;
       }
-      .values {
-        padding-left: 16px;
-        background: var(--secondary-background-color);
-        display: grid;
+      .secondary.warning {
+        color: var(--warning-color);
       }
-      .cards .card-options {
+      .add {
+        align-self: flex-start;
+        margin-top: 8px;
+      }
+      .subheader {
         display: flex;
-        justify-content: flex-end;
-        width: 100%;
+        align-items: center;
+        gap: 8px;
+        font-size: 18px;
+        margin-bottom: 8px;
       }
-      ha-formfield {
-        padding-bottom: 8px;
+      .object-row {
+        display: flex;
+        align-items: flex-start;
+        gap: 4px;
       }
-      floor3d-select,
-      floor3d-textfield {
-        margin-bottom: 16px;
-        display: block;
+      .object-row ha-form {
+        flex: 1;
       }
-      floor3d-formfield {
-        padding-bottom: 8px;
+      .object-row ha-icon-button {
+        margin-top: 4px;
+      }
+      ha-icon-button.picking {
+        color: var(--primary-color);
+        background: rgba(var(--rgb-primary-color), 0.15);
+        border-radius: 50%;
       }
     `;
   }

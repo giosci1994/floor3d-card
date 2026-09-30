@@ -14,7 +14,7 @@ import { HassEntity } from 'home-assistant-js-websocket';
 import { createConfigArray, createObjectGroupConfigArray, getLovelace } from './helpers';
 import { normalizeConfig } from './config';
 import type { Floor3dCardConfig } from './types';
-import { CARD_VERSION } from './const';
+import { CARD_VERSION, EDITOR_EVENT, PREVIEW_EVENT } from './const';
 import { localize } from './localize/localize';
 //import three.js libraries for 3D rendering
 import * as TWEEN from '@tweenjs/tween.js';
@@ -185,6 +185,12 @@ export class Floor3dCard extends LitElement {
   @property({ attribute: false }) public layout?: string;
   @property({ attribute: false }) public isPanel?: boolean;
   @property({ attribute: false }) public editMode?: boolean;
+  // Set by Home Assistant on the card shown next to the card editor.
+  @property({ attribute: false }) public preview?: boolean;
+  // Editor of the card (only in the preview): a tap picks an object, and some objects are highlighted.
+  private _pickMode = false;
+  private _highlightHelpers: THREE.Object3D[] = [];
+  private _editorListener = (ev: Event): void => this._onEditor((ev as CustomEvent).detail);
   private _intersectionObserver?: IntersectionObserver;
   private _showers?: THREE.Group[];
   private _info?: string[];
@@ -241,6 +247,7 @@ export class Floor3dCard extends LitElement {
 
   public connectedCallback(): void {
     super.connectedCallback();
+    window.addEventListener(EDITOR_EVENT, this._editorListener);
 
     this._intersectionObserver = new IntersectionObserver(
       (entries) => {
@@ -270,6 +277,7 @@ export class Floor3dCard extends LitElement {
   }
 
   public disconnectedCallback(): void {
+    window.removeEventListener(EDITOR_EVENT, this._editorListener);
     if (this._intersectionObserver) {
       this._intersectionObserver.disconnect();
     }
@@ -707,6 +715,12 @@ export class Floor3dCard extends LitElement {
     const tap = this._tap;
     if (!tap || e.pointerId != tap.id) return;
     this._cancelTap();
+    if (this._pickMode) {
+      // Picking objects for the card editor: the object goes to the editor, no action runs.
+      const hit = this._getintersect(tap.x, tap.y).find((i) => i.object.name);
+      if (!tap.long && hit) this._toEditor({ picked: hit.object.name });
+      return;
+    }
     if (!tap.long && performance.now() - tap.t < 500 && (this._config.click == 'yes' || this._selectionModeEnabled)) {
       this._firEvent(this._getintersect(tap.x, tap.y));
     }
@@ -714,7 +728,7 @@ export class Floor3dCard extends LitElement {
 
   private _onLongPress(): void {
     this._longpressTimeout = null;
-    if (!this._tap) return;
+    if (!this._tap || this._pickMode) return;
     this._tap.long = true;
     this._longPressEvent(this._getintersect(this._tap.x, this._tap.y));
   }
@@ -881,8 +895,86 @@ export class Floor3dCard extends LitElement {
 
   // Double click (with click off) and keys: a key has no position, so it only logs the camera.
   private _performAction(e: any): void {
+    if (this._pickMode) return;
     const intersects = e && e.clientX !== undefined ? this._getintersect(e.clientX, e.clientY) : [];
     this._defaultaction(intersects);
+  }
+
+  // A model file that doesn't load (wrong path or name), or an error while it is set up: the loaders
+  // report both here. The error used to be thrown again without its message.
+  private _loadError(file: string): (error: any) => void {
+    return (error: any): void => {
+      console.error('floor3d-card: cannot load ' + file + ': ' + ((error && error.message) || error));
+    };
+  }
+
+  // --- Editor (only the card in the preview of the card editor listens) ---------------------------
+
+  private _toEditor(detail: any): void {
+    window.dispatchEvent(new CustomEvent(PREVIEW_EVENT, { detail }));
+  }
+
+  private _onEditor(detail: any): void {
+    if (!this.preview || !detail) return;
+    if (detail.request === 'objects' && this._modelready) {
+      this._toEditor({ objects: this._modelObjectNames() });
+    }
+    if (detail.request === 'camera' && this._camera && this._controls) {
+      const { position, rotation } = this._camera;
+      const target = this._controls.target;
+      this._toEditor({
+        camera: {
+          camera_position: { x: position.x, y: position.y, z: position.z },
+          camera_target: { x: target.x, y: target.y, z: target.z },
+          camera_rotate: { x: rotation.x, y: rotation.y, z: rotation.z },
+        },
+      });
+    }
+    if ('pick' in detail) {
+      this._pickMode = !!detail.pick;
+      if (this._renderer) this._renderer.domElement.style.cursor = this._pickMode ? 'crosshair' : '';
+    }
+    if ('highlight' in detail) this._setHighlight(detail.highlight || []);
+    if (detail.request === 'reload') this.rerender();
+  }
+
+  // Names of the objects of the model (without the level prefix), for the object menus of the editor.
+  private _modelObjectNames(): string[] {
+    const names = new Set<string>();
+    (this._raycastinglevels || []).forEach((level) => (level || []).forEach((o) => o.name && names.add(o.name)));
+    return Array.from(names);
+  }
+
+  // A box around each object (a group <name> stands for its objects), drawn over everything.
+  private _setHighlight(ids: string[]): void {
+    if (!this._scene) return;
+    this._highlightHelpers.forEach((helper) => {
+      this._scene.remove(helper);
+      (helper as THREE.BoxHelper).geometry.dispose();
+      ((helper as THREE.BoxHelper).material as THREE.Material).dispose();
+    });
+    this._highlightHelpers = [];
+    const names = new Set<string>();
+    ids.forEach((id) => {
+      const group = /^<(.*)>$/.exec(id);
+      if (!group) names.add(id);
+      else {
+        const found = (this._config.object_groups || []).find((g) => g.object_group === group[1]);
+        ((found && found.objects) || []).forEach((o) => names.add(o.object_id));
+      }
+    });
+    names.forEach((name) => {
+      const object = this._scene.getObjectByName(name);
+      if (!object) return;
+      const helper = new THREE.BoxHelper(object, 0x03a9f4);
+      const material = helper.material as THREE.LineBasicMaterial;
+      material.depthTest = false;
+      material.transparent = true;
+      helper.renderOrder = 999;
+      this._scene.add(helper);
+      this._highlightHelpers.push(helper);
+    });
+    if (this._renderer && this._camera) this._render();
   }
 
   private _zIndexChecker(): void {
@@ -1395,9 +1487,7 @@ export class Floor3dCard extends LitElement {
             this._config.mtlfile,
             this._onLoaded3DMaterials.bind(this),
             this._onLoadMaterialProgress.bind(this),
-            function (error: any): void {
-              throw new Error(error.error);
-            },
+            this._loadError(path + this._config.mtlfile),
           );
         } else {
           const objLoader: OBJLoader = new OBJLoader();
@@ -1405,9 +1495,7 @@ export class Floor3dCard extends LitElement {
             path + this._config.objfile,
             this._onLoaded3DModel.bind(this),
             this._onLoadObjectProgress.bind(this),
-            function (error: any): void {
-              throw new Error(error.error);
-            },
+            this._loadError(path + this._config.objfile),
           );
         }
         this._modeltype = ModelSource.OBJ;
@@ -1418,9 +1506,7 @@ export class Floor3dCard extends LitElement {
           this._config.objfile,
           this._onLoadedGLTF3DModel.bind(this),
           this._onloadedGLTF3DProgress.bind(this),
-          function (error: any): void {
-            throw new Error(error.error);
-          },
+          this._loadError(path + this._config.objfile),
         );
         this._modeltype = ModelSource.GLB;
       }
@@ -1495,6 +1581,7 @@ export class Floor3dCard extends LitElement {
 
     if (this._content && this._renderer) {
       this._modelready = true;
+      if (this.preview) this._toEditor({ objects: this._modelObjectNames() });
       console.log('Show canvas');
       this._levelbar = document.createElement('div');
       this._zoombar = document.createElement('div');
@@ -2156,9 +2243,7 @@ export class Floor3dCard extends LitElement {
       path + this._config.objfile,
       this._onLoaded3DModel.bind(this),
       this._onLoadObjectProgress.bind(this),
-      function (error: any): void {
-        throw new Error(error.error);
-      },
+      this._loadError(path + this._config.objfile),
     );
     console.log('Material loaded end');
   }
@@ -2682,12 +2767,14 @@ export class Floor3dCard extends LitElement {
               }
             }
           } catch (error) {
-            console.log(error);
-            throw new Error('Object issue for Entity: <' + entity.entity + '> ' + error);
+            // An entity set up wrongly (a door without its type, for example) is left out and the
+            // rest of the model is shown. The card editor makes such entities while they are filled in.
+            console.warn('floor3d-card: entity <' + entity.entity + '> left out: ' + error);
           }
         });
         this._config.entities.forEach((entity, i) => {
-          if (entity.entity !== '') {
+          if (entity.entity === '') return;
+          try {
             if (entity.type3d == 'light') {
               this._updatelight(entity, i);
             } else if (entity.type3d == 'color') {
@@ -2713,6 +2800,8 @@ export class Floor3dCard extends LitElement {
             } else if (entity.type3d == 'tracker') {
               this._updatetracker(entity, i);
             }
+          } catch (error) {
+            console.warn('floor3d-card: entity <' + entity.entity + '> not updated: ' + error);
           }
         });
       }

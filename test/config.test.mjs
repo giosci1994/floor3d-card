@@ -52,6 +52,12 @@ test('empty rows left out, rows being filled in kept', () => {
   assert.deepEqual(c, { entities: [{ entity: '', type3d: 'light' }, { entity: 'light.a' }, 'switch.b'] });
 });
 
+test('rooms: empty rows left out, rows being filled in kept', () => {
+  const c = cleanConfig({ entities: [], rooms: [{ name: 'Bedroom', object_id: 'f1' }, { name: '' }, { name: '', object_id: 'f2' }] });
+  assert.deepEqual(c.rooms, [{ name: 'Bedroom', object_id: 'f1' }, { name: '', object_id: 'f2' }]);
+  assert.ok(!('rooms' in cleanConfig({ entities: [], rooms: [{ name: '' }] })));
+});
+
 test('numbers written as numbers; zero, entity ids and object ids kept', () => {
   const c = cleanConfig({
     globalLightPower: 'sensor.lux',
