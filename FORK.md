@@ -6,13 +6,23 @@ A fork of [adizanni/floor3d-card](https://github.com/adizanni/floor3d-card) (MIT
 
 ## Installation
 
-The floor3d-card in the HACS default repository is the original one. To use this fork, install it by hand:
+### HACS
 
-1. Copy **all** the `dist/*.js` files into a new folder of `config/www` named after the version, for example `config/www/floor3d-card-mod/v20260930b/`. There are two files: the card and its editor, which is loaded only when you edit the card.
-2. Add `/local/floor3d-card-mod/v20260930b/floor3d-card.js` as a resource of type **module** (Settings › Dashboards › Resources). If the original card is installed too, remove it first: both define `custom:floor3d-card`.
+[![Open this repository in HACS](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=giosci1994&repository=floor3d-card&category=plugin)
+
+1. Open the link above: HACS offers to add this repository. Or add it by hand: in HACS, menu (⋮) at the top right › **Custom repositories**, repository `https://github.com/giosci1994/floor3d-card`, type **Dashboard**.
+2. Open **floor3d-card mod** and click **Download**. HACS copies the files of the latest release into `www/community/floor3d-card/` and adds the resource `/hacsfiles/floor3d-card/floor3d-card.js`.
 3. Reload the browser or the app. The version is shown at the top of the card editor and in the browser console.
 
-Use a **new folder for every version** instead of a `?v=` query on the resource. The card imports its editor as `./floor3d-card-editor-<hash>.js`, and with a `?v=` the browser would load the card twice (as two different modules). Home Assistant serves `/local` with a 31-day cache, and so may a proxy in front of it: a new folder is a new address. The folders of older versions can be deleted afterwards.
+If the original card is installed, remove it from HACS first: both define `custom:floor3d-card` and use the same `www/community/floor3d-card` folder. The configuration of the card stays the same. HACS shows the updates of this fork like those of any other card.
+
+### By hand
+
+1. Download all the `.js` files of the [latest release](https://github.com/giosci1994/floor3d-card/releases/latest) (they are also in `dist/`) into a folder of `config/www`, for example `config/www/floor3d-card/`. There are three files: the card, its core (libraries and code shared with the editor) and the editor, which is loaded only when you edit the card.
+2. Add `/local/floor3d-card/floor3d-card.js?v=2.0.0` as a resource of type **module** (Settings › Dashboards › Resources). If the original card is installed too, remove it first.
+3. Reload the browser or the app.
+
+At every update copy the new files and change the `?v=` of the resource: Home Assistant serves `/local` with a 31-day cache, and so may a proxy in front of it, while a new query is a new address. The core and the editor have the hash of their content in the name, so they are new addresses too; the ones of older versions can be deleted.
 
 ## Building
 
@@ -22,12 +32,20 @@ npm run build        # = rollup -c rollup.config.mjs
 npm start            # rebuilds on every change and serves dist/ on port 5000
 ```
 
-Change `CARD_VERSION` in `src/const.ts` at every modification: the date, plus the next letter for another build on the same day (`v1.5.3-mod 2026-09-28c`). Deploy into a folder with the same name (`v20260928c`).
+`CARD_VERSION` in `src/const.ts` is shown in the card editor and in the console: keep it equal to `version` in `package.json` and to the tag of the release (see [Publishing a release](#publishing-a-release)). For test builds between releases add a suffix, for example `v2.0.1-dev.1`.
 
 - **Tooling.** Rollup 4 with the official `@rollup/plugin-*` packages, TypeScript 5.9 (target ES2021), Lit 3, custom-card-helpers 2 and the types of home-assistant-js-websocket 9. Babel is gone: without a configuration it did nothing. `.yarnrc` skips the `engines` check because custom-card-helpers 2 asks for Node ≥ 24 for its own development tools, while its code ends up in the browser bundle. three.js went from 0.130 to 0.186; tween.js stays at 18.
 - **Lit 2 kept for the Material components.** The editor uses `@material/mwc-*` 0.27 components, written for Lit 2; on Lit 3 some of them break (for example `mwc-formfield` with the old signature of `@queryAssignedNodes`). The `litForMaterial` plugin in `rollup.config.mjs` makes all of `@material/*` use a single Lit 2 copy (the `lit2` alias in `package.json`), while the card uses Lit 3. Alias and plugin can go once the Material components are replaced.
-- **Editor loaded separately.** The card no longer imports the editor at startup: `getConfigElement()` loads it when the card is edited. Devices that only show the card download about 810 KB instead of 1.15 MB.
+- **Editor loaded separately.** The card no longer imports the editor at startup: `getConfigElement()` loads it when the card is edited. Devices that only show the card download about 810 KB instead of 1.15 MB. The build makes three files: `floor3d-card.js` (the card), `floor3d-card-core-<hash>.js` (libraries and code shared with the editor) and `floor3d-card-editor-<hash>.js`. Nothing imports `floor3d-card.js`: the resource has a query (`?hacstag=` added by HACS, `?v=` by hand), and an import without it would load a second copy of the card, whose `customElements.define` fails. `coreChunk()` in `rollup.config.mjs` does this split, and `removeOldChunks()` removes from `dist/` the chunks of older builds.
 - **Components Home Assistant no longer provides.** Recent Home Assistant versions don't define `mwc-menu` anymore, so the drop-down menus of the editor didn't open. `elements/menu.ts` defines `mwc-menu`, `mwc-menu-surface`, `mwc-list` and `mwc-list-item` only when they are missing. The card also reads `isPanel` and `editMode` directly from Home Assistant (2024+), and falls back to the page structure on older versions.
+
+## Publishing a release
+
+1. Change `version` in `package.json` and `CARD_VERSION` in `src/const.ts` (for example `2.0.1` and `v2.0.1`), run `npm run build` and commit, `dist/` included.
+2. On GitHub, **Releases › Draft a new release**: a new tag named after the version (`v2.0.1`), a description of the changes, **Publish release**.
+3. The Release workflow builds the card and attaches the `.js` files to the release. HACS downloads them from there, and shows the update when it next checks the repository (**Update information** in the menu of the repository checks at once).
+
+The Validate workflow runs the HACS checks at every push and every night; the Build workflow checks that the card builds.
 
 ## New features
 
