@@ -9,6 +9,11 @@
     "map": "Mappa",
     "map_none": "Nessuna mappa",
     "map_temperature": "Temperature",
-    "map_presence": "Presenze"
+    "map_presence": "Presenze",
+    "loading_materials": "Caricamento dei materiali",
+    "loading_model": "Caricamento del modello",
+    "preparing": "Preparazione della scena 3D",
+    "load_error": "Impossibile caricare il modello",
+    "setup_error": "errore durante la preparazione del modello, vedi la console del browser"
   }
 }

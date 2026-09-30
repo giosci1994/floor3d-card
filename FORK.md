@@ -59,6 +59,7 @@ The Validate workflow runs the HACS checks at every push and every night; the Bu
 - **Compressed models** (2.3): `.glb` files compressed with meshopt or Draco, often several times smaller. See [Compressed models](#compressed-models).
 - **Views from the page address** (2.3, `url_parameters`): a button that navigates to `?area=kitchen` opens the card on the kitchen view. See [Views from the page address](#views-from-the-page-address).
 - **Fans that speed up and slow down** (2.3, `rotate.ramp`). See [Fans](#fans).
+- **Loading screen** (2.3): a bar with the step (materials, model, preparing the 3D scene), the percentage and the megabytes, in the colours of the theme. Before, only "1/2: 45%" in a corner, stuck at 100% while the model was being prepared. A model that doesn't load shows the file and the reason in the card.
 - **Object ids with `*`** (2.3): `object_id: Lamp_*` stands for all the matching objects. See [Object ids with *](#object-ids-with-).
 - **Version label** at the top of the card editor and in the console banner.
 - The sky (`sky`) and the ambient light are removed on purpose, so that they don't affect the render. The light that follows the camera (torch) is always on.

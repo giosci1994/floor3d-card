@@ -18,6 +18,7 @@ import { CARD_VERSION, EDITOR_EVENT, PREVIEW_EVENT } from './const';
 import { localize } from './localize/localize';
 //import three.js libraries for 3D rendering
 import * as TWEEN from '@tweenjs/tween.js';
+import { mdiAlertCircleOutline, mdiCubeOutline } from '@mdi/js';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
@@ -225,6 +226,7 @@ export class Floor3dCard extends LitElement {
   private _pointerUpListener: EventListener;
   private _pointerCancelListener: EventListener;
   private _contextRestoredListener = (): void => this._onContextRestored();
+  private _loadingEl?: HTMLElement;
   private _urlListener = (): void => this._applyUrlView(true);
   private _urlView?: string | null; // value of the url_parameters.zoom parameter last applied
   private _longpressTimeout: any;
@@ -1025,6 +1027,7 @@ export class Floor3dCard extends LitElement {
   private _loadError(file: string): (error: any) => void {
     return (error: any): void => {
       console.error('floor3d-card: cannot load ' + file + ': ' + ((error && error.message) || error));
+      this._showLoadError(file, error);
     };
   }
 
@@ -1616,6 +1619,8 @@ export class Floor3dCard extends LitElement {
 
       let fileExt = this._config.objfile.split('?')[0].split('.').pop();
 
+      this._showLoading(fileExt == 'obj' && this._config.mtlfile ? 'loading_materials' : 'loading_model');
+
       if (fileExt == 'obj') {
         //waterfront format
         if (this._config.mtlfile && this._config.mtlfile != '') {
@@ -1628,13 +1633,7 @@ export class Floor3dCard extends LitElement {
             this._loadError(path + this._config.mtlfile),
           );
         } else {
-          const objLoader: OBJLoader = new OBJLoader();
-          objLoader.load(
-            path + this._config.objfile,
-            this._onLoaded3DModel.bind(this),
-            this._onLoadObjectProgress.bind(this),
-            this._loadError(path + this._config.objfile),
-          );
+          this._loadOBJ(path);
         }
         this._modeltype = ModelSource.OBJ;
       } else if (fileExt == 'glb') {
@@ -1663,6 +1662,7 @@ export class Floor3dCard extends LitElement {
         let draco: { dispose(): void } | undefined;
         const done = (): void => draco?.dispose(); // its workers
         try {
+          await this._showPreparing();
           const buffer = data as ArrayBuffer;
           const extensions = glbExtensions(buffer);
           const loader = new GLTFLoader();
@@ -1701,22 +1701,104 @@ export class Floor3dCard extends LitElement {
     );
   }
 
+  // An .obj model: read as text, then parsed once the loading screen says so (parsing a big OBJ takes
+  // a while, and the screen used to stay at 100% meanwhile).
+  private _loadOBJ(path: string, materials?: MTLLoader.MaterialCreator): void {
+    const file = path + this._config.objfile;
+    const onError = this._loadError(file);
+    new THREE.FileLoader().load(
+      file,
+      async (text) => {
+        try {
+          await this._showPreparing();
+          const objLoader = new OBJLoader();
+          if (materials) objLoader.setMaterials(materials);
+          this._onLoaded3DModel(objLoader.parse(text as string));
+        } catch (error) {
+          onError(error);
+        }
+      },
+      this._onLoadObjectProgress.bind(this),
+      onError,
+    );
+  }
+
+  // --- Loading screen: what the card is doing, a bar and the megabytes --------------------------
+
+  private _loadingScreen(): HTMLElement {
+    if (!this._loadingEl || !this._content.contains(this._loadingEl)) {
+      const el = document.createElement('div');
+      el.className = 'f3d-loading';
+      el.innerHTML =
+        '<svg class="f3d-icon" viewBox="0 0 24 24" aria-hidden="true"><path></path></svg>' +
+        '<div class="f3d-title"></div><div class="f3d-bar"><div class="f3d-fill"></div></div><div class="f3d-detail"></div>';
+      el.setAttribute('role', 'status');
+      this._content.replaceChildren(el);
+      this._loadingEl = el;
+    }
+    return this._loadingEl;
+  }
+
+  private _showLoading(step: string, progress?: ProgressEvent): void {
+    if (!this._content || this._modelready) return;
+    const el = this._loadingScreen();
+    el.classList.remove('error');
+    el.querySelector('path').setAttribute('d', mdiCubeOutline);
+    el.querySelector('.f3d-title').textContent = this._t(step);
+    // Without a Content-Length (a compressing proxy, for example) only the megabytes are known.
+    const known = !!progress && progress.lengthComputable && progress.total > 0;
+    const percent = known ? Math.min(100, (progress.loaded / progress.total) * 100) : 0;
+    el.querySelector('.f3d-bar').classList.toggle('indeterminate', !known);
+    (el.querySelector('.f3d-fill') as HTMLElement).style.width = known ? percent + '%' : '';
+    const mb = (bytes: number): string =>
+      (bytes / 1048576).toLocaleString(this._hass?.language, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+    el.querySelector('.f3d-detail').textContent = !progress
+      ? ''
+      : known
+        ? Math.round(percent) + '% · ' + mb(progress.loaded) + ' / ' + mb(progress.total) + ' MB'
+        : mb(progress.loaded) + ' MB';
+  }
+
+  // Before the long work on the model: the screen says so, and is drawn before that work starts.
+  private async _showPreparing(): Promise<void> {
+    this._showLoading('preparing');
+    await new Promise<void>((resolve) => {
+      const timer = setTimeout(resolve, 100); // a hidden page draws no frames
+      requestAnimationFrame(() =>
+        setTimeout(() => {
+          clearTimeout(timer);
+          resolve();
+        }, 0),
+      );
+    });
+  }
+
+  private _showLoadError(file: string, error: any): void {
+    if (!this._content) return;
+    const el = this._loadingScreen();
+    el.classList.add('error');
+    el.querySelector('path').setAttribute('d', mdiAlertCircleOutline);
+    el.querySelector('.f3d-title').textContent = this._t('load_error');
+    const reason = (error && error.message) || String(error || '');
+    el.querySelector('.f3d-detail').textContent = file + (reason ? ': ' + reason : '');
+  }
+
   private _onLoadError(event: ErrorEvent): void {
     this._showError(event.error);
   }
 
   private _onloadedGLTF3DProgress(_progress: ProgressEvent): void {
-    this._content.innerText = 'Loading: ' + Math.round((_progress.loaded / _progress.total) * 100) + '%';
+    this._showLoading('loading_model', _progress);
   }
 
   private _onLoadMaterialProgress(_progress: ProgressEvent): void {
     //progress function called at regular intervals during material loading process
-    this._content.innerText = '1/2: ' + Math.round((_progress.loaded / _progress.total) * 100) + '%';
+    this._showLoading('loading_materials', _progress);
   }
 
   private _onLoadObjectProgress(_progress: ProgressEvent): void {
     //progress function called at regular intervals during object loading process
-    this._content.innerText = '2/2: ' + Math.round((_progress.loaded / _progress.total) * 100) + '%';
+    this._showLoading('loading_model', _progress);
   }
 
   private _onLoadedGLTF3DModel(gltf: GLTF) {
@@ -1740,7 +1822,8 @@ export class Floor3dCard extends LitElement {
 
     this._bboxmodel.updateMatrixWorld(true);
 
-    this._content.innerText = 'Finished with errors: check the console log';
+    // Shown only if setting up the model stops with an error; replaced by the model otherwise.
+    this._showLoadError(this._config.objfile, this._t('setup_error'));
 
     if (this._config.show_axes) {
       if (this._config.show_axes == 'yes') {
@@ -2464,14 +2547,7 @@ export class Floor3dCard extends LitElement {
     if (lastChar != '/') {
       path = path + '/';
     }
-    const objLoader: OBJLoader = new OBJLoader();
-    objLoader.setMaterials(materials);
-    objLoader.load(
-      path + this._config.objfile,
-      this._onLoaded3DModel.bind(this),
-      this._onLoadObjectProgress.bind(this),
-      this._loadError(path + this._config.objfile),
-    );
+    this._loadOBJ(path, materials);
     console.log('Material loaded end');
   }
 
@@ -4838,6 +4914,94 @@ export class Floor3dCard extends LitElement {
 
   // https://lit-element.polymer-project.org/guide/styles
   static get styles(): CSSResultGroup {
-    return css``;
+    return css`
+      .f3d-loading {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        min-height: 200px;
+        height: 100%;
+        padding: 24px;
+        box-sizing: border-box;
+        text-align: center;
+        color: var(--secondary-text-color, #727272);
+        font-size: 14px;
+      }
+      .f3d-icon {
+        width: 44px;
+        height: 44px;
+        fill: var(--primary-color, #03a9f4);
+        animation: f3d-float 2.4s ease-in-out infinite;
+      }
+      .f3d-title {
+        color: var(--primary-text-color, #212121);
+        font-size: 15px;
+        font-weight: 500;
+      }
+      .f3d-bar {
+        position: relative;
+        width: min(260px, 70%);
+        height: 4px;
+        border-radius: 2px;
+        overflow: hidden;
+        background: var(--divider-color, rgba(127, 127, 127, 0.25));
+      }
+      .f3d-fill {
+        height: 100%;
+        width: 0;
+        border-radius: 2px;
+        background: var(--primary-color, #03a9f4);
+        transition: width 0.25s ease;
+      }
+      .f3d-bar.indeterminate .f3d-fill {
+        position: absolute;
+        width: 35%;
+        animation: f3d-slide 1.3s ease-in-out infinite;
+      }
+      .f3d-detail {
+        min-height: 1.3em;
+        font-size: 12px;
+        opacity: 0.85;
+        font-variant-numeric: tabular-nums;
+        overflow-wrap: anywhere;
+      }
+      .f3d-loading.error .f3d-icon {
+        fill: var(--error-color, #db4437);
+        animation: none;
+      }
+      .f3d-loading.error .f3d-title {
+        color: var(--error-color, #db4437);
+      }
+      .f3d-loading.error .f3d-bar {
+        display: none;
+      }
+      @keyframes f3d-slide {
+        from {
+          left: -35%;
+        }
+        to {
+          left: 100%;
+        }
+      }
+      @keyframes f3d-float {
+        0%,
+        100% {
+          transform: translateY(0) rotate(0deg);
+        }
+        50% {
+          transform: translateY(-4px) rotate(-8deg);
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .f3d-icon {
+          animation: none;
+        }
+        .f3d-bar.indeterminate .f3d-fill {
+          animation-duration: 3s;
+        }
+      }
+    `;
   }
 }
