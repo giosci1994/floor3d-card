@@ -1,0 +1,491 @@
+{
+  "type": "custom:floor3d-card",
+  "path": "/local/floor3d/",
+  "name": "Home",
+  "lock_camera": "no",
+  "header": "no",
+  "click": "yes",
+  "hideLevelsMenu": "no",
+  "globalLightPower": "0.7",
+  "shadow": "yes",
+  "extralightmode": "no",
+  "sky": "no",
+  "overlay": "no",
+  "overlay_bgcolor": "transparent",
+  "overlay_fgcolor": "black",
+  "overlay_alignment": "top-right",
+  "overlay_width": "100",
+  "overlay_height": "20",
+  "north": {
+    "x": 0,
+    "z": -1
+  },
+  "camera_position": {
+    "x": -734,
+    "y": 1065,
+    "z": 882
+  },
+  "camera_rotate": {
+    "x": -0.964,
+    "y": -0.508,
+    "z": -0.611
+  },
+  "camera_target": {
+    "x": -10,
+    "y": -3,
+    "z": 141
+  },
+  "object_groups": [
+    {
+      "object_group": "Kitchen light",
+      "objects": [
+        {
+          "object_id": "Sphere_104_101"
+        },
+        {
+          "object_id": "Sphere_104_102"
+        },
+        {
+          "object_id": "Sphere_104_103"
+        }
+      ]
+    },
+    {
+      "object_group": "Bathroom light",
+      "objects": [
+        {
+          "object_id": "border_104"
+        },
+        {
+          "object_id": "border_105"
+        },
+        {
+          "object_id": "border_106"
+        }
+      ]
+    },
+    {
+      "object_group": "Bedroom door",
+      "objects": [
+        {
+          "object_id": "sweethome3d_opening_on_hinge_1_door_107"
+        },
+        {
+          "object_id": "sweethome3d_opening_on_hinge_1_handleIn_12_108"
+        },
+        {
+          "object_id": "sweethome3d_opening_on_hinge_1_handleOut_12_109"
+        }
+      ]
+    },
+    {
+      "object_group": "Bedroom window",
+      "objects": [
+        {
+          "object_id": "sweethome3d_opening_on_hinge_1_frame_110"
+        },
+        {
+          "object_id": "sweethome3d_opening_on_hinge_1_frame_24_111"
+        },
+        {
+          "object_id": "sweethome3d_opening_on_hinge_1_glass_112"
+        },
+        {
+          "object_id": "sweethome3d_opening_on_hinge_1_handle_113"
+        }
+      ]
+    },
+    {
+      "object_group": "Balcony door",
+      "objects": [
+        {
+          "object_id": "sweethome3d_window_pane_on_hinge_1_114"
+        },
+        {
+          "object_id": "sweethome3d_opening_on_hinge_1_115"
+        },
+        {
+          "object_id": "sweethome3d_opening_on_hinge_1_handle_12_116"
+        }
+      ]
+    },
+    {
+      "object_group": "Front door",
+      "objects": [
+        {
+          "object_id": "sweethome3d_opening_on_hinge_1_door_117"
+        },
+        {
+          "object_id": "sweethome3d_opening_on_hinge_1_handle_7_118"
+        },
+        {
+          "object_id": "sweethome3d_opening_on_hinge_1_doorOutside_119"
+        },
+        {
+          "object_id": "sweethome3d_opening_on_hinge_1_handle_120"
+        }
+      ]
+    },
+    {
+      "object_group": "Fridge door",
+      "objects": [
+        {
+          "object_id": "sweethome3d_opening_on_hinge_1_door_3_121"
+        },
+        {
+          "object_id": "sweethome3d_opening_on_hinge_1_handle_122"
+        }
+      ]
+    }
+  ],
+  "entities": [
+    {
+      "entity": "light.bedroom",
+      "object_id": "Sphere_1_123",
+      "type3d": "light",
+      "light": {
+        "shadow": "yes",
+        "lumens": "700",
+        "decay": "2"
+      }
+    },
+    {
+      "entity": "light.bedside_lamp",
+      "object_id": "124",
+      "light": {
+        "lumens": "280",
+        "shadow": "yes",
+        "decay": "2"
+      },
+      "type3d": "light"
+    },
+    {
+      "entity": "light.kitchen",
+      "type3d": "light",
+      "object_id": "<Kitchen light>",
+      "light": {
+        "lumens": "400",
+        "shadow": "yes"
+      }
+    },
+    {
+      "entity": "light.floor_lamp",
+      "type3d": "light",
+      "object_id": "LightBase_125",
+      "light": {
+        "lumens": "560",
+        "shadow": "yes",
+        "decay": "2"
+      }
+    },
+    {
+      "entity": "light.hallway",
+      "object_id": "sweethome3d_window_pane_126",
+      "type3d": "light",
+      "light": {
+        "shadow": "yes",
+        "decay": "2"
+      }
+    },
+    {
+      "entity": "light.desk_lamp",
+      "object_id": "DeskTop_Plane_127",
+      "type3d": "light",
+      "light": {
+        "shadow": "yes",
+        "lumens": "300",
+        "decay": "2"
+      }
+    },
+    {
+      "entity": "light.led_strip",
+      "type3d": "light",
+      "object_id": "Cube_1_1_4_128",
+      "light": {
+        "shadow": "yes",
+        "lumens": "450",
+        "decay": "2"
+      }
+    },
+    {
+      "entity": "camera.front_yard",
+      "type3d": "camera",
+      "object_id": "129",
+      "camera": {}
+    },
+    {
+      "entity": "binary_sensor.bathroom_light",
+      "object_id": "<Bathroom light>",
+      "type3d": "light",
+      "light": {
+        "lumens": "400",
+        "shadow": "yes",
+        "decay": "2"
+      }
+    },
+    {
+      "entity": "binary_sensor.bedroom_door_contact",
+      "type3d": "door",
+      "door": {
+        "doortype": "swing",
+        "side": "right",
+        "direction": "outer",
+        "degrees": "-50"
+      },
+      "object_id": "<Bedroom door>"
+    },
+    {
+      "entity": "binary_sensor.bedroom_window_contact",
+      "type3d": "door",
+      "door": {
+        "doortype": "swing",
+        "side": "right",
+        "direction": "outer",
+        "degrees": "50"
+      },
+      "object_id": "<Bedroom window>"
+    },
+    {
+      "entity": "binary_sensor.balcony_door_contact",
+      "type3d": "door",
+      "door": {
+        "doortype": "swing",
+        "side": "left",
+        "direction": "outer",
+        "degrees": "-50"
+      },
+      "object_id": "<Balcony door>"
+    },
+    {
+      "entity": "binary_sensor.front_door_contact",
+      "type3d": "door",
+      "door": {
+        "doortype": "swing",
+        "side": "right",
+        "direction": "outer",
+        "degrees": "70"
+      },
+      "object_id": "<Front door>"
+    },
+    {
+      "entity": "binary_sensor.fridge_door_contact",
+      "type3d": "door",
+      "door": {
+        "doortype": "swing",
+        "side": "left",
+        "direction": "outer",
+        "degrees": "-30"
+      },
+      "object_id": "<Fridge door>"
+    },
+    {
+      "entity": "media_player.living_room_tv",
+      "type3d": "image",
+      "object_id": "130",
+      "image": {
+        "attribute": "entity_picture",
+        "rotate": "180",
+        "mirror": true,
+        "lighting_lumens": "360",
+        "lighting_direction": "positive_z",
+        "lighting_off_state": "unavailable",
+        "lumens": "5"
+      }
+    },
+    {
+      "entity": "sensor.radar_target_1_x",
+      "object_id": "person_tracker_1",
+      "type3d": "tracker",
+      "tracker": {
+        "sensor_y": "sensor.radar_target_1_y",
+        "sensor_rotation": "-135",
+        "color": "#FF5500",
+        "size": 15,
+        "height": 150,
+        "scale": "0.1",
+        "sensor_position": [
+          -400,
+          0,
+          450
+        ],
+        "unit": "m",
+        "flip_x": true,
+        "zone": "sensor.radar_target_1_zone"
+      }
+    },
+    {
+      "entity": "sensor.radar_target_2_x",
+      "object_id": "person_tracker_2",
+      "type3d": "tracker",
+      "tracker": {
+        "sensor_y": "sensor.radar_target_2_y",
+        "sensor_rotation": "-135",
+        "color": "#0088FF",
+        "size": 15,
+        "height": 150,
+        "scale": "0.1",
+        "sensor_position": [
+          -400,
+          0,
+          450
+        ],
+        "unit": "m",
+        "flip_x": true,
+        "zone": "sensor.radar_target_2_zone"
+      }
+    },
+    {
+      "entity": "sensor.radar_target_3_x",
+      "object_id": "person_tracker_3",
+      "type3d": "tracker",
+      "tracker": {
+        "sensor_y": "sensor.radar_target_3_y",
+        "sensor_rotation": "-135",
+        "color": "#00FF88",
+        "size": 15,
+        "height": 150,
+        "scale": "0.1",
+        "sensor_position": [
+          -400,
+          0,
+          450
+        ],
+        "unit": "m",
+        "flip_x": true,
+        "zone": "sensor.radar_target_3_zone"
+      }
+    },
+    {
+      "entity": "sensor.shower_running",
+      "type3d": "shower",
+      "shower": {
+        "count": "90",
+        "velocity": "20",
+        "size": "3",
+        "color": "#007FFF",
+        "width": "50",
+        "height": "110"
+      },
+      "object_id": "HoseHandle_131"
+    }
+  ],
+  "zoom_areas": [
+    {
+      "zoom": "Top view",
+      "camera_position": {
+        "x": 37,
+        "y": 1584,
+        "z": -83
+      },
+      "camera_target": {
+        "x": 37,
+        "y": 19,
+        "z": -83
+      }
+    },
+    {
+      "zoom": "Angled view",
+      "camera_position": {
+        "x": -734,
+        "y": 1065,
+        "z": 882
+      },
+      "camera_target": {
+        "x": -10,
+        "y": -3,
+        "z": 141
+      }
+    },
+    {
+      "zoom": "Bedroom",
+      "camera_position": {
+        "x": 263,
+        "y": 984,
+        "z": 260
+      },
+      "camera_target": {
+        "x": 263,
+        "y": -3,
+        "z": 255
+      }
+    },
+    {
+      "zoom": "Kitchen",
+      "camera_position": {
+        "x": -157,
+        "y": 984,
+        "z": 232
+      },
+      "camera_target": {
+        "x": -157,
+        "y": -2,
+        "z": 227
+      }
+    },
+    {
+      "zoom": "Living room",
+      "camera_position": {
+        "x": -174,
+        "y": 1036,
+        "z": 84
+      },
+      "camera_target": {
+        "x": -174,
+        "y": -2,
+        "z": 84
+      }
+    }
+  ],
+  "selectionMode": "no",
+  "editModeNotifications": "no",
+  "objfile": "home.obj",
+  "mtlfile": "home.mtl",
+  "backgroundColor": "#121212",
+  "show_axes": "no",
+  "overlay_fontsize": "12px",
+  "overlay_font": "arial",
+  "hideZoomMenu": "no",
+  "sun": "yes",
+  "max_pixel_ratio": 2,
+  "state_colors": "yes",
+  "alarm_entity": "alarm_control_panel.home_alarm",
+  "room_colors": "temperature",
+  "temperature_min": 17,
+  "temperature_max": 27,
+  "rooms": [
+    {
+      "name": "Bedroom",
+      "object_id": "room_24_132",
+      "temperature": "sensor.bedroom_temperature",
+      "presence": "binary_sensor.bedroom_occupancy"
+    },
+    {
+      "name": "Living room and kitchen",
+      "object_id": "room_25_133",
+      "temperature": "sensor.living_room_temperature",
+      "presence": [
+        "binary_sensor.living_room_occupancy",
+        "binary_sensor.kitchen_occupancy"
+      ]
+    },
+    {
+      "name": "Bathroom",
+      "object_id": "room_27_134",
+      "temperature": "sensor.bathroom_temperature",
+      "presence": "binary_sensor.bathroom_occupancy"
+    },
+    {
+      "name": "Bedroom 2",
+      "object_id": "room_26_135",
+      "temperature": "sensor.bedroom_2_temperature"
+    }
+  ],
+  "sun_roof": [
+    "room_24_132",
+    "room_25_133",
+    "room_26_135",
+    "room_27_134",
+    "room_28_136",
+    "room_29_137"
+  ]
+}

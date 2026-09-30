@@ -1,0 +1,420 @@
+{
+  "light.bedroom": {
+    "entity_id": "light.bedroom",
+    "state": "on",
+    "attributes": {
+      "friendly_name": "light.bedroom",
+      "brightness": 180,
+      "color_mode": "rgb",
+      "rgb_color": [
+        255,
+        120,
+        40
+      ],
+      "supported_color_modes": [
+        "rgb"
+      ]
+    },
+    "last_changed": "2026-09-26T16:00:00+00:00",
+    "last_updated": "2026-09-26T16:00:00+00:00"
+  },
+  "light.bedside_lamp": {
+    "entity_id": "light.bedside_lamp",
+    "state": "on",
+    "attributes": {
+      "friendly_name": "light.bedside_lamp",
+      "brightness": 180,
+      "color_mode": "rgb",
+      "rgb_color": [
+        255,
+        130,
+        40
+      ],
+      "supported_color_modes": [
+        "rgb"
+      ]
+    },
+    "last_changed": "2026-09-26T16:00:00+00:00",
+    "last_updated": "2026-09-26T16:00:00+00:00"
+  },
+  "light.floor_lamp": {
+    "entity_id": "light.floor_lamp",
+    "state": "on",
+    "attributes": {
+      "friendly_name": "light.floor_lamp",
+      "brightness": 180,
+      "color_mode": "rgb",
+      "rgb_color": [
+        255,
+        140,
+        40
+      ],
+      "supported_color_modes": [
+        "rgb"
+      ]
+    },
+    "last_changed": "2026-09-26T16:00:00+00:00",
+    "last_updated": "2026-09-26T16:00:00+00:00"
+  },
+  "light.hallway": {
+    "entity_id": "light.hallway",
+    "state": "on",
+    "attributes": {
+      "friendly_name": "light.hallway",
+      "brightness": 180,
+      "color_mode": "rgb",
+      "rgb_color": [
+        255,
+        150,
+        40
+      ],
+      "supported_color_modes": [
+        "rgb"
+      ]
+    },
+    "last_changed": "2026-09-26T16:00:00+00:00",
+    "last_updated": "2026-09-26T16:00:00+00:00"
+  },
+  "light.desk_lamp": {
+    "entity_id": "light.desk_lamp",
+    "state": "on",
+    "attributes": {
+      "friendly_name": "light.desk_lamp",
+      "brightness": 180,
+      "color_mode": "rgb",
+      "rgb_color": [
+        255,
+        160,
+        40
+      ],
+      "supported_color_modes": [
+        "rgb"
+      ]
+    },
+    "last_changed": "2026-09-26T16:00:00+00:00",
+    "last_updated": "2026-09-26T16:00:00+00:00"
+  },
+  "light.led_strip": {
+    "entity_id": "light.led_strip",
+    "state": "on",
+    "attributes": {
+      "friendly_name": "light.led_strip",
+      "brightness": 180,
+      "color_mode": "rgb",
+      "rgb_color": [
+        255,
+        170,
+        40
+      ],
+      "supported_color_modes": [
+        "rgb"
+      ]
+    },
+    "last_changed": "2026-09-26T16:00:00+00:00",
+    "last_updated": "2026-09-26T16:00:00+00:00"
+  },
+  "light.kitchen": {
+    "entity_id": "light.kitchen",
+    "state": "on",
+    "attributes": {
+      "friendly_name": "light.kitchen",
+      "brightness": 200,
+      "color_mode": "color_temp",
+      "color_temp": 350,
+      "color_temp_kelvin": 2857,
+      "rgb_color": [
+        255,
+        190,
+        130
+      ],
+      "supported_color_modes": [
+        "color_temp"
+      ]
+    },
+    "last_changed": "2026-09-26T16:00:00+00:00",
+    "last_updated": "2026-09-26T16:00:00+00:00"
+  },
+  "binary_sensor.bathroom_light": {
+    "entity_id": "binary_sensor.bathroom_light",
+    "state": "on",
+    "attributes": {
+      "friendly_name": "binary_sensor.bathroom_light"
+    },
+    "last_changed": "2026-09-26T16:00:00+00:00",
+    "last_updated": "2026-09-26T16:00:00+00:00"
+  },
+  "binary_sensor.bedroom_door_contact": {
+    "entity_id": "binary_sensor.bedroom_door_contact",
+    "state": "off",
+    "attributes": {
+      "friendly_name": "binary_sensor.bedroom_door_contact"
+    },
+    "last_changed": "2026-09-26T16:00:00+00:00",
+    "last_updated": "2026-09-26T16:00:00+00:00"
+  },
+  "binary_sensor.bedroom_window_contact": {
+    "entity_id": "binary_sensor.bedroom_window_contact",
+    "state": "off",
+    "attributes": {
+      "friendly_name": "binary_sensor.bedroom_window_contact"
+    },
+    "last_changed": "2026-09-26T16:00:00+00:00",
+    "last_updated": "2026-09-26T16:00:00+00:00"
+  },
+  "binary_sensor.balcony_door_contact": {
+    "entity_id": "binary_sensor.balcony_door_contact",
+    "state": "off",
+    "attributes": {
+      "friendly_name": "binary_sensor.balcony_door_contact"
+    },
+    "last_changed": "2026-09-26T16:00:00+00:00",
+    "last_updated": "2026-09-26T16:00:00+00:00"
+  },
+  "binary_sensor.front_door_contact": {
+    "entity_id": "binary_sensor.front_door_contact",
+    "state": "off",
+    "attributes": {
+      "friendly_name": "binary_sensor.front_door_contact"
+    },
+    "last_changed": "2026-09-26T16:00:00+00:00",
+    "last_updated": "2026-09-26T16:00:00+00:00"
+  },
+  "binary_sensor.fridge_door_contact": {
+    "entity_id": "binary_sensor.fridge_door_contact",
+    "state": "off",
+    "attributes": {
+      "friendly_name": "binary_sensor.fridge_door_contact"
+    },
+    "last_changed": "2026-09-26T16:00:00+00:00",
+    "last_updated": "2026-09-26T16:00:00+00:00"
+  },
+  "camera.front_yard": {
+    "entity_id": "camera.front_yard",
+    "state": "idle",
+    "attributes": {
+      "friendly_name": "camera.front_yard",
+      "entity_picture": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAJCAIAAAC0SDtlAAABRUlEQVR4nA3LIY7AIBAAwHvOPaAP4AGIkwSFWFFFkCsQBLUCUdGQypUNqahEIhBIHsBjruPn51ePTTehq9Sv0jdodvry+iBNpw6s8dGu6r1rM7Va+u/nF8YGTUCV8Cq4AdjB5eEgoBMCAz7gKuwdzAS14At2bLYJW6V9lb3BsrOXtwdZOm1gi4911e7dmmnVsl/AsWETWCW+Cm9Adnh5PAjpxMCID7qKe0czUS38QhxbbCJWGV8Vb4js4uXjQZHOGDjiE12Ne49mRrXiF9LYUhOpyvSqdENily6fDkp0psAJn+Rq2nsyM6mVvpDHlpvIVeZX5Rsyu3z5fFCmMwfO+GRX896zmVmt/AUeGzfBVfKr+AZmx5fng5hODsz4sKu8dzaT1eIvlLGVJkqV5VXlhsKuXL4cVOgsgQs+xdWy92JmUav8/QMWj+EB/6q47QAAAABJRU5ErkJggg=="
+    },
+    "last_changed": "2026-09-26T16:00:00+00:00",
+    "last_updated": "2026-09-26T16:00:00+00:00"
+  },
+  "media_player.living_room_tv": {
+    "entity_id": "media_player.living_room_tv",
+    "state": "playing",
+    "attributes": {
+      "friendly_name": "media_player.living_room_tv",
+      "entity_picture": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAJCAIAAAC0SDtlAAABRUlEQVR4nA3LIY7AIBAAwHvOPaAP4AGIkwSFWFFFkCsQBLUCUdGQypUNqahEIhBIHsBjruPn51ePTTehq9Sv0jdodvry+iBNpw6s8dGu6r1rM7Va+u/nF8YGTUCV8Cq4AdjB5eEgoBMCAz7gKuwdzAS14At2bLYJW6V9lb3BsrOXtwdZOm1gi4911e7dmmnVsl/AsWETWCW+Cm9Adnh5PAjpxMCID7qKe0czUS38QhxbbCJWGV8Vb4js4uXjQZHOGDjiE12Ne49mRrXiF9LYUhOpyvSqdENily6fDkp0psAJn+Rq2nsyM6mVvpDHlpvIVeZX5Rsyu3z5fFCmMwfO+GRX896zmVmt/AUeGzfBVfKr+AZmx5fng5hODsz4sKu8dzaT1eIvlLGVJkqV5VXlhsKuXL4cVOgsgQs+xdWy92JmUav8/QMWj+EB/6q47QAAAABJRU5ErkJggg=="
+    },
+    "last_changed": "2026-09-26T16:00:00+00:00",
+    "last_updated": "2026-09-26T16:00:00+00:00"
+  },
+  "sensor.shower_running": {
+    "entity_id": "sensor.shower_running",
+    "state": "off",
+    "attributes": {
+      "friendly_name": "sensor.shower_running"
+    },
+    "last_changed": "2026-09-26T16:00:00+00:00",
+    "last_updated": "2026-09-26T16:00:00+00:00"
+  },
+  "sensor.unrelated_test": {
+    "entity_id": "sensor.unrelated_test",
+    "state": "0",
+    "attributes": {
+      "friendly_name": "sensor.unrelated_test"
+    },
+    "last_changed": "2026-09-26T16:00:00+00:00",
+    "last_updated": "2026-09-26T16:00:00+00:00"
+  },
+  "sun.sun": {
+    "entity_id": "sun.sun",
+    "state": "above_horizon",
+    "attributes": {
+      "friendly_name": "Sun",
+      "azimuth": 200.0,
+      "elevation": 35.0
+    },
+    "last_changed": "2026-09-26T16:00:00+00:00",
+    "last_updated": "2026-09-26T16:00:00+00:00"
+  },
+  "sensor.radar_target_1_x": {
+    "entity_id": "sensor.radar_target_1_x",
+    "state": "-0.600",
+    "attributes": {
+      "unit_of_measurement": "m",
+      "friendly_name": "sensor.radar_target_1_x"
+    },
+    "last_changed": "2026-09-26T16:00:00+00:00",
+    "last_updated": "2026-09-26T16:00:00+00:00"
+  },
+  "sensor.radar_target_1_y": {
+    "entity_id": "sensor.radar_target_1_y",
+    "state": "2.100",
+    "attributes": {
+      "unit_of_measurement": "m",
+      "friendly_name": "sensor.radar_target_1_y"
+    },
+    "last_changed": "2026-09-26T16:00:00+00:00",
+    "last_updated": "2026-09-26T16:00:00+00:00"
+  },
+  "sensor.radar_target_1_zone": {
+    "entity_id": "sensor.radar_target_1_zone",
+    "state": "Sofa",
+    "attributes": {
+      "friendly_name": "sensor.radar_target_1_zone"
+    },
+    "last_changed": "2026-09-26T16:00:00+00:00",
+    "last_updated": "2026-09-26T16:00:00+00:00"
+  },
+  "sensor.radar_target_2_x": {
+    "entity_id": "sensor.radar_target_2_x",
+    "state": "unavailable",
+    "attributes": {
+      "unit_of_measurement": "m",
+      "friendly_name": "sensor.radar_target_2_x"
+    },
+    "last_changed": "2026-09-26T16:00:00+00:00",
+    "last_updated": "2026-09-26T16:00:00+00:00"
+  },
+  "sensor.radar_target_2_y": {
+    "entity_id": "sensor.radar_target_2_y",
+    "state": "unavailable",
+    "attributes": {
+      "unit_of_measurement": "m",
+      "friendly_name": "sensor.radar_target_2_y"
+    },
+    "last_changed": "2026-09-26T16:00:00+00:00",
+    "last_updated": "2026-09-26T16:00:00+00:00"
+  },
+  "sensor.radar_target_2_zone": {
+    "entity_id": "sensor.radar_target_2_zone",
+    "state": "unavailable",
+    "attributes": {
+      "friendly_name": "sensor.radar_target_2_zone"
+    },
+    "last_changed": "2026-09-26T16:00:00+00:00",
+    "last_updated": "2026-09-26T16:00:00+00:00"
+  },
+  "sensor.radar_target_3_x": {
+    "entity_id": "sensor.radar_target_3_x",
+    "state": "unavailable",
+    "attributes": {
+      "unit_of_measurement": "m",
+      "friendly_name": "sensor.radar_target_3_x"
+    },
+    "last_changed": "2026-09-26T16:00:00+00:00",
+    "last_updated": "2026-09-26T16:00:00+00:00"
+  },
+  "sensor.radar_target_3_y": {
+    "entity_id": "sensor.radar_target_3_y",
+    "state": "unavailable",
+    "attributes": {
+      "unit_of_measurement": "m",
+      "friendly_name": "sensor.radar_target_3_y"
+    },
+    "last_changed": "2026-09-26T16:00:00+00:00",
+    "last_updated": "2026-09-26T16:00:00+00:00"
+  },
+  "sensor.radar_target_3_zone": {
+    "entity_id": "sensor.radar_target_3_zone",
+    "state": "unavailable",
+    "attributes": {
+      "friendly_name": "sensor.radar_target_3_zone"
+    },
+    "last_changed": "2026-09-26T16:00:00+00:00",
+    "last_updated": "2026-09-26T16:00:00+00:00"
+  },
+  "alarm_control_panel.home_alarm": {
+    "entity_id": "alarm_control_panel.home_alarm",
+    "state": "disarmed",
+    "attributes": {
+      "friendly_name": "Home alarm"
+    },
+    "last_changed": "2026-09-26T16:00:00+00:00",
+    "last_updated": "2026-09-26T16:00:00+00:00"
+  },
+  "sensor.bedroom_temperature": {
+    "entity_id": "sensor.bedroom_temperature",
+    "state": "26",
+    "attributes": {
+      "unit_of_measurement": "°C",
+      "device_class": "temperature",
+      "friendly_name": "sensor.bedroom_temperature"
+    },
+    "last_changed": "2026-09-26T16:00:00+00:00",
+    "last_updated": "2026-09-26T16:00:00+00:00"
+  },
+  "sensor.living_room_temperature": {
+    "entity_id": "sensor.living_room_temperature",
+    "state": "24.5",
+    "attributes": {
+      "unit_of_measurement": "°C",
+      "device_class": "temperature",
+      "friendly_name": "sensor.living_room_temperature"
+    },
+    "last_changed": "2026-09-26T16:00:00+00:00",
+    "last_updated": "2026-09-26T16:00:00+00:00"
+  },
+  "sensor.bathroom_temperature": {
+    "entity_id": "sensor.bathroom_temperature",
+    "state": "23.8",
+    "attributes": {
+      "unit_of_measurement": "°C",
+      "device_class": "temperature",
+      "friendly_name": "sensor.bathroom_temperature"
+    },
+    "last_changed": "2026-09-26T16:00:00+00:00",
+    "last_updated": "2026-09-26T16:00:00+00:00"
+  },
+  "binary_sensor.bedroom_occupancy": {
+    "entity_id": "binary_sensor.bedroom_occupancy",
+    "state": "off",
+    "attributes": {
+      "device_class": "occupancy",
+      "friendly_name": "binary_sensor.bedroom_occupancy"
+    },
+    "last_changed": "2026-09-26T16:00:00+00:00",
+    "last_updated": "2026-09-26T16:00:00+00:00"
+  },
+  "binary_sensor.living_room_occupancy": {
+    "entity_id": "binary_sensor.living_room_occupancy",
+    "state": "on",
+    "attributes": {
+      "device_class": "occupancy",
+      "friendly_name": "binary_sensor.living_room_occupancy"
+    },
+    "last_changed": "2026-09-26T16:00:00+00:00",
+    "last_updated": "2026-09-26T16:00:00+00:00"
+  },
+  "binary_sensor.kitchen_occupancy": {
+    "entity_id": "binary_sensor.kitchen_occupancy",
+    "state": "off",
+    "attributes": {
+      "device_class": "occupancy",
+      "friendly_name": "binary_sensor.kitchen_occupancy"
+    },
+    "last_changed": "2026-09-26T16:00:00+00:00",
+    "last_updated": "2026-09-26T16:00:00+00:00"
+  },
+  "binary_sensor.bathroom_occupancy": {
+    "entity_id": "binary_sensor.bathroom_occupancy",
+    "state": "off",
+    "attributes": {
+      "device_class": "occupancy",
+      "friendly_name": "binary_sensor.bathroom_occupancy"
+    },
+    "last_changed": "2026-09-26T16:00:00+00:00",
+    "last_updated": "2026-09-26T16:00:00+00:00"
+  },
+  "sensor.bedroom_2_temperature": {
+    "entity_id": "sensor.bedroom_2_temperature",
+    "state": "22.4",
+    "attributes": {
+      "unit_of_measurement": "°C",
+      "device_class": "temperature",
+      "friendly_name": "sensor.bedroom_2_temperature"
+    },
+    "last_changed": "2026-09-26T16:00:00+00:00",
+    "last_updated": "2026-09-26T16:00:00+00:00"
+  }
+}

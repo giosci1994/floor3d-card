@@ -1,0 +1,96 @@
+<!doctype html><html><head><meta charset="utf-8"><title>floor3d test</title>
+<style>body{margin:0;background:#1c1c1c;color:#ddd;font:14px sans-serif} #wrap{width:860px;height:640px} #spacer{height:4000px}</style></head>
+<body><div id="info">loading…</div><div id="wrap"></div><div id="spacer"></div>
+<script type="module">
+window.__log = [];
+if (new URLSearchParams(location.search).get('fill')) {
+  document.head.insertAdjacentHTML('beforeend', '<style>#wrap{width:100vw;height:100vh} #spacer,#info{display:none} body{overflow:hidden}</style>');
+}
+if (new URLSearchParams(location.search).get('raf') === 'timeout') {
+  const ids = new Map(); let n = 0;
+  window.requestAnimationFrame = (cb) => { const id = ++n; ids.set(id, setTimeout(() => { ids.delete(id); cb(performance.now()); }, 16)); return id; };
+  window.cancelAnimationFrame = (id) => { clearTimeout(ids.get(id)); ids.delete(id); };
+}
+
+if (new URLSearchParams(location.search).get('fakegl')) {
+  const C = WebGL2RenderingContext;
+  let nextId = 1;
+  const obj = () => ({ __id: nextId++ });
+  const params = (p) => {
+    switch (p) {
+      case C.VERSION: return 'WebGL 2.0 (fake)';
+      case C.SHADING_LANGUAGE_VERSION: return 'WebGL GLSL ES 3.00 (fake)';
+      case C.VENDOR: case C.RENDERER: return 'fake';
+      case C.SCISSOR_BOX: case C.VIEWPORT: return new Int32Array([0, 0, 860, 640]);
+      case C.ALIASED_LINE_WIDTH_RANGE: case C.ALIASED_POINT_SIZE_RANGE: return new Float32Array([1, 64]);
+      case C.MAX_TEXTURE_SIZE: case C.MAX_CUBE_MAP_TEXTURE_SIZE: case C.MAX_RENDERBUFFER_SIZE: return 4096;
+      case C.MAX_VIEWPORT_DIMS: return new Int32Array([4096, 4096]);
+      default: return 16;
+    }
+  };
+  const methods = {
+    getParameter: params, getExtension: () => null, getSupportedExtensions: () => [],
+    getContextAttributes: () => ({ alpha: true, antialias: true, depth: true, stencil: true, premultipliedAlpha: true, preserveDrawingBuffer: false }),
+    getShaderPrecisionFormat: () => ({ rangeMin: 127, rangeMax: 127, precision: 23 }),
+    getShaderParameter: () => true, getProgramParameter: (prog, p) => (p === C.LINK_STATUS ? true : 0),
+    getShaderInfoLog: () => '', getProgramInfoLog: () => '', getShaderSource: () => '',
+    checkFramebufferStatus: () => C.FRAMEBUFFER_COMPLETE, isContextLost: () => false, getError: () => 0,
+    getUniformLocation: () => obj(), getAttribLocation: () => -1,
+    createTexture: obj, createBuffer: obj, createFramebuffer: obj, createRenderbuffer: obj,
+    createProgram: obj, createShader: obj, createVertexArray: obj,
+  };
+  const make = (canvas) => {
+    const stats = { draws: 0, deleteTexture: 0 };
+    return new Proxy({ canvas, drawingBufferWidth: 860, drawingBufferHeight: 640, __fake: stats }, {
+      get(t, prop) {
+        if (prop in t) return t[prop];
+        if (typeof prop === 'string' && prop in C) return C[prop];
+        if (prop in methods) return methods[prop];
+        if (prop === 'drawElements' || prop === 'drawArrays') return () => { stats.draws++; };
+        if (prop === 'deleteTexture') return () => { stats.deleteTexture++; };
+        return () => undefined;
+      },
+    });
+  };
+  const orig = HTMLCanvasElement.prototype.getContext;
+  HTMLCanvasElement.prototype.getContext = function (type, attrs) {
+    if (/webgl/.test(type)) return this.__fakegl || (this.__fakegl = make(this));
+    return orig.call(this, type, attrs);
+  };
+}
+
+const origErr = console.error.bind(console);
+console.error = (...a) => { window.__log.push('console.error: ' + a.map(String).join(' ') + '\n' + (new Error().stack || '').split('\n').slice(2, 7).join('\n')); origErr(...a); };
+window.addEventListener('error', e => window.__log.push('error: ' + e.message));
+window.addEventListener('unhandledrejection', e => window.__log.push('rejection: ' + (e.reason && (e.reason.stack || e.reason.message || e.reason))));
+const mk = (tag, parent) => { const el = document.createElement(tag); parent.appendChild(el); return el; };
+const ha = document.createElement('home-assistant'); document.body.prepend(ha);
+const main = mk('home-assistant-main', ha.attachShadow({ mode: 'open' }));
+const panel = mk('ha-panel-lovelace', mk('partial-panel-resolver', mk('ha-drawer', main.attachShadow({ mode: 'open' }))));
+const huiRoot = mk('hui-root', panel.attachShadow({ mode: 'open' }));
+huiRoot.lovelace = { config: { views: [] }, editMode: false };
+mk('hui-view', huiRoot.attachShadow({ mode: 'open' }));
+const which = new URLSearchParams(location.search).get('v') || 'fixed';
+await import(which === 'orig' ? './original.js' : which === 'dist' ? './floor3d-card.js' : which === 'cand' ? './candidate.js?b=' + Date.now() : '../floor3d-card.js?b=' + Date.now());
+const config = await (await fetch('./' + (new URLSearchParams(location.search).get('cfg') || 'config.json'))).json();
+Object.assign(config, JSON.parse(new URLSearchParams(location.search).get('ov') || '{}'));
+const states = await (await fetch('./' + (new URLSearchParams(location.search).get('st') || 'states.json'))).json();
+window.__calls = [];
+const mkHass = (st) => ({ states: st, callService: (d, s, data) => { window.__calls.push([d, s, data]); return Promise.resolve(); },
+  language: 'en', locale: { language: 'en', number_format: 'language', time_format: '24' }, themes: { darkMode: true, themes: {} },
+  selectedTheme: null, user: { is_admin: true, name: 'test' }, config: { unit_system: { temperature: '°C' } },
+  localize: (k) => k, connection: { subscribeMessage: () => () => {}, subscribeEvents: () => () => {} } });
+let hass = mkHass(states);
+window.__hass = () => hass;
+const card = document.createElement('floor3d-card');
+card.setConfig(config);
+card.hass = hass;
+document.getElementById('wrap').appendChild(card);
+window.__card = card;
+window.__setState = (id, state, attrs, replaceAttrs) => {
+  const old = hass.states[id] || { entity_id: id, attributes: {} };
+  const ns = { ...hass.states, [id]: { ...old, state: String(state), attributes: replaceAttrs ? { ...attrs } : { ...old.attributes, ...(attrs || {}) }, last_updated: new Date().toISOString() } };
+  hass = mkHass(ns); card.hass = hass;
+};
+document.getElementById('info').textContent = 'version: ' + which;
+</script></body></html>

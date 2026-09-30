@@ -1,3 +1,5 @@
+> **This is a fork** of [adizanni/floor3d-card](https://github.com/adizanni/floor3d-card) with updated libraries (three.js 0.186, Lit 3), bug fixes and new features: see [FORK.md](FORK.md) for what changed and how to install it. The rest of this page is the original documentation: the HACS default repository, the release links and the donation link below refer to the original card and its author.
+
 # floor3d-card (aka Your Home Digital Twin)
 
 [![hacs_badge](https://img.shields.io/badge/HACS-Default-orange.svg?style=for-the-badge)](https://github.com/custom-components/hacs)
