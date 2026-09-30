@@ -1145,16 +1145,16 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
                     <mwc-list-item value="yes">yes</mwc-list-item>
                     <mwc-list-item value="no">no</mwc-list-item>
                 </floor3d-select>
-                ${this._textField('Esposizione (<1>)', config, 'exposure', 1, 'number')}
+                ${this._textField('Exposure (<1>)', config, 'exposure', 1, 'number')}
                 ${this._choiceField('Tone mapping (<neutral>)', config, 'tone_mapping', 'neutral', ['neutral', 'agx', 'aces', 'linear'])}
-                ${this._textField('Potenza lampade (<1>)', config, 'light_power', 1, 'number')}
-                ${this._yesNoField('Sole da sun.sun (yes/<no>)', config, 'sun', 'no')}
-                ${this._textField('Potenza sole (<1>)', config, 'sun_power', 1, 'number')}
-                ${this._textField('Risoluzione massima (<2>)', config, 'max_pixel_ratio', 2, 'number')}
+                ${this._textField('Lamp Power (<1>)', config, 'light_power', 1, 'number')}
+                ${this._yesNoField('Sun from sun.sun (yes/<no>)', config, 'sun', 'no')}
+                ${this._textField('Sun Power (<1>)', config, 'sun_power', 1, 'number')}
+                ${this._textField('Max Pixel Ratio (<2>)', config, 'max_pixel_ratio', 2, 'number')}
                 ${this._yesNoField('Log depth (yes/<no>)', config, 'log_depth', 'no')}
-                ${this._yesNoField('Porte e finestre aperte colorate (yes/<no>)', config, 'state_colors', 'no')}
-                ${this._textField('Allarme (entità, es. alarm_control_panel.allarme)', config, 'alarm_entity', '')}
-                ${this._choiceField('Mappa delle stanze iniziale (<none>)', config, 'room_colors', 'none', ['none', 'temperature', 'presence'])}
+                ${this._yesNoField('Highlight Open Doors/Windows (yes/<no>)', config, 'state_colors', 'no')}
+                ${this._textField('Alarm Entity (e.g. alarm_control_panel.home)', config, 'alarm_entity', '')}
+                ${this._choiceField('Initial Room Map (<none>)', config, 'room_colors', 'none', ['none', 'temperature', 'presence'])}
                 <floor3d-select
                   label="+ Lights - Perf (yes/<no>)"
                   @selected=${this._valueChanged}
@@ -2670,14 +2670,14 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
       return html`
         <div class="card-options">
           <floor3d-textfield
-            label="Y Sensore Entità (es. sensor.y)"
+            label="Y Sensor Entity (e.g. sensor.y)"
             .value=${tracker.sensor_y ? tracker.sensor_y : ''}
             .configAttribute=${'sensor_y'}
             .configObject=${tracker}
             @input=${this._valueChanged}
           ></floor3d-textfield>
           <floor3d-textfield
-            label="Posizione Sensore [X, Y, Z]"
+            label="Sensor Position [X, Y, Z]"
             .value=${tracker.sensor_position ? JSON.stringify(tracker.sensor_position) : '[0, 0, 0]'}
             .configAttribute=${'sensor_position'}
             .configObject=${tracker}
@@ -2685,7 +2685,7 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
           ></floor3d-textfield>
           <div style="display: flex; gap: 8px;">
             <floor3d-textfield
-              label="Rotazione (gradi)"
+              label="Rotation (Degrees)"
               type="number"
               .value=${tracker.sensor_rotation !== undefined ? tracker.sensor_rotation : 0}
               .configAttribute=${'sensor_rotation'}
@@ -2694,7 +2694,7 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
               style="flex: 1;"
             ></floor3d-textfield>
             <floor3d-textfield
-              label="Scala"
+              label="Scale"
               type="number"
               step="0.001"
               .value=${tracker.scale !== undefined ? tracker.scale : 0.001}
@@ -2706,7 +2706,7 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
           </div>
           <div style="display: flex; gap: 8px;">
             <floor3d-textfield
-              label="Altezza (cm)"
+              label="Height (cm)"
               type="number"
               .value=${tracker.height !== undefined ? tracker.height : 150}
               .configAttribute=${'height'}
@@ -2715,7 +2715,7 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
               style="flex: 1;"
             ></floor3d-textfield>
             <floor3d-textfield
-              label="Dimensione"
+              label="Size"
               type="number"
               .value=${tracker.size !== undefined ? tracker.size : 0.15}
               .configAttribute=${'size'}
@@ -2725,17 +2725,17 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
             ></floor3d-textfield>
           </div>
           <floor3d-textfield
-            label="Colore (Hex)"
+            label="Color (Hex)"
             .value=${tracker.color ? tracker.color : '#FF5500'}
             .configAttribute=${'color'}
             .configObject=${tracker}
             @input=${this._valueChanged}
           ></floor3d-textfield>
           <div style="display: flex; gap: 8px;">
-            ${this._choiceField('Unità coordinate (<mm>)', tracker, 'unit', 'mm', ['mm', 'cm', 'm'])}
-            ${this._yesNoField('Specchia X (yes/<no>)', tracker, 'flip_x', 'no')}
+            ${this._choiceField('Coordinate Unit (<mm>)', tracker, 'unit', 'mm', ['mm', 'cm', 'm'])}
+            ${this._yesNoField('Mirror X (yes/<no>)', tracker, 'flip_x', 'no')}
           </div>
-          ${this._textField('Zona (entità, opzionale)', tracker, 'zone', '')}
+          ${this._textField('Zone Entity (Optional)', tracker, 'zone', '')}
         </div>
       `;
     }
@@ -3185,28 +3185,28 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
       return html`
         <div class="card-options">
           <floor3d-textfield
-            label="Template/Testo"
+            label="Template/Text"
             .value=${info.text ? info.text : ''}
             .configAttribute=${'text'}
             .configObject=${info}
             @input=${this._valueChanged}
           ></floor3d-textfield>
           <floor3d-textfield
-            label="Posizione [X, Y, Z] (Opzionale)"
+            label="Position [X, Y, Z] (Optional)"
             .value=${info.position ? JSON.stringify(info.position) : ''}
             .configAttribute=${'position'}
             .configObject=${info}
             @input=${this._valueChanged}
           ></floor3d-textfield>
           <floor3d-textfield
-            label="Colore Testo"
+            label="Text Color"
             .value=${info.textfgcolor ? info.textfgcolor : 'white'}
             .configAttribute=${'textfgcolor'}
             .configObject=${info}
             @input=${this._valueChanged}
           ></floor3d-textfield>
           <floor3d-textfield
-            label="Colore Sfondo"
+            label="Background Color"
             .value=${info.textbgcolor ? info.textbgcolor : 'transparent'}
             .configAttribute=${'textbgcolor'}
             .configObject=${info}
@@ -3220,7 +3220,7 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
              @input=${this._valueChanged}
           ></floor3d-textfield>
           <floor3d-textfield
-            label="Dimensione"
+            label="Size"
             type="number"
             .value=${info.size !== undefined ? info.size : 100}
             .configAttribute=${'size'}
@@ -3242,7 +3242,7 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
       return html`
         <div class="card-options">
           <floor3d-textfield
-            label="Velocità"
+            label="Speed"
             type="number"
             .value=${shower.velocity !== undefined ? shower.velocity : 5}
             .configAttribute=${'velocity'}
@@ -3250,7 +3250,7 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
             @input=${this._valueChanged}
           ></floor3d-textfield>
           <floor3d-textfield
-            label="Conteggio"
+            label="Drop Count"
             type="number"
             .value=${shower.count !== undefined ? shower.count : 200}
             .configAttribute=${'count'}
@@ -3258,14 +3258,14 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
             @input=${this._valueChanged}
           ></floor3d-textfield>
           <floor3d-textfield
-            label="Colore"
+            label="Color"
             .value=${shower.color ? shower.color : '#aaaaaa'}
             .configAttribute=${'color'}
             .configObject=${shower}
             @input=${this._valueChanged}
           ></floor3d-textfield>
           <floor3d-textfield
-            label="Dimensione"
+            label="Drop Size"
             type="number"
             .value=${shower.size !== undefined ? shower.size : 1}
             .configAttribute=${'size'}
@@ -3273,7 +3273,7 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
             @input=${this._valueChanged}
           ></floor3d-textfield>
           <floor3d-textfield
-            label="Altezza (cm)"
+            label="Height (cm)"
             type="number"
             .value=${shower.height !== undefined ? shower.height : 100}
             .configAttribute=${'height'}
@@ -3281,7 +3281,7 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
             @input=${this._valueChanged}
           ></floor3d-textfield>
           <floor3d-textfield
-            label="Lato del quadrato"
+            label="Spray Area Side (cm)"
             type="number"
             .value=${shower.width !== undefined ? shower.width : 20}
             .configAttribute=${'width'}

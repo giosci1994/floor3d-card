@@ -6,8 +6,8 @@ A fork of [adizanni/floor3d-card](https://github.com/adizanni/floor3d-card) (MIT
 
 The floor3d-card in the HACS default repository is the original one. To use this fork, install it by hand:
 
-1. Copy **all** the `dist/*.js` files into a new folder of `config/www` named after the version, for example `config/www/floor3d-card-mod/v20260928i/`. There are two files: the card and its editor, which is loaded only when you edit the card.
-2. Add `/local/floor3d-card-mod/v20260928i/floor3d-card.js` as a resource of type **module** (Settings › Dashboards › Resources). If the original card is installed too, remove it first: both define `custom:floor3d-card`.
+1. Copy **all** the `dist/*.js` files into a new folder of `config/www` named after the version, for example `config/www/floor3d-card-mod/v20260930a/`. There are two files: the card and its editor, which is loaded only when you edit the card.
+2. Add `/local/floor3d-card-mod/v20260930a/floor3d-card.js` as a resource of type **module** (Settings › Dashboards › Resources). If the original card is installed too, remove it first: both define `custom:floor3d-card`.
 3. Reload the browser or the app. The version is shown at the top of the card editor and in the browser console.
 
 Use a **new folder for every version** instead of a `?v=` query on the resource. The card imports its editor as `./floor3d-card-editor-<hash>.js`, and with a `?v=` the browser would load the card twice (as two different modules). Home Assistant serves `/local` with a 31-day cache, and so may a proxy in front of it: a new folder is a new address. The folders of older versions can be deleted afterwards.
@@ -26,8 +26,6 @@ Change `CARD_VERSION` in `src/const.ts` at every modification: the date, plus th
 - **Lit 2 kept for the Material components.** The editor uses `@material/mwc-*` 0.27 components, written for Lit 2; on Lit 3 some of them break (for example `mwc-formfield` with the old signature of `@queryAssignedNodes`). The `litForMaterial` plugin in `rollup.config.mjs` makes all of `@material/*` use a single Lit 2 copy (the `lit2` alias in `package.json`), while the card uses Lit 3. Alias and plugin can go once the Material components are replaced.
 - **Editor loaded separately.** The card no longer imports the editor at startup: `getConfigElement()` loads it when the card is edited. Devices that only show the card download about 810 KB instead of 1.15 MB.
 - **Components Home Assistant no longer provides.** Recent Home Assistant versions don't define `mwc-menu` anymore, so the drop-down menus of the editor didn't open. `elements/menu.ts` defines `mwc-menu`, `mwc-menu-surface`, `mwc-list` and `mwc-list-item` only when they are missing. The card also reads `isPanel` and `editMode` directly from Home Assistant (2024+), and falls back to the page structure on older versions.
-
-Some editor fields of the new options are labelled in Italian. YAML works as documented here.
 
 ## New features
 

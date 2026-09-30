@@ -1262,16 +1262,16 @@ const ei=m`.mdc-floating-label{-moz-osx-font-smoothing:grayscale;-webkit-font-sm
                     <mwc-list-item value="yes">yes</mwc-list-item>
                     <mwc-list-item value="no">no</mwc-list-item>
                 </floor3d-select>
-                ${this._textField("Esposizione (<1>)",e,"exposure",1,"number")}
+                ${this._textField("Exposure (<1>)",e,"exposure",1,"number")}
                 ${this._choiceField("Tone mapping (<neutral>)",e,"tone_mapping","neutral",["neutral","agx","aces","linear"])}
-                ${this._textField("Potenza lampade (<1>)",e,"light_power",1,"number")}
-                ${this._yesNoField("Sole da sun.sun (yes/<no>)",e,"sun","no")}
-                ${this._textField("Potenza sole (<1>)",e,"sun_power",1,"number")}
-                ${this._textField("Risoluzione massima (<2>)",e,"max_pixel_ratio",2,"number")}
+                ${this._textField("Lamp Power (<1>)",e,"light_power",1,"number")}
+                ${this._yesNoField("Sun from sun.sun (yes/<no>)",e,"sun","no")}
+                ${this._textField("Sun Power (<1>)",e,"sun_power",1,"number")}
+                ${this._textField("Max Pixel Ratio (<2>)",e,"max_pixel_ratio",2,"number")}
                 ${this._yesNoField("Log depth (yes/<no>)",e,"log_depth","no")}
-                ${this._yesNoField("Porte e finestre aperte colorate (yes/<no>)",e,"state_colors","no")}
-                ${this._textField("Allarme (entità, es. alarm_control_panel.allarme)",e,"alarm_entity","")}
-                ${this._choiceField("Mappa delle stanze iniziale (<none>)",e,"room_colors","none",["none","temperature","presence"])}
+                ${this._yesNoField("Highlight Open Doors/Windows (yes/<no>)",e,"state_colors","no")}
+                ${this._textField("Alarm Entity (e.g. alarm_control_panel.home)",e,"alarm_entity","")}
+                ${this._choiceField("Initial Room Map (<none>)",e,"room_colors","none",["none","temperature","presence"])}
                 <floor3d-select
                   label="+ Lights - Perf (yes/<no>)"
                   @selected=${this._valueChanged}
@@ -2231,14 +2231,14 @@ const ei=m`.mdc-floating-label{-moz-osx-font-smoothing:grayscale;-webkit-font-sm
     `}_createTrackerElement(e){if("tracker"==this._configArray[e].type3d){this._configArray[e].tracker||(this._configArray[e].tracker={});const t=this._configArray[e].tracker;return S`
         <div class="card-options">
           <floor3d-textfield
-            label="Y Sensore Entità (es. sensor.y)"
+            label="Y Sensor Entity (e.g. sensor.y)"
             .value=${t.sensor_y?t.sensor_y:""}
             .configAttribute=${"sensor_y"}
             .configObject=${t}
             @input=${this._valueChanged}
           ></floor3d-textfield>
           <floor3d-textfield
-            label="Posizione Sensore [X, Y, Z]"
+            label="Sensor Position [X, Y, Z]"
             .value=${t.sensor_position?JSON.stringify(t.sensor_position):"[0, 0, 0]"}
             .configAttribute=${"sensor_position"}
             .configObject=${t}
@@ -2246,7 +2246,7 @@ const ei=m`.mdc-floating-label{-moz-osx-font-smoothing:grayscale;-webkit-font-sm
           ></floor3d-textfield>
           <div style="display: flex; gap: 8px;">
             <floor3d-textfield
-              label="Rotazione (gradi)"
+              label="Rotation (Degrees)"
               type="number"
               .value=${void 0!==t.sensor_rotation?t.sensor_rotation:0}
               .configAttribute=${"sensor_rotation"}
@@ -2255,7 +2255,7 @@ const ei=m`.mdc-floating-label{-moz-osx-font-smoothing:grayscale;-webkit-font-sm
               style="flex: 1;"
             ></floor3d-textfield>
             <floor3d-textfield
-              label="Scala"
+              label="Scale"
               type="number"
               step="0.001"
               .value=${void 0!==t.scale?t.scale:.001}
@@ -2267,7 +2267,7 @@ const ei=m`.mdc-floating-label{-moz-osx-font-smoothing:grayscale;-webkit-font-sm
           </div>
           <div style="display: flex; gap: 8px;">
             <floor3d-textfield
-              label="Altezza (cm)"
+              label="Height (cm)"
               type="number"
               .value=${void 0!==t.height?t.height:150}
               .configAttribute=${"height"}
@@ -2276,7 +2276,7 @@ const ei=m`.mdc-floating-label{-moz-osx-font-smoothing:grayscale;-webkit-font-sm
               style="flex: 1;"
             ></floor3d-textfield>
             <floor3d-textfield
-              label="Dimensione"
+              label="Size"
               type="number"
               .value=${void 0!==t.size?t.size:.15}
               .configAttribute=${"size"}
@@ -2286,17 +2286,17 @@ const ei=m`.mdc-floating-label{-moz-osx-font-smoothing:grayscale;-webkit-font-sm
             ></floor3d-textfield>
           </div>
           <floor3d-textfield
-            label="Colore (Hex)"
+            label="Color (Hex)"
             .value=${t.color?t.color:"#FF5500"}
             .configAttribute=${"color"}
             .configObject=${t}
             @input=${this._valueChanged}
           ></floor3d-textfield>
           <div style="display: flex; gap: 8px;">
-            ${this._choiceField("Unità coordinate (<mm>)",t,"unit","mm",["mm","cm","m"])}
-            ${this._yesNoField("Specchia X (yes/<no>)",t,"flip_x","no")}
+            ${this._choiceField("Coordinate Unit (<mm>)",t,"unit","mm",["mm","cm","m"])}
+            ${this._yesNoField("Mirror X (yes/<no>)",t,"flip_x","no")}
           </div>
-          ${this._textField("Zona (entità, opzionale)",t,"zone","")}
+          ${this._textField("Zone Entity (Optional)",t,"zone","")}
         </div>
       `}return S``}_createGestureElement(e){const t=this._options.entities.options.entities[e].options.gesture,i=this._configArray[e],o=!!i.type3d&&"gesture"===i.type3d;return o&&(i.gesture={...i.gesture}),S`
       ${o?S`
@@ -2467,28 +2467,28 @@ const ei=m`.mdc-floating-label{-moz-osx-font-smoothing:grayscale;-webkit-font-sm
     `}_initialize(){void 0!==this.hass&&void 0!==this._config&&void 0!==this._helpers&&(this._initialized=!0)}async loadCardHelpers(){this._helpers=await window.loadCardHelpers()}_toggleAction(e){this._toggleThing(e)}_toggleOption(e){this._toggleThing(e)}_typeChanged(e){if(!this._config||!this.hass)return;const t=e.target;if(t.configObject[t.configAttribute]==t.value)return;let i=t.configObject[t.configAttribute];if(this._valueChanged(e),console.log("Type3D changed start"),t.configObject[i]){const t=this._configArray,o=[];t.forEach((t,n)=>{if(e.target.configIndex==n){let t;switch(i){case"light":const{light:i,...o}=e.target.configObject;t=o;break;case"image":const{image:n,...l}=e.target.configObject;t=l;break;case"room":let{room:d,...a}=e.target.configObject;t=a;break;case"zoom":let{zoom:r,...c}=e.target.configObject;t=c;break;case"color":let{colorcondition:s,...m}=e.target.configObject;t=m;break;case"hide":let{hide:h,...p}=e.target.configObject;t=p;break;case"show":let{show:f,...u}=e.target.configObject;t=u;break;case"door":let{door:g,...b}=e.target.configObject;t=b;break;case"gesture":let{gesture:x,..._}=e.target.configObject;t=_;break;case"camera":let{camera:v,...y}=e.target.configObject;t=y;break;case"text":let{text:w,...$}=e.target.configObject;t=$;break;case"rotate":let{rotate:E,...A}=e.target.configObject;t=A;break;case"cover":let{cover:I,...C}=e.target.configObject;t=C}console.log(t),o.push(t)}else o.push(t)}),this._configArray=o}e.target.optionTgt.color&&(e.target.optionTgt.color.visible=!1),e.target.optionTgt.hide&&(e.target.optionTgt.hide.visible=!1),e.target.optionTgt.show&&(e.target.optionTgt.show.visible=!1),e.target.optionTgt.room&&(e.target.optionTgt.room.visible=!1),e.target.optionTgt.zoom&&(e.target.optionTgt.zoom.visible=!1),e.target.optionTgt.door&&(e.target.optionTgt.door.visible=!1),e.target.optionTgt.text&&(e.target.optionTgt.text.visible=!1),e.target.optionTgt.cover&&(e.target.optionTgt.cover.visible=!1),e.target.optionTgt.gesture&&(e.target.optionTgt.gesture.visible=!1),e.target.optionTgt.rotate&&(e.target.optionTgt.rotate.visible=!1),e.target.optionTgt.camera&&(e.target.optionTgt.camera.visible=!1),e.target.optionTgt.light&&(e.target.optionTgt.light.visible=!1),console.log("Type3D changed end")}_valueChanged(e){if(!this._config||!this.hass)return;const t=e.target,i=void 0!==t.checked?t.checked:t.value;if(t.configObject[t.configAttribute]!=i){if(t.configAdd&&""!==i&&(t.configObject=Object.assign(t.configObject,{[t.configAdd]:{[t.configAttribute]:i}})),t.configAttribute&&t.configObject&&!t.configAdd)if(""==i||!1===i){if(1==t.ignoreNull)return;delete t.configObject[t.configAttribute]}else if("sensor_position"===t.configAttribute){let e;try{e=JSON.parse(i)}catch(e){return}if(!Array.isArray(e)||3!==e.length||!e.every(e=>"number"==typeof e&&isFinite(e)))return;t.configObject[t.configAttribute]=e}else t.configObject[t.configAttribute]=i;this._config.entities=this._configArray,this._config.object_groups=this._configObjectArray,this._config.zoom_areas=this._configZoomArray,R(this,"config-changed",{config:this._config})}}_createInfoElement(e){if("info"==this._configArray[e].type3d){this._configArray[e].info||(this._configArray[e].info={});const t=this._configArray[e].info;return S`
         <div class="card-options">
           <floor3d-textfield
-            label="Template/Testo"
+            label="Template/Text"
             .value=${t.text?t.text:""}
             .configAttribute=${"text"}
             .configObject=${t}
             @input=${this._valueChanged}
           ></floor3d-textfield>
           <floor3d-textfield
-            label="Posizione [X, Y, Z] (Opzionale)"
+            label="Position [X, Y, Z] (Optional)"
             .value=${t.position?JSON.stringify(t.position):""}
             .configAttribute=${"position"}
             .configObject=${t}
             @input=${this._valueChanged}
           ></floor3d-textfield>
           <floor3d-textfield
-            label="Colore Testo"
+            label="Text Color"
             .value=${t.textfgcolor?t.textfgcolor:"white"}
             .configAttribute=${"textfgcolor"}
             .configObject=${t}
             @input=${this._valueChanged}
           ></floor3d-textfield>
           <floor3d-textfield
-            label="Colore Sfondo"
+            label="Background Color"
             .value=${t.textbgcolor?t.textbgcolor:"transparent"}
             .configAttribute=${"textbgcolor"}
             .configObject=${t}
@@ -2502,7 +2502,7 @@ const ei=m`.mdc-floating-label{-moz-osx-font-smoothing:grayscale;-webkit-font-sm
              @input=${this._valueChanged}
           ></floor3d-textfield>
           <floor3d-textfield
-            label="Dimensione"
+            label="Size"
             type="number"
             .value=${void 0!==t.size?t.size:100}
             .configAttribute=${"size"}
@@ -2513,7 +2513,7 @@ const ei=m`.mdc-floating-label{-moz-osx-font-smoothing:grayscale;-webkit-font-sm
       `}return S``}_createShowerElement(e){if("shower"==this._configArray[e].type3d){this._configArray[e].shower||(this._configArray[e].shower={});const t=this._configArray[e].shower;return S`
         <div class="card-options">
           <floor3d-textfield
-            label="Velocità"
+            label="Speed"
             type="number"
             .value=${void 0!==t.velocity?t.velocity:5}
             .configAttribute=${"velocity"}
@@ -2521,7 +2521,7 @@ const ei=m`.mdc-floating-label{-moz-osx-font-smoothing:grayscale;-webkit-font-sm
             @input=${this._valueChanged}
           ></floor3d-textfield>
           <floor3d-textfield
-            label="Conteggio"
+            label="Drop Count"
             type="number"
             .value=${void 0!==t.count?t.count:200}
             .configAttribute=${"count"}
@@ -2529,14 +2529,14 @@ const ei=m`.mdc-floating-label{-moz-osx-font-smoothing:grayscale;-webkit-font-sm
             @input=${this._valueChanged}
           ></floor3d-textfield>
           <floor3d-textfield
-            label="Colore"
+            label="Color"
             .value=${t.color?t.color:"#aaaaaa"}
             .configAttribute=${"color"}
             .configObject=${t}
             @input=${this._valueChanged}
           ></floor3d-textfield>
           <floor3d-textfield
-            label="Dimensione"
+            label="Drop Size"
             type="number"
             .value=${void 0!==t.size?t.size:1}
             .configAttribute=${"size"}
@@ -2544,7 +2544,7 @@ const ei=m`.mdc-floating-label{-moz-osx-font-smoothing:grayscale;-webkit-font-sm
             @input=${this._valueChanged}
           ></floor3d-textfield>
           <floor3d-textfield
-            label="Altezza (cm)"
+            label="Height (cm)"
             type="number"
             .value=${void 0!==t.height?t.height:100}
             .configAttribute=${"height"}
@@ -2552,7 +2552,7 @@ const ei=m`.mdc-floating-label{-moz-osx-font-smoothing:grayscale;-webkit-font-sm
             @input=${this._valueChanged}
           ></floor3d-textfield>
           <floor3d-textfield
-            label="Lato del quadrato"
+            label="Spray Area Side (cm)"
             type="number"
             .value=${void 0!==t.width?t.width:20}
             .configAttribute=${"width"}
