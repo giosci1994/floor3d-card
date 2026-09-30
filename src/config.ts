@@ -180,5 +180,10 @@ export function cleanConfig<T>(config: T): T {
     if (c.zoom_areas.length === 0) delete c.zoom_areas;
   }
 
+  if (Array.isArray(c.rooms)) {
+    c.rooms = c.rooms.map((room) => cleanItem(room, 'name')).filter((room) => room !== undefined);
+    if (c.rooms.length === 0) delete c.rooms;
+  }
+
   return c;
 }
