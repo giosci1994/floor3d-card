@@ -21,3 +21,4 @@ jobs:
         run: |
           npx --yes yarn@1.22.22 install --frozen-lockfile
           npm run build
+          npm test

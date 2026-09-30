@@ -12,6 +12,7 @@ import {
 // The editor is loaded on demand by getConfigElement(): devices that only show the card never download it.
 import { HassEntity } from 'home-assistant-js-websocket';
 import { createConfigArray, createObjectGroupConfigArray, getLovelace } from './helpers';
+import { normalizeConfig } from './config';
 import type { Floor3dCardConfig } from './types';
 import { CARD_VERSION } from './const';
 import { localize } from './localize/localize';
@@ -379,22 +380,9 @@ export class Floor3dCard extends LitElement {
       path: path,
       name: 'Home',
       objfile: 'home.glb',
-      lock_camera: 'no',
-      header: 'yes',
-      click: 'no',
-      overlay: 'no',
       backgroundColor: '#aaaaaa',
-      hideLevelsMenu: 'no',
-      globalLightPower: '0.8',
-      shadow: 'no',
-      extralightmode: 'no',
-      show_axes: 'no',
-      sky: 'no',
-      overlay_bgcolor: 'transparent',
-      overlay_fgcolor: 'black',
+      globalLightPower: 0.8,
       overlay_alignment: 'top-left',
-      overlay_width: '33',
-      overlay_height: '20',
       north: { x: 0, z: -1 },
       camera_position: { x: 609.3072605703628, y: 905.5330092468828, z: 376.66437610591277 },
       camera_rotate: { x: -1.0930244719682243, y: 0.5200808414019678, z: 0.7648717152512469 },
@@ -402,26 +390,23 @@ export class Floor3dCard extends LitElement {
       object_groups: [
         {
           object_group: 'RoundTable',
-          objects: [{ object_id: 'Round_table_1' }, { object_id: 'Round_table_2' }, { object_id: 'Round_table_3' }],
+          objects: ['Round_table_1', 'Round_table_2', 'Round_table_3'],
         },
         {
           object_group: 'EntranceDoor',
-          objects: [{ object_id: 'Door_9' }, { object_id: 'Door_7' }, { object_id: 'Door_5' }],
+          objects: ['Door_9', 'Door_7', 'Door_5'],
         },
       ],
       entities: [],
     };
-
-    let totalentities = 0;
 
     if (foundEntities[0]) {
       conf.entities.push({
         entity: foundEntities[0],
         type3d: 'door',
         object_id: '<EntranceDoor>',
-        door: { doortype: 'swing', direction: 'inner', hinge: 'Door_3', percentage: '90' },
+        door: { doortype: 'swing', direction: 'inner', hinge: 'Door_3', percentage: 90 },
       });
-      totalentities += 1;
     }
     if (foundEntities[1]) {
       conf.entities.push({
@@ -430,7 +415,6 @@ export class Floor3dCard extends LitElement {
         object_id: '<RoundTable>',
         hide: { state: 'off' },
       });
-      totalentities += 1;
     }
 
     includeDomains = ['light'];
@@ -443,14 +427,7 @@ export class Floor3dCard extends LitElement {
         entity: foundLights[0],
         type3d: 'light',
         object_id: 'Bowl_2',
-        light: { lumens: '800' },
-      });
-      totalentities += 1;
-    }
-
-    if (totalentities == 0) {
-      conf.entities.push({
-        entity: '',
+        light: { lumens: 800 },
       });
     }
 
@@ -474,7 +451,9 @@ export class Floor3dCard extends LitElement {
       throw new Error(localize('common.invalid_configuration'));
     }
 
-    this._config = config;
+    // Short forms (true/false, object_id strings in object_groups, missing options block) become
+    // the long ones the rest of the card reads.
+    this._config = normalizeConfig(config);
     this._configArray = createConfigArray(this._config);
     this._object_ids = createObjectGroupConfigArray(this._config);
     this._initialmaterial = [];
@@ -508,6 +487,8 @@ export class Floor3dCard extends LitElement {
   }
 
   public rerender(): void {
+    // Nothing to rebuild yet: the model is shown for the first time when the card is displayed.
+    if (!this._renderer || !this._controls) return;
     this._removeInputListeners();
     this._controls.removeEventListener('change', this._changeListener);
     this._controls.removeEventListener('start', this._controlsStartListener);

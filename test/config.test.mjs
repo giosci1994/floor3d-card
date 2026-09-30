@@ -1,0 +1,110 @@
+// Tests of src/config.ts: npm test (Node 22 or newer).
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import { test } from 'node:test';
+import { cleanConfig, normalizeConfig } from '../src/config.ts';
+
+const example = JSON.parse(fs.readFileSync(new URL('./config.json', import.meta.url), 'utf8'));
+
+test('switches: true/false read as yes/no', () => {
+  const c = normalizeConfig({ shadow: true, click: false, entities: [{ entity: 'light.a', type3d: 'light', light: { shadow: false } }] });
+  assert.equal(c.shadow, 'yes');
+  assert.equal(c.click, 'no');
+  assert.equal(c.entities[0].light.shadow, 'no');
+});
+
+test('switches: only the ones at their default are left out', () => {
+  const c = cleanConfig({ header: 'yes', click: 'no', shadow: 'yes', editModeNotifications: 'no', hideLevelsMenu: 'no', sun_shadow: 'yes', sky: 'no', entities: [] });
+  assert.deepEqual(c, { shadow: 'yes', editModeNotifications: 'no', entities: [] });
+});
+
+test('switches of an options block are kept, default or not', () => {
+  const c = cleanConfig({ entities: [{ entity: 'light.a', type3d: 'light', light: { shadow: 'no' } }] });
+  assert.equal(c.entities[0].light.shadow, 'no');
+});
+
+test('overlay size and colours left out when they are the defaults', () => {
+  const c = cleanConfig({ overlay: 'yes', overlay_width: '33', overlay_height: 25, overlay_bgcolor: 'transparent', overlay_fgcolor: 'white', entities: [] });
+  assert.deepEqual(c, { overlay: 'yes', overlay_height: 25, overlay_fgcolor: 'white', entities: [] });
+});
+
+test('object groups: plain ids read and written', () => {
+  const n = normalizeConfig({ object_groups: [{ object_group: 'g', objects: ['a', { object_id: 'b' }] }, { object_group: 'h' }] });
+  assert.deepEqual(n.object_groups[0].objects, [{ object_id: 'a' }, { object_id: 'b' }]);
+  assert.deepEqual(n.object_groups[1].objects, []);
+  const c = cleanConfig({ entities: [], object_groups: [{ object_group: 'g', objects: [{ object_id: 'a' }, { object_id: '' }, {}, 'c'] }] });
+  assert.deepEqual(c.object_groups, [{ object_group: 'g', objects: ['a', 'c'] }]);
+});
+
+test('the options block the card reads is added when missing', () => {
+  const c = normalizeConfig({ entities: [{ entity: 'light.a', type3d: 'light' }, { entity: 'x.b', type3d: 'hide' }, { entity: 'x.c', type3d: 'tracker' }] });
+  assert.deepEqual(c.entities[0].light, {});
+  assert.deepEqual(c.entities[1].hide, {});
+  assert.equal(c.entities[2].tracker, undefined);
+});
+
+test('empty rows left out, rows being filled in kept', () => {
+  const c = cleanConfig({
+    entities: [{ entity: '' }, { entity: '', type3d: 'light' }, { entity: 'light.a', object_id: '', light: {} }, 'switch.b', ''],
+    object_groups: [{ object_group: '' }],
+    zoom_areas: [{ zoom: '' }],
+  });
+  assert.deepEqual(c, { entities: [{ entity: '', type3d: 'light' }, { entity: 'light.a' }, 'switch.b'] });
+});
+
+test('numbers written as numbers; zero, entity ids and object ids kept', () => {
+  const c = cleanConfig({
+    globalLightPower: 'sensor.lux',
+    overlay_width: '40',
+    entities: [
+      { entity: 'light.a', type3d: 'light', light: { lumens: '700', decay: '0', color: '#fff' } },
+      { entity: 'b.b', type3d: 'door', door: { degrees: '-50', percentage: 0, hinge: '12' }, object_id: '129' },
+    ],
+  });
+  assert.equal(c.globalLightPower, 'sensor.lux');
+  assert.equal(c.overlay_width, 40);
+  assert.deepEqual(c.entities[0].light, { lumens: 700, decay: 0, color: '#fff' });
+  assert.deepEqual(c.entities[1].door, { degrees: -50, percentage: 0, hinge: '12' });
+  assert.equal(c.entities[1].object_id, '129');
+});
+
+test('the given config is not modified', () => {
+  const input = { shadow: true, entities: [{ entity: '' }], object_groups: [{ object_group: 'g', objects: ['a'] }] };
+  const before = JSON.stringify(input);
+  normalizeConfig(input);
+  cleanConfig(input);
+  assert.equal(JSON.stringify(input), before);
+});
+
+test('example config: cleaning twice gives the same result', () => {
+  const clean = cleanConfig(example);
+  assert.deepEqual(cleanConfig(clean), clean);
+});
+
+test('example config: nothing is lost except defaults and empty values', () => {
+  const leaves = (o, p = '', out = {}) => {
+    if (o !== null && typeof o === 'object') {
+      const entries = Object.entries(o);
+      if (!entries.length) out[p] = Array.isArray(o) ? '[]' : '{}';
+      entries.forEach(([k, v]) => leaves(v, p + '/' + k, out));
+    } else out[p] = o;
+    return out;
+  };
+  const defaults = {
+    header: 'yes', click: 'no', overlay: 'no', lock_camera: 'no', show_axes: 'no', shadow: 'no', extralightmode: 'no',
+    hideLevelsMenu: 'no', hideZoomMenu: 'no', editModeNotifications: 'yes', selectionMode: 'no', sun: 'no', sun_shadow: 'yes',
+    log_depth: 'no', reversed_depth: 'yes', state_colors: 'no', sky: 'no',
+    overlay_width: '33', overlay_height: '20', overlay_bgcolor: 'transparent', overlay_fgcolor: 'black',
+  };
+  const before = leaves(normalizeConfig(example));
+  const after = leaves(normalizeConfig(cleanConfig(example)));
+  for (const [p, v] of Object.entries(before)) {
+    if (p in after) {
+      assert.equal(String(after[p]), String(v), p);
+      continue;
+    }
+    const topLevel = p.split('/').length === 2;
+    assert.ok(v === '' || v === '{}' || v === '[]' || (topLevel && String(defaults[p.slice(1)]) === String(v)), 'lost: ' + p);
+  }
+  for (const p of Object.keys(after)) assert.ok(p in before, 'added: ' + p);
+});

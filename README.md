@@ -69,6 +69,8 @@ Assuming your model is called home.obj. You wait for some time (from few seconds
 
 ## Options
 
+In this fork the yes/no switches also accept `true`/`false`, and the objects of a group can be plain ids: see [FORK.md](FORK.md#shorter-configuration).
+
 | Name             | Type   | Default      | Description                                                                                                                                                                |
 | ---------------- | ------ | ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | type             | string | **Required** | `custom:floor3d-card`.                                                                                                                                                     |

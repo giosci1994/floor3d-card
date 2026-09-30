@@ -30,6 +30,7 @@ At every update copy the new files and change the `?v=` of the resource: Home As
 npx --yes yarn@1.22.22 install --frozen-lockfile
 npm run build        # = rollup -c rollup.config.mjs
 npm start            # rebuilds on every change and serves dist/ on port 5000
+npm test             # tests of src/config.ts (Node 22 or newer)
 ```
 
 `CARD_VERSION` in `src/const.ts` is shown in the card editor and in the console: keep it equal to `version` in `package.json` and to the tag of the release (see [Publishing a release](#publishing-a-release)). For test builds between releases add a suffix, for example `v2.0.1-dev.1`.
@@ -45,7 +46,7 @@ npm start            # rebuilds on every change and serves dist/ on port 5000
 2. On GitHub, **Releases › Draft a new release**: a new tag named after the version (`v2.0.1`), a description of the changes, **Publish release**.
 3. The Release workflow builds the card and attaches the `.js` files to the release. HACS downloads them from there, and shows the update when it next checks the repository (**Update information** in the menu of the repository checks at once).
 
-The Validate workflow runs the HACS checks at every push and every night; the Build workflow checks that the card builds.
+The Validate workflow runs the HACS checks at every push and every night; the Build workflow checks that the card builds and runs `npm test`.
 
 ## New features
 
@@ -60,6 +61,34 @@ The Validate workflow runs the HACS checks at every push and every night; the Bu
 | ![TV screen (type3d: image): the picture of the media player lights the room](docs/images/tv.jpg) | ![Animated shower (type3d: shower)](docs/images/shower.jpg) |
 | :---: | :---: |
 | TV screen (`type3d: image`): the picture of the media player lights the room | Animated shower (`type3d: shower`) |
+
+### Shorter configuration
+
+The editor writes only what the card needs:
+
+- no empty rows: a new entity, object group or zoom area goes into the YAML once something is filled in (the editor keeps showing it meanwhile);
+- no empty options blocks (`camera: {}`) and no empty values;
+- no switch left at its default value (`header: 'yes'`, `click: 'no'`, `shadow: 'no'` and so on), nor the overlay size and colours when they are the default ones (33 %, 20 %, transparent, black);
+- numbers without quotes (`lumens: 700`, not `lumens: '700'`);
+- the objects of a group as plain ids.
+
+```yaml
+object_groups:
+  - object_group: Kitchen light
+    objects:
+      - Sphere_104_101
+      - Sphere_104_102
+```
+
+In YAML written by hand the card also accepts:
+
+- `true`/`false` in place of `'yes'`/`'no'` for the switches (top level, `light.shadow`, `image.lighting_shadow`, `room.label`, `tracker.label`);
+- the objects of a group as plain ids (above) or as `- object_id: ...`, as before;
+- a type without its options block when no option is needed (`type3d: light` without `light:`).
+
+Existing configurations keep working as they are, and the editor rewrites them in the short form only when something is changed. The only visible change: in YAML-mode dashboards (`ui-lovelace.yaml`) Home Assistant reads an unquoted `yes`/`no` as `true`/`false`, which the card used to ignore (`shadow: yes` gave no shadows, `header: no` kept the header); now these switches are applied. A configuration saved by this editor needs this version of the card or a newer one: version 2.0.0 and the original card don't read object ids as plain strings.
+
+`src/config.ts` holds both forms: `normalizeConfig()` (what the card and the editor work with) and `cleanConfig()` (what the editor writes).
 
 ### Light and colours
 
@@ -167,6 +196,9 @@ rooms:
 - Guards for `_ispanel`/`_issidebar` without `hui-view`, for configuration rows without objects and for the missing ambient light.
 - The editor accepts a tracker position only if it is a valid `[x, y, z]`; "Entity not found" is logged only once.
 - Sprite texts are in sRGB.
+- Original bug: removing a zoom area in the editor replaced all the zoom areas with the list of entities.
+- Original bug: moving a colour condition up or down in the editor had no effect and added a `colorconditions` list the card doesn't read.
+- The refresh button of the editor reloads the preview in section views too (it looked for the preview where only masonry views put it).
 
 ## Test page
 

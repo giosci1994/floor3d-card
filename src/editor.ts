@@ -11,6 +11,7 @@ import {
   createEditorZoomConfigArray,
 } from './helpers';
 import { loadHaComponents } from './ensureComponents';
+import { cleanConfig, normalizeConfig } from './config';
 import { Floor3dCardConfig } from './types';
 import { CARD_VERSION } from './const';
 import '../elements/menu';
@@ -35,6 +36,10 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
   private _objects: any;
   private _entity_ids: string[];
   private _visible: any[];
+  // The config Home Assistant holds (the last one received or sent), and the editor's own copy of
+  // the last one sent (see setConfig()).
+  private _held?: string;
+  private _internal?: Floor3dCardConfig;
 
   // eslint-disable-next-line @typescript-eslint/explicit-module-boundary-types
 
@@ -45,6 +50,14 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
 
   public setConfig(config: Floor3dCardConfig): void {
     console.log('Start editor config');
+
+    // Home Assistant passes back every config the editor sends. The YAML leaves out the rows still
+    // empty (a new entity, group or zoom area), so the editor goes on from its own copy, which keeps
+    // them. Any other config (the YAML edited by hand) is read as it is, short forms included.
+    const json = JSON.stringify(config);
+    const own = this._internal && json === this._held;
+    this._held = json;
+    config = normalizeConfig(own ? this._internal : config);
 
     this._config = { ...config };
 
@@ -377,23 +390,24 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
     `;
   }
 
+  // The card shown next to the editor. Its place in the dialog changes with the Home Assistant
+  // version and the kind of view (in a section view it is inside the shadow root of the section),
+  // so the dialog that holds the editor is searched, shadow roots included.
   private _preview_card(): Element {
-    let root: any = document.querySelector('home-assistant');
-    root = root && root.shadowRoot;
-    root = root && root.querySelector('hui-dialog-edit-card');
-    root = root && root.shadowRoot;
-    root = root && root.querySelector('ha-dialog');
-    if (!root) {
-      return null;
+    let dialog: Node = this;
+    while (dialog && (dialog as Element).localName !== 'hui-dialog-edit-card') {
+      dialog = dialog.parentNode || (dialog as ShadowRoot).host;
     }
-
-    const preview_card: HTMLCollection = root.getElementsByTagName('floor3d-card');
-
-    if (preview_card.length == 0) {
+    const find = (node: Element | ShadowRoot): Element => {
+      for (const child of Array.from(node.children)) {
+        if (child.localName === 'floor3d-card') return child;
+        const found = find(child) || (child.shadowRoot && find(child.shadowRoot));
+        if (found) return found;
+      }
       return null;
-    } else {
-      return preview_card.item(0);
-    }
+    };
+    const root = dialog && (dialog as Element).shadowRoot;
+    return root ? find(root) : null;
   }
 
   private _config_changed(): void {
@@ -1253,7 +1267,7 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
     const newArray = target.configArray.slice();
     newArray.push(newObject);
     this._config.object_groups = newArray;
-    fireEvent(this, 'config-changed', { config: this._config });
+    this._fireConfigChanged();
   }
 
   private _addEntity(ev): void {
@@ -1270,7 +1284,7 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
     const newArray = target.configArray.slice();
     newArray.push(newObject);
     this._config.entities = newArray;
-    fireEvent(this, 'config-changed', { config: this._config });
+    this._fireConfigChanged();
   }
 
   private _addZoomArea(ev): void {
@@ -1287,7 +1301,7 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
     const newArray = target.configArray.slice();
     newArray.push(newObject);
     this._config.zoom_areas = newArray;
-    fireEvent(this, 'config-changed', { config: this._config });
+    this._fireConfigChanged();
   }
 
   private _moveEntity(ev): void {
@@ -1299,7 +1313,7 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
     if (target.configDirection == 'up') newArray = arrayMove(newArray, target.index, target.index - 1);
     else if (target.configDirection == 'down') newArray = arrayMove(newArray, target.index, target.index + 1);
     this._config.entities = newArray;
-    fireEvent(this, 'config-changed', { config: this._config });
+    this._fireConfigChanged();
   }
 
   private _moveZoomArea(ev): void {
@@ -1311,7 +1325,7 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
     if (target.configDirection == 'up') newArray = arrayMove(newArray, target.index, target.index - 1);
     else if (target.configDirection == 'down') newArray = arrayMove(newArray, target.index, target.index + 1);
     this._config.zoom_areas = newArray;
-    fireEvent(this, 'config-changed', { config: this._config });
+    this._fireConfigChanged();
   }
 
   private _moveObject_Group(ev): void {
@@ -1323,7 +1337,7 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
     if (target.configDirection == 'up') newArray = arrayMove(newArray, target.index, target.index - 1);
     else if (target.configDirection == 'down') newArray = arrayMove(newArray, target.index, target.index + 1);
     this._config.object_groups = newArray;
-    fireEvent(this, 'config-changed', { config: this._config });
+    this._fireConfigChanged();
   }
 
   private _removeEntity(ev): void {
@@ -1341,7 +1355,7 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
     }
     const newConfig = { [target.configArray]: entitiesArray };
     this._config = Object.assign(this._config, newConfig);
-    fireEvent(this, 'config-changed', { config: this._config });
+    this._fireConfigChanged();
   }
 
   private _removeZoomArea(ev): void {
@@ -1351,7 +1365,7 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
     const target = ev.target;
     const zoomareasArray: Floor3dCardConfig[] = [];
     let index = 0;
-    for (const config of this._configArray) {
+    for (const config of this._configZoomArray) {
       if (target.configIndex !== index) {
         zoomareasArray.push(config);
       }
@@ -1359,7 +1373,7 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
     }
     const newConfig = { [target.configArray]: zoomareasArray };
     this._config = Object.assign(this._config, newConfig);
-    fireEvent(this, 'config-changed', { config: this._config });
+    this._fireConfigChanged();
   }
 
   private _removeObject_Group(ev): void {
@@ -1377,7 +1391,7 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
     }
     const newConfig = { [target.configArray]: object_groupsArray };
     this._config = Object.assign(this._config, newConfig);
-    fireEvent(this, 'config-changed', { config: this._config });
+    this._fireConfigChanged();
   }
 
   private _createTypeElement(index): TemplateResult {
@@ -1731,7 +1745,7 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
     this._configObjectArray[target.index].objects = newArray;
 
     this._config.object_groups = this._configObjectArray;
-    fireEvent(this, 'config-changed', { config: this._config });
+    this._fireConfigChanged();
   }
 
   private _addColorCondition(ev): void {
@@ -1753,7 +1767,7 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
     this._configArray[target.index].colorcondition = newArray;
 
     this._config.entities = this._configArray;
-    fireEvent(this, 'config-changed', { config: this._config });
+    this._fireConfigChanged();
   }
 
   private _moveObject(ev): void {
@@ -1774,7 +1788,7 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
     this._configObjectArray[target.index].objects = newArray;
 
     this._config.object_groups = this._configObjectArray;
-    fireEvent(this, 'config-changed', { config: this._config });
+    this._fireConfigChanged();
   }
 
   private _moveColorCondition(ev): void {
@@ -1792,10 +1806,10 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
       newArray = arrayMove(newArray, target.colorconditionIndex, target.colorconditionIndex + 1);
     }
 
-    this._configArray[target.index].colorconditions = newArray;
+    this._configArray[target.index].colorcondition = newArray;
 
     this._config.entities = this._configArray;
-    fireEvent(this, 'config-changed', { config: this._config });
+    this._fireConfigChanged();
   }
 
   private _removeObject(ev): void {
@@ -1821,7 +1835,7 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
       this._configObjectArray[target.index].objects = newArray;
     }
     this._config.object_groups = this._configObjectArray;
-    fireEvent(this, 'config-changed', { config: this._config });
+    this._fireConfigChanged();
   }
 
   private _removeColorCondition(ev): void {
@@ -1847,7 +1861,7 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
       this._configArray[target.index].colorcondition = newArray;
     }
     this._config.entities = this._configArray;
-    fireEvent(this, 'config-changed', { config: this._config });
+    this._fireConfigChanged();
   }
 
   private _updateObject(ev): void {
@@ -1873,7 +1887,7 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
     this._configObjectArray[target.index].objects = newobjectArray;
 
     this._config.object_groups = this._configObjectArray;
-    fireEvent(this, 'config-changed', { config: this._config });
+    this._fireConfigChanged();
   }
 
   private _updateColorCondition(ev): void {
@@ -1899,7 +1913,7 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
     this._configArray[target.index].colorcondition = newcolorconditionArray;
 
     this._config.entities = this._configArray;
-    fireEvent(this, 'config-changed', { config: this._config });
+    this._fireConfigChanged();
   }
 
   private _createImageElement(index): TemplateResult {
@@ -3131,13 +3145,34 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
     console.log('Type3D changed end');
   }
 
+  // Sends the config to Home Assistant without empty rows and blocks, and without the switches left
+  // at their default (cleanConfig()).
+  private _fireConfigChanged(): void {
+    this._internal = normalizeConfig(this._config);
+    const config = cleanConfig(this._config);
+    const json = JSON.stringify(config);
+    if (json === this._held) {
+      // Same YAML as before (an empty row was added): Home Assistant would not pass it back, so the
+      // editor rebuilds itself from its own copy.
+      this.setConfig(config);
+      return;
+    }
+    this._held = json;
+    fireEvent(this, 'config-changed', { config });
+  }
+
   private _valueChanged(ev): void {
     if (!this._config || !this.hass) {
       return;
     }
     const target = ev.target;
-    const value = target.checked !== undefined ? target.checked : target.value;
-    if (target.configObject[target.configAttribute] == value) {
+    let value = target.checked !== undefined ? target.checked : target.value;
+    // Number fields are saved as numbers (700, not '700').
+    if (target.type === 'number' && value !== '' && Number.isFinite(Number(value))) {
+      value = Number(value);
+    }
+    const current = target.configObject[target.configAttribute];
+    if (current === value || (current != null && String(current) === String(value))) {
       return;
     }
 
@@ -3147,7 +3182,7 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
       });
     }
     if (target.configAttribute && target.configObject && !target.configAdd) {
-      if (value == '' || value === false) {
+      if (value === '' || value === false) {
         if (target.ignoreNull == true) return;
         delete target.configObject[target.configAttribute];
       } else if (target.configAttribute === 'sensor_position') {
@@ -3173,7 +3208,7 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
     this._config.entities = this._configArray;
     this._config.object_groups = this._configObjectArray;
     this._config.zoom_areas = this._configZoomArray;
-    fireEvent(this, 'config-changed', { config: this._config });
+    this._fireConfigChanged();
   }
 
   private _createInfoElement(index): TemplateResult {
