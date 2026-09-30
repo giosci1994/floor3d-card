@@ -2,8 +2,6 @@
 
 # floor3d-card (aka Your Home Digital Twin)
 
-[![hacs_badge](https://img.shields.io/badge/HACS-Default-orange.svg?style=for-the-badge)](https://github.com/custom-components/hacs)
-
 [!["Buy Me A Coffee"](https://www.buymeacoffee.com/assets/img/custom_images/orange_img.png)](https://buymeacoffee.com/AndyHA)
 
 Javascript Module for the Home Assistant visualization Card for 3D Models with bindings to entity states.
@@ -14,9 +12,7 @@ Javascript Module for the Home Assistant visualization Card for 3D Models with b
 
 ## Installation
 
-The card is now accepted in the default repositories of HACS just search for floor3d in the HACS frontend section and install.
-
-You can also download the compiled floor3d-card.js file from the latest release here (https://github.com/adizanni/floor3d-card/releases) and upload it to your www Home Assistant folder
+This fork is not in the HACS default repository, which installs the original card. Install it by hand as described in [FORK.md](FORK.md#installation): copy all the `dist/*.js` files (the card and its editor) into a folder of `/config/www` and add `floor3d-card.js` as a resource.
 
 It's **required** to load this card as `module`.
 
@@ -75,18 +71,18 @@ Assuming your model is called home.obj. You wait for some time (from few seconds
 | header  | string | 'yes'    | if the header will be displayed or not                                                                                                                                                   |
 | editModeNotifications | string | 'yes'    | 'yes' to use the double click in edit mode to pop up the object ids or the camera position, 'no' to stop displaying popups                                            | 
 | selectionMode | string | 'no'    | 'yes' to activate the selection mode and select group of objects, the list of selected objects will appear in the console                                            |
-| globalLightPower | float  | 0.5          | intensity of the light illuminating the full scene it can also the name of a numeric sensor                                                                                |
+| globalLightPower | float  | 0.2          | intensity of the light that follows the camera (torch); it can also be the name of a numeric sensor                                                                        |
 | shadow           | string | no           | 'yes' if lights cast shadow on object. This is realistic but impacts performances. By default wall, floors and objects with "door" in the name, receives and cast shadows  |
 | extralightmode   | string | no           | 'yes' to activate the extra light mode. In this mode the max number of light who cast shadow at the same time (max texture unit image) is limited to the light that are switched with performance penalties  |
 | overlay          | string | no           | 'yes' if you want to show an overlay panel for displaying data on the objects on click                                                                                     |
 | click            | string | no           | 'yes' if you want to enable the click event. This will automatically disable the double click, you can manage the click behaviour at entity level via the action parameter |
 | lock_camera      | string | no           | 'yes' to stop the zoom and rotate camera actions on the model                                                                                                              |
 | show_axes        | string | no           | 'yes' to show the axes in the scene. It can help define the direction vector for the spotlight                                                                              |
-| sky              | string | no           | 'yes' to show a sky a ground and a sun to reproduce a photorealistic home representation with sun position determined by the sun.sun entity                                 |
-| north            | string | see desc     | north is the direction of the north on the x-z plane. ex. {x: 0, z: 1} (this is the default) for a north in the z positive direction (see axes explanation). Goes with sky yes |
+| sun              | string | no           | 'yes' to light the model with the sun, placed like the sun.sun entity (azimuth and elevation), with shadows. It replaces the `sky` option of the original card: see [FORK.md](FORK.md#light-and-colours) for `sun_power`, `sun_roof` and the other lighting options|
+| north            | string | see desc     | north is the direction of the north on the x-z plane. ex. {x: 0, z: -1} (this is the default) for a north in the z negative direction (see axes explanation). It orients the sun (`sun: yes`)|
 | overlay\_<style> | string | various      | allow to manage the aspect of the overlay panel (colors, fonts, etc.)                                                                                                      |
 
-**Note: with the introdction of the sky, the illumination will behave strangely when the sun will go above the ceiling. I've given the possibility to manage what I call a transparent slab. In sweethome3d put a transparent slab object (transparent box) on top of your floor and call it transparent_slab*. If you use my plugin (Export to HA) this will be managed by the card by stopping the sunlight to come through from the above. It is also possible to activate the ceiling in Sweethome3d. **
+**Note: with the sun (`sun: yes`), the illumination will behave strangely when the sun will go above the ceiling. I've given the possibility to manage what I call a transparent slab. In sweethome3d put a transparent slab object (transparent box) on top of your floor and call it transparent_slab*. If you use my plugin (Export to HA) this will be managed by the card by stopping the sunlight to come through from the above. It is also possible to activate the ceiling in Sweethome3d. In this fork you can also list the indoor floors in `sun_roof` instead (see [FORK.md](FORK.md#light-and-colours)).**
 
 **Note 2: a valid north setting example:
 ```yaml
@@ -103,7 +99,7 @@ For each entity in the entities list you need to specify the following options:
 | entity_template | string | none         | a JavaScript template formatted as follow: [[[ template]]]. Template is a valid Javascript command. With $entity you specify the state of the entity                                                                                                                                                |
 | action          | string | none         | on-click behaviour: it can be 'more-info' to open the more-info dialog for the entity associated to the clicked objec; it can be 'overlay' to display the state of the entity in the ovelay panel; it can be 'default' to do the same action that used to be associated to the double click action. |
 | object_id       | string | **Required** | the name of the object in the model to bind to your entity.                                                                                                                                                                                                                                        |
-| type3d          | string | **Required** | the type of object binding. Values are: light, hide, color, text, gesture, door, rotate                                                                                                                                                                                                             |
+| type3d          | string | **Required** | the type of object binding. Values are: light, hide, show, color, text, room, gesture, door, cover, rotate, camera; this fork adds image, info, shower and tracker (see [FORK.md](FORK.md#new-features))                                                                                            |
 
 **Note: to facilitate the configuration you can load the model without entity bindings and you will be able to show the object_id you want to bind to by double clicking on the object**
 
@@ -247,7 +243,7 @@ entities:
 ```
 
 Light behaviour is obvious: the **light_name** will illuminate when the bound entity in Home Assistant will be turned on and viceversa. If the light has color and brightness attributes they will be used to render the light.
-A double click on the light object will toggle the light (so far the events in iOS and Android are not yet managed as the events are captured by the OrbitContol of Three.js library and I have not yet fully understood the behaviour)
+A double click on the light object will toggle the light. With `click: 'yes'` a tap toggles it and a long press opens its details, on phones too.
 
 ## Hide
 
