@@ -98,6 +98,14 @@ export const SECTIONS: Section[] = [
       [vector('camera_target')],
       [vector('camera_rotate')],
       [row(bool('lock_camera'), bool('hideZoomMenu')), row(bool('hideLevelsMenu'), num('initialLevel', { step: 1 }))],
+      [
+        {
+          name: 'url_parameters',
+          type: 'grid',
+          column_min_width: '140px',
+          schema: [{ ...text('zoom'), label: 'View from the page address', helper: 'A parameter name, e.g. area: ?area=kitchen shows the view kitchen' }],
+        },
+      ],
       'North (orients the sun)',
       [vector('north', ['x', 'z'])],
     ],
@@ -171,7 +179,9 @@ export const SECTIONS: Section[] = [
     key: 'rendering',
     title: 'Rendering',
     icon: 'mdi:tune-variant',
-    content: () => [[row(num('max_pixel_ratio', { min: 0.5, max: 4 }), bool('log_depth')), bool('reversed_depth')]],
+    content: () => [
+      [row(num('max_pixel_ratio', { min: 0.5, max: 4 }), bool('log_depth')), bool('reversed_depth'), text('draco_decoder_path')],
+    ],
   },
 ];
 
@@ -308,6 +318,7 @@ export const typeSchema = (type: string, objects: string[]): (Schema[] | string)
                 ['z', 'Z'],
               ]),
               num('round_per_second', { min: 0 }),
+              num('ramp', { min: 0, unit_of_measurement: 's' }),
               objectField('hinge', objects),
             ],
           },
@@ -538,6 +549,8 @@ const LABELS: { [name: string]: string } = {
   pane: 'Pane object',
   axis: 'Axis',
   round_per_second: 'Rounds per second',
+  ramp: 'Spin-up and coast-down',
+  draco_decoder_path: 'Draco decoder folder',
   transparency: 'Transparency',
   elevation: 'Height of the room',
   label: 'Label',
@@ -596,14 +609,18 @@ const HELPERS: { [name: string]: string } = {
   decay: 'Default 2',
   distance: 'Default 600 cm',
   round_per_second: '2 or less',
+  ramp: 'Seconds to full speed or to stop. Default 1.5, 0 for none',
+  objfile: 'A .glb can be compressed with Draco or meshopt',
+  draco_decoder_path: 'Only for .glb models compressed with Draco. Default: Google CDN',
   span: 'Of the object, in %',
   lighting_off_state: 'Default off, standby, unavailable, unknown',
   scale: 'Default 0.001',
   text: 'A text or a template',
 };
 
-export const computeLabel = (schema: Schema): string => LABELS[schema.name] ?? schema.name;
-export const computeHelper = (schema: Schema): string | undefined => HELPERS[schema.name];
+// A field can bring its own label and help text, when its name is used elsewhere with another meaning.
+export const computeLabel = (schema: Schema): string => schema.label ?? LABELS[schema.name] ?? schema.name;
+export const computeHelper = (schema: Schema): string | undefined => schema.helper ?? HELPERS[schema.name];
 
 export const HEADINGS: { [key: string]: string } = {
   camera_position: 'Camera position',

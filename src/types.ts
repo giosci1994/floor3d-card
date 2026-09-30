@@ -109,6 +109,8 @@ export interface Floor3dCardConfig {
   tone_mapping: string;
   light_power: number | string;
   max_pixel_ratio: number | string;
+  draco_decoder_path: string; // folder of the Draco decoder, for .glb models compressed with Draco
+  url_parameters: { zoom?: string }; // query parameters of the page read by the card
   log_depth: string;
   reversed_depth: string;
   sun: string;

@@ -65,7 +65,7 @@ Then (always in the same command prompt) you just have the full wavefront obj mo
 ```bash
 obj2gltf --checkTransparency -i home.obj -o home.glb
 ```
-Assuming your model is called home.obj. You wait for some time (from few seconds to minutes) and when it is completed you can take the glb file and copy it to the www folder of Home Assistant. It is a self containing binary object so you just need that one file to load the model.
+Assuming your model is called home.obj. You wait for some time (from few seconds to minutes) and when it is completed you can take the glb file and copy it to the www folder of Home Assistant. It is a self containing binary object so you just need that one file to load the model. This fork also loads `.glb` files compressed with meshopt or Draco, often several times smaller: see [FORK.md](FORK.md#compressed-models).
 
 ## Options
 
@@ -475,12 +475,12 @@ entities:
     object_id: <an object or object group id representing the thing to be rotated>
     rotate:
       axis: <'x', 'y' and 'z', along which axis the object should rotate>
-      round_per_seconds: 1-4, speed of rotation. Use a negative number to spin the other direction.
-      percentage:
+      round_per_second: 1-4, speed of rotation. Use a negative number to spin the other direction.
+      ramp: seconds to reach full speed and to stop, 1.5 by default, 0 to start and stop at once (this fork, see FORK.md)
       hinge: the object acting as a pivot when you use an object group to represent the moving parts.
 ```
 
-an object to rotate (animation) when the associated entity will be 'on'. If you use an object group and you specify the hinge, all moving parts in the group will rotate aroung the hinge center point.
+an object to rotate (animation) when the associated entity will be 'on'. With a fan entity the speed follows its `percentage` attribute, and `direction: reverse` turns it the other way. If you use an object group and you specify the hinge, all moving parts in the group will rotate aroung the hinge center point.
 
 ## Object group example
 

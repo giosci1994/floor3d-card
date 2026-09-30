@@ -24,7 +24,7 @@ import {
   mdiPlus,
   mdiRefresh,
 } from '@mdi/js';
-import { cleanConfig, normalizeConfig } from './config';
+import { cleanConfig, matchObjects, normalizeConfig, objectPattern } from './config';
 import { CARD_VERSION, EDITOR_EVENT, PREVIEW_EVENT } from './const';
 import {
   ARRAY_VECTORS,
@@ -498,7 +498,18 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
     const group = /^<(.*)>$/.exec(id);
     if (group) return !this._list('object_groups').some((g) => isObject(g) && g.object_group === group[1]);
     const known = [...this._modelObjects, ...this._listObjects];
+    if (objectPattern(id)) return known.length > 0 && matchObjects(id, known).length === 0;
     return known.length > 0 && !known.includes(id);
+  }
+
+  // The object of an entity in its line: a name with * says how many objects it matches.
+  private _objectText(id: string): string {
+    if (!id) return 'no object';
+    if (this._missing(id)) return id + ' (not in the model)';
+    const known = Array.from(new Set([...this._modelObjects, ...this._listObjects]));
+    if (!objectPattern(id) || known.length === 0) return id;
+    const count = matchObjects(id, known).length;
+    return id + ' (' + count + ' object' + (count === 1 ? '' : 's') + ')';
   }
 
   private _describe(list: ListKey, item: any): { icon: string; primary: string; secondary: string; warning?: boolean } {
@@ -508,7 +519,7 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
       const state = entity.entity && this.hass?.states[entity.entity];
       const name = state ? state.attributes.friendly_name || entity.entity : entity.entity || 'No entity';
       const missing = this._missing(entity.object_id);
-      const parts = [type ? type[1] : 'No type', entity.object_id ? entity.object_id + (missing ? ' (not in the model)' : '') : 'no object'];
+      const parts = [type ? type[1] : 'No type', this._objectText(entity.object_id)];
       if (entity.entity && !state) parts.unshift('Entity not found');
       return {
         icon: type ? type[2] : 'mdi:help-circle-outline',
@@ -647,7 +658,7 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
     const objects = this._objectOptions();
     return [
       this._form(entitySchema(), entityToForm(entity), (value) => onChange(entityFromForm(value, entity))),
-      this._objectRow(['entities', index, 'object_id'], [objectField('object_id', objects)], entity, (value) =>
+      this._objectRow(['entities', index, 'object_id'], [{ ...objectField('object_id', objects), helper: 'An object, a <group>, or a name with * for all the objects it matches (Lamp_*)' }], entity, (value) =>
         onChange(dropEmpty({ ...entity, object_id: value.object_id })),
       ),
       ...(entity.type3d
