@@ -1,6 +1,6 @@
 ![floor3d-card mod](docs/images/banner.png)
 
-> **This is a fork** of [adizanni/floor3d-card](https://github.com/adizanni/floor3d-card) with updated libraries (three.js 0.186, Lit 3), a new card editor (objects picked with a tap in the preview), bug fixes and new features: see [FORK.md](FORK.md) for what changed. The rest of this page is the original documentation: the donation link and the ExportToHASS plugin below refer to the original card and its author.
+> **This is a fork** of [adizanni/floor3d-card](https://github.com/adizanni/floor3d-card) with updated libraries (three.js 0.186, Lit 3), a new card editor (objects picked with a tap in the preview), bug fixes and new features: see [FORK.md](FORK.md) for what changed. If the fork is useful to you, you can support it on [Buy Me a Coffee](https://buymeacoffee.com/giosci1994u). The rest of this page is the original documentation: the donation link and the ExportToHASS plugin below refer to the original card and its author.
 
 # floor3d-card (aka Your Home Digital Twin)
 
