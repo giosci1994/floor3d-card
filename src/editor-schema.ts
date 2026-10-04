@@ -119,10 +119,13 @@ export const SECTIONS: Section[] = [
         row(text('globalLightPower'), num('light_power', { min: 0 })),
         row(num('exposure', { min: 0 }), choice('tone_mapping', [['neutral', 'Neutral'], ['agx', 'AgX'], ['aces', 'ACES Filmic'], ['linear', 'Linear']])),
         row(bool('shadow'), bool('extralightmode')),
+        text('sky_power'),
+        // The colours of the sky light, once it is on (a number other than 0, or a sensor).
+        ...(config.sky_power != null && Number(config.sky_power) !== 0 ? [row(text('sky_color'), text('ground_color'))] : []),
         bool('sun'),
       ],
       ...(config.sun === 'yes' || config.sun === true
-        ? [[row(entity('sun_entity', 'sun'), num('sun_power', { min: 0 })), bool('sun_shadow')], 'sun_roof']
+        ? [[row(entity('sun_entity', 'sun'), text('sun_power')), bool('sun_shadow')], 'sun_roof']
         : []),
     ],
   },
@@ -504,6 +507,9 @@ const LABELS: { [name: string]: string } = {
   sun_entity: 'Sun entity',
   sun_power: 'Sun power',
   sun_shadow: 'Sun shadows',
+  sky_power: 'Sky light',
+  sky_color: 'Sky colour',
+  ground_color: 'Ground colour',
   click: 'Tap runs the action',
   editModeNotifications: 'Object names on double click (dashboard in edit mode)',
   selectionMode: 'Selection mode',
@@ -597,7 +603,10 @@ const HELPERS: { [name: string]: string } = {
   globalLightPower: 'From 0 to 1, or a numeric sensor. Default 0.2',
   light_power: 'Multiplies all the lamps. Default 1',
   exposure: 'Default 1',
-  sun_power: 'Default 1',
+  sun_power: 'A number or a numeric sensor, to dim it with clouds. Default 1',
+  sky_power: 'Fills the shade, without shadows: a number or a numeric sensor. Default 0 (off)',
+  sky_color: 'Light from above. Default #e6eeff',
+  ground_color: 'Light from below. Default #706458',
   extralightmode: 'Only the lights that are on cast shadows',
   click: 'Off: a double click runs it',
   selectionMode: 'Taps color the objects and list them, to build groups',

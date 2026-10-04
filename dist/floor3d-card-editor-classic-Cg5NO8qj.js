@@ -1,4 +1,4 @@
-import{aF as e,aG as t,aH as i,aI as o,_ as n,aJ as l,aK as d,aL as a,aM as r,aN as c,aO as s,aP as m,aQ as h,aR as p,aS as f,aT as u,aU as g,aV as b,aW as x,t as _,aX as v,aY as y,n as w,r as $,i as E,a as A,aZ as I,a_ as C,a$ as O,C as T,J as S,b0 as R,aq as L,f as k,al as F}from"./floor3d-card-core-B-dncEeU.js";
+import{aG as e,aH as t,aI as i,aJ as o,_ as n,aK as l,aL as d,aM as a,aN as r,aO as c,aP as s,aQ as m,aR as h,aS as p,aT as f,aU as u,aV as g,aW as b,aX as x,t as _,aY as v,aZ as y,n as w,r as $,i as E,a as A,a_ as I,a$ as C,b0 as O,C as T,K as S,b1 as R,ar as L,f as k,am as F}from"./floor3d-card-core-BrbeCG1x.js";
 /**
  * @license
  * Copyright 2018 Google Inc.
@@ -1231,19 +1231,7 @@ const ei=c`.mdc-floating-label{-moz-osx-font-smoothing:grayscale;-webkit-font-sm
                     <mwc-list-item value="yes">yes</mwc-list-item>
                     <mwc-list-item value="no">no</mwc-list-item>
                 </floor3d-select>
-                <floor3d-formfield alignEnd label="Global Scene Light (0..1)" >
-                  <floor3d-textfield
-                    type="number"
-                    min=0.00
-                    max=1.00
-                    step=0.01
-                    .value=${e.globalLightPower?e.globalLightPower:"0.8"}
-                    .configObject=${e}
-                    .configAttribute=${"globalLightPower"}
-                    .ignoreNull=${!1}
-                    @input=${this._valueChanged}
-                  ></floor3d-textfield>
-                </floor3d-formfield>
+                ${this._textField("Light Following the Camera (<0.2>, or a sensor)",e,"globalLightPower",.2)}
                 <floor3d-select
                   label="Shadow (yes/<no>)"
                   @selected=${this._valueChanged}
@@ -1260,8 +1248,9 @@ const ei=c`.mdc-floating-label{-moz-osx-font-smoothing:grayscale;-webkit-font-sm
                 ${this._textField("Exposure (<1>)",e,"exposure",1,"number")}
                 ${this._choiceField("Tone mapping (<neutral>)",e,"tone_mapping","neutral",["neutral","agx","aces","linear"])}
                 ${this._textField("Lamp Power (<1>)",e,"light_power",1,"number")}
+                ${this._textField("Sky Light (<0>, or a sensor)",e,"sky_power",0)}
                 ${this._yesNoField("Sun from sun.sun (yes/<no>)",e,"sun","no")}
-                ${this._textField("Sun Power (<1>)",e,"sun_power",1,"number")}
+                ${this._textField("Sun Power (<1>, or a sensor)",e,"sun_power",1)}
                 ${this._textField("Max Pixel Ratio (<2>)",e,"max_pixel_ratio",2,"number")}
                 ${this._yesNoField("Log depth (yes/<no>)",e,"log_depth","no")}
                 ${this._yesNoField("Highlight Open Doors/Windows (yes/<no>)",e,"state_colors","no")}

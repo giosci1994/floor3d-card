@@ -1136,19 +1136,7 @@ export class Floor3dCardClassicEditor extends LitElement implements LovelaceCard
                     <mwc-list-item value="yes">yes</mwc-list-item>
                     <mwc-list-item value="no">no</mwc-list-item>
                 </floor3d-select>
-                <floor3d-formfield alignEnd label="Global Scene Light (0..1)" >
-                  <floor3d-textfield
-                    type="number"
-                    min=0.00
-                    max=1.00
-                    step=0.01
-                    .value=${config.globalLightPower ? config.globalLightPower : '0.8'}
-                    .configObject=${config}
-                    .configAttribute=${'globalLightPower'}
-                    .ignoreNull=${false}
-                    @input=${this._valueChanged}
-                  ></floor3d-textfield>
-                </floor3d-formfield>
+                ${this._textField('Light Following the Camera (<0.2>, or a sensor)', config, 'globalLightPower', 0.2)}
                 <floor3d-select
                   label="Shadow (yes/<no>)"
                   @selected=${this._valueChanged}
@@ -1165,8 +1153,9 @@ export class Floor3dCardClassicEditor extends LitElement implements LovelaceCard
                 ${this._textField('Exposure (<1>)', config, 'exposure', 1, 'number')}
                 ${this._choiceField('Tone mapping (<neutral>)', config, 'tone_mapping', 'neutral', ['neutral', 'agx', 'aces', 'linear'])}
                 ${this._textField('Lamp Power (<1>)', config, 'light_power', 1, 'number')}
+                ${this._textField('Sky Light (<0>, or a sensor)', config, 'sky_power', 0)}
                 ${this._yesNoField('Sun from sun.sun (yes/<no>)', config, 'sun', 'no')}
-                ${this._textField('Sun Power (<1>)', config, 'sun_power', 1, 'number')}
+                ${this._textField('Sun Power (<1>, or a sensor)', config, 'sun_power', 1)}
                 ${this._textField('Max Pixel Ratio (<2>)', config, 'max_pixel_ratio', 2, 'number')}
                 ${this._yesNoField('Log depth (yes/<no>)', config, 'log_depth', 'no')}
                 ${this._yesNoField('Highlight Open Doors/Windows (yes/<no>)', config, 'state_colors', 'no')}

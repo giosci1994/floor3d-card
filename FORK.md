@@ -63,8 +63,9 @@ The Validate workflow runs the HACS checks at every push and every night; the Bu
 - **Fans that speed up and slow down** (2.3, `rotate.ramp`). See [Fans](#fans).
 - **Loading screen** (2.3): a bar with the step (materials, model, preparing the 3D scene), the percentage and the megabytes, in the colours of the theme. Before, only "1/2: 45%" in a corner, stuck at 100% while the model was being prepared. A model that doesn't load shows the file and the reason in the card.
 - **Object ids with `*`** (2.3): `object_id: Lamp_*` stands for all the matching objects. See [Object ids with *](#object-ids-with-).
+- **Sun and sky from sensors** (2.4): `sun_power` can be a numeric sensor, and `sky_power` adds the light of the sky, which fills the shade without shadows. Under clouds the card shows soft light instead of hard patches of sun. See [Sun and sky from sensors](#sun-and-sky-from-sensors).
 - **Version label** at the top of the card editor and in the console banner.
-- The sky (`sky`) and the ambient light are removed on purpose, so that they don't affect the render. The light that follows the camera (torch) is always on.
+- The sky (`sky`) and the ambient light of the original card are removed on purpose, so that they don't affect the render; the light of the sky of 2.4 (`sky_power`) is there only when it is set. The light that follows the camera (torch) is always on.
 
 | ![TV screen (type3d: image): the picture of the media player lights the room](docs/images/tv.jpg) | ![Animated shower (type3d: shower)](docs/images/shower.jpg) |
 | :---: | :---: |
@@ -131,15 +132,46 @@ With three.js 0.186 colours are handled in sRGB, light is computed in linear spa
 | `exposure` | `1` | Overall exposure |
 | `tone_mapping` | `neutral` | `neutral`, `agx`, `aces` or `linear` |
 | `light_power` | `1` | Multiplies the intensity of all the lamps (and of the TV light) |
-| `globalLightPower` | `0.2` | Light that follows the camera (torch), as before |
+| `globalLightPower` | `0.2` | Light that follows the camera (torch), as before. A number or a numeric sensor, read at every update |
 | `sun` | `no` | `yes`: sunlight from `sun.sun` (azimuth and elevation), with shadows |
 | `sun_entity` | `sun.sun` | Sun entity |
-| `sun_power` | `1` | Multiplies the sunlight |
+| `sun_power` | `1` | Multiplies the sunlight. A number or a numeric sensor (2.4): see [Sun and sky from sensors](#sun-and-sky-from-sensors) |
 | `sun_roof` | none | List of the indoor floors: above them, at wall height, an invisible roof casts shadows for the sun only. The sun comes in through windows and doors, not from above; lamps and camera don't see the roof |
+| `sky_power` | `0` (none) | Light of the sky (2.4): from all directions, without shadows, it fills the shade. A number or a numeric sensor; with `sun: yes` it follows the day like the sun |
+| `sky_color` | `#e6eeff` | Colour of the sky light from above |
+| `ground_color` | `#706458` | Colour of the sky light from below (reflected by the ground) |
 | `north` | `{x: 0, z: -1}` | Where north points in the model: orients the sun |
 | `max_pixel_ratio` | `2` | Maximum resolution relative to CSS pixels (phones reach 3× or more) |
 | `log_depth` | `no` | `yes` turns the logarithmic depth buffer back on (expensive on phones) |
 | `reversed_depth` | `yes` | Reversed depth buffer where `EXT_clip_control` is available |
+
+### Sun and sky from sensors
+
+The sun of `sun: yes` follows `sun.sun`, so it shines at full strength under an overcast sky too: hard patches of sun and dark rooms, the opposite of a cloudy day. Two options take the weather into account (the idea comes from [issue #9](https://github.com/giosci1994/floor3d-card/issues/9)):
+
+- `sun_power` can be the id of a numeric sensor instead of a number: the direct light of the sun, which also makes the shadows. With clouds it goes towards 0, and the sun and its shadows fade.
+- `sky_power` adds the light of the sky: a hemisphere light (`sky_color` from above, `ground_color` from below) that lights everything evenly and casts no shadows. It fills the shade the sun leaves, and with an overcast sky it is most of the light. Without `sky_power`, or with 0, there is no sky light and the render stays as before.
+
+Both take a number or a sensor, read at every update of Home Assistant (like `globalLightPower`). A sensor that is `unavailable`, or whose state is not a number, counts as the default (1 for the sun, 0 for the sky); a negative value counts as 0. With `sun: yes`, the sky follows the day like the sun: off below -3° of elevation, full from 8°; without the sun it stays as set.
+
+A typical setup reads the solar radiation, for example from [Open-Meteo](https://open-meteo.com/en/docs) (`direct_radiation` and `diffuse_radiation`) through a REST sensor, and turns it into powers between 0 and 1 with two template sensors. 800 W/m² of direct radiation and 300 W/m² of diffuse radiation give 1:
+
+```yaml
+template:
+  - sensor:
+      - name: floor3d sun power
+        state: "{{ [states('sensor.direct_radiation') | float(0) / 800, 1] | min }}"
+      - name: floor3d sky power
+        state: "{{ [states('sensor.diffuse_radiation') | float(0) / 300, 1] | min }}"
+```
+
+```yaml
+sun: 'yes'
+sun_power: sensor.floor3d_sun_power
+sky_power: sensor.floor3d_sky_power
+```
+
+With only the cloud cover of a weather entity, something like `{{ 1 - state_attr('weather.home', 'cloud_coverage') | float(0) / 100 }}` for the sun and a fixed `sky_power` (0.3, for example) already gives a cloudy day its soft light. The shadow map of the sun is redrawn when the sun moves, not when its power changes.
 
 ### Shadows
 
@@ -299,6 +331,7 @@ rooms:
 - 2.2.1: reloading the card (refresh button of the editor) frees the model and the WebGL context. Before, each reload kept a context, and past the browser limit (about 16) the oldest was dropped, which could be another card of the dashboard.
 - 2.2.1: when the browser gives back a WebGL context it had taken away (an app in the background on a phone), the card redraws the model and its shadows. Before, it stayed empty until a touch.
 - 2.2.1: `extralightmode: yes` no longer lets a light that is switched on go past the shadow limit of the GPU (see [Shadows](#shadows)).
+- Original bug (2.4): `globalLightPower` as a sensor was read only when the model was loaded, and a state such as `unavailable` gave the torch an invalid intensity; `globalLightPower: 0` left the torch at 0.2. Now the sensor is read at every update, an unavailable one counts as the default (0.2), and 0 turns the torch off.
 
 Some of these were found and fixed first in other forks: [Steven-D-Morgan/hass-3d-floorplan](https://github.com/Steven-D-Morgan/hass-3d-floorplan) (covers, templates, textures, reload, WebGL context) and [dawidkulpa/HomeControl3D-card](https://github.com/dawidkulpa/HomeControl3D-card) (shadow limit).
 

@@ -74,6 +74,15 @@ test('numbers written as numbers; zero, entity ids and object ids kept', () => {
   assert.equal(c.entities[1].object_id, '129');
 });
 
+test('light powers: numbers typed as text written as numbers, sensor ids kept', () => {
+  const c = cleanConfig({ globalLightPower: '0.3', sun_power: '0', sky_power: 'sensor.diffuse_light', sky_color: '#ffffff', entities: [] });
+  assert.equal(c.globalLightPower, 0.3);
+  assert.equal(c.sun_power, 0);
+  assert.equal(c.sky_power, 'sensor.diffuse_light');
+  assert.equal(c.sky_color, '#ffffff');
+  assert.equal(cleanConfig({ sun_power: 'sensor.direct_light', sky_power: 0.4, entities: [] }).sun_power, 'sensor.direct_light');
+});
+
 test('rotate: round_per_second and ramp written as numbers', () => {
   const c = cleanConfig({ entities: [{ entity: 'fan.a', type3d: 'rotate', rotate: { axis: 'y', round_per_second: '1', ramp: '0' } }] });
   assert.deepEqual(c.entities[0].rotate, { axis: 'y', round_per_second: 1, ramp: 0 });

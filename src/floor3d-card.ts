@@ -29,10 +29,13 @@ import '../elements/button';
 
 // three.js >= 0.155 always uses physical light units, and the model is in centimetres. These
 // factors keep the brightness close to the three.js 0.130 build at typical room distances (a lamp
-// seen from about 1.5 m); light_power, exposure and sun_power in the config adjust them.
+// seen from about 1.5 m); light_power, exposure, sun_power and sky_power in the config adjust them.
 const LAMP_INTENSITY_PER_LUMEN = 47; // 0.130 build: 0.003 per lumen with the legacy light model
 const TORCH_SCALE = 0.66; // camera-following light: globalLightPower x this
 const SUN_INTENSITY = 2.4; // full daylight, multiplied by sun_power
+const SKY_INTENSITY = 1; // light of the sky on a floor, multiplied by sky_power
+const SKY_COLOR = '#e6eeff'; // light of the sky from above, when sky_color is missing
+const GROUND_COLOR = '#706458'; // light from below (reflected by the ground), when ground_color is missing
 const SCREEN_EMISSIVE_SCALE = 0.25; // TV screen glow: image.lumens x this
 const TRACKER_SMOOTHING = 0.25; // seconds: trackers glide to each new position instead of jumping
 const TRACKER_FADE = 0.35; // seconds to appear or disappear
@@ -115,6 +118,11 @@ const TONE_MAPPINGS: { [name: string]: THREE.ToneMapping } = {
 
 type ShadowLight = THREE.PointLight | THREE.SpotLight | THREE.DirectionalLight;
 
+// Share of daylight for an elevation of the sun, in degrees: night below -3, full light from 8.
+function daylight(elevation: number): number {
+  return THREE.MathUtils.smoothstep(elevation, -3, 8);
+}
+
 interface RoomView {
   name: string;
   material: THREE.MeshBasicMaterial; // translucent copy of the floor, above it
@@ -167,7 +175,7 @@ export class Floor3dCard extends LitElement {
   private _zoombar?: HTMLElement;
   private _selectionbar?: HTMLElement;
   private _controls?: OrbitControls;
-  private _hemiLight?: THREE.HemisphereLight;
+  private _skyLight?: THREE.HemisphereLight; // sky_power: light of the sky, without shadows
   private _modelX?: number;
   private _modelY?: number;
   private _modelZ?: number;
@@ -277,7 +285,6 @@ export class Floor3dCard extends LitElement {
   private _haShadowRoot: any;
   private _position: number[];
   private _card_id: string;
-  private _ambient_light: any;
   private _torch: THREE.DirectionalLight;
   private _torchTarget: THREE.Object3D;
   private _sun: THREE.DirectionalLight;
@@ -1502,6 +1509,8 @@ export class Floor3dCard extends LitElement {
               }
             }
           });
+          this._updateTorch();
+          this._updateSky();
           this._updateSun();
           this._updateStateColors();
           if (torerender) {
@@ -1527,33 +1536,62 @@ export class Floor3dCard extends LitElement {
     this._torch.castShadow = false;
 
     this._aimTorch();
-
-    if (this._hass.states[this._config.globalLightPower]) {
-      if (!Number.isNaN(this._hass.states[this._config.globalLightPower].state)) {
-        this._torch.intensity = Number(this._hass.states[this._config.globalLightPower].state) * TORCH_SCALE;
-      }
-    } else {
-      if (this._config.globalLightPower) {
-        this._torch.intensity = Number(this._config.globalLightPower) * TORCH_SCALE;
-      }
-    }
+    this._updateTorch();
   }
 
-  private _initAmbient(): void {
-    if (this._hass.states[this._config.globalLightPower]) {
-      if (!Number.isNaN(this._hass.states[this._config.globalLightPower].state)) {
-        Number(this._hass.states[this._config.globalLightPower].state);
-      }
-    } else {
-      if (this._config.globalLightPower) {
-        Number(this._config.globalLightPower);
-      }
-    }
+  // globalLightPower can be a numeric sensor: read at every update (before, only at startup).
+  private _updateTorch(): void {
+    if (!this._torch) return;
+    const intensity = this._power('globalLightPower', 0.2) * TORCH_SCALE;
+    if (intensity === this._torch.intensity) return;
+    this._torch.intensity = intensity;
+    this._scheduleRender();
+  }
 
-    // No ambient light on purpose (it must not affect the render): add it only if one exists.
-    if (this._ambient_light) {
-      this._scene.add(this._ambient_light);
+  // Light of the sky (sky_power): a hemisphere light without shadows, sky_color from above and
+  // ground_color from below, that fills the shade the sun leaves. There is no ambient light on
+  // purpose: with sky_power missing or 0 there is no sky light either, and the render is the same.
+  private _initSky(): void {
+    this._skyLight?.removeFromParent();
+    this._skyLight = undefined;
+    const power = this._config.sky_power;
+    if (power === undefined || power === null || Number(power) === 0) return;
+    this._skyLight = new THREE.HemisphereLight(SKY_COLOR, GROUND_COLOR, 0);
+    this._skyLight.name = 'f3d_sky';
+    if (this._config.sky_color) this._skyLight.color.set(this._config.sky_color);
+    if (this._config.ground_color) this._skyLight.groundColor.set(this._config.ground_color);
+    this._scene.add(this._skyLight);
+    this._updateSky();
+  }
+
+  // sky_power can be a numeric sensor (from the diffuse radiation, for example): read at every
+  // update. With the sun (sun: yes) the sky follows the day like the sun: no sky light at night.
+  private _updateSky(): void {
+    if (!this._skyLight) return;
+    let intensity = SKY_INTENSITY * this._power('sky_power', 0);
+    if (this._config.sun == 'yes') {
+      const elevation = this._sunAngles()[1];
+      if (!isNaN(elevation)) intensity *= daylight(elevation);
     }
+    if (intensity === this._skyLight.intensity) return;
+    this._skyLight.intensity = intensity;
+    this._scheduleRender();
+  }
+
+  // A light power of the config: a number, or the id of a numeric sensor whose state is read at
+  // every update. An unavailable sensor (or a state that isn't a number) gives the default, and a
+  // negative value counts as 0.
+  private _power(option: 'globalLightPower' | 'sun_power' | 'sky_power', fallback: number): number {
+    const value = this._config[option];
+    const entity = typeof value === 'string' && this._hass ? this._hass.states[value] : undefined;
+    if (!entity && typeof value === 'string' && value.trim() !== '' && isNaN(Number(value))) {
+      if (!this._missingLogged) this._missingLogged = {};
+      if (!this._missingLogged[value]) {
+        this._missingLogged[value] = true;
+        console.warn('floor3d-card: ' + option + ': entity not found: ' + value + ', the default ' + fallback + ' is used');
+      }
+    }
+    return Math.max(0, this._num(entity ? entity.state : value, fallback));
   }
 
   protected display3dmodel(): void {
@@ -1896,7 +1934,7 @@ export class Floor3dCard extends LitElement {
 
       this._initTorch();
 
-      this._initAmbient();
+      this._initSky();
 
       this._initSun();
 
@@ -3597,9 +3635,8 @@ export class Floor3dCard extends LitElement {
     this._renderer.toneMapping = TONE_MAPPINGS[this._config.tone_mapping] ?? THREE.NeutralToneMapping;
     this._renderer.toneMappingExposure = this._num(this._config.exposure, 1);
     this._renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, this._num(this._config.max_pixel_ratio, 2)));
-    if (this._torch && !this._hass.states[this._config.globalLightPower]) {
-      this._torch.intensity = this._num(this._config.globalLightPower, 0.2) * TORCH_SCALE;
-    }
+    this._updateTorch();
+    this._initSky();
     this._config.entities.forEach((entity, i) => {
       if (entity.type3d == 'light') this._updatelight(entity, i);
       else if (entity.type3d == 'image' && this._hass.states[entity.entity]) this._updateimage(entity, i);
@@ -4205,17 +4242,20 @@ export class Floor3dCard extends LitElement {
     };
   }
 
+  // Azimuth and elevation of the sun entity, in degrees: NaN without it.
+  private _sunAngles(): [number, number] {
+    const sun = this._hass && this._hass.states[this._config.sun_entity || 'sun.sun'];
+    return sun ? [Number(sun.attributes.azimuth), Number(sun.attributes.elevation)] : [NaN, NaN];
+  }
+
   private _updateSun(): void {
     if (!this._sun || !this._hass) return;
-    const sun = this._hass.states[this._config.sun_entity || 'sun.sun'];
-    const azimuth = sun ? Number(sun.attributes.azimuth) : NaN;
-    const elevation = sun ? Number(sun.attributes.elevation) : NaN;
+    const [azimuth, elevation] = this._sunAngles();
+    const known = !isNaN(azimuth) && !isNaN(elevation);
     const key = azimuth + '|' + elevation;
-    if (key === this._sunKey) return;
+    const moved = key !== this._sunKey;
     this._sunKey = key;
-    if (isNaN(azimuth) || isNaN(elevation)) {
-      this._sun.intensity = 0;
-    } else {
+    if (moved && known) {
       const north = new THREE.Vector3(
         this._num(this._config.north && this._config.north.x, 0),
         0,
@@ -4234,13 +4274,19 @@ export class Floor3dCard extends LitElement {
       this._sun.position.copy(this._modelCenter).addScaledVector(direction, this._modelRadius * 2);
       this._sunTarget.updateMatrixWorld();
       this._sun.updateMatrixWorld();
-      // Night below -3 degrees, full light from 8 degrees; warmer near the horizon.
-      const daylight = THREE.MathUtils.smoothstep(elevation, -3, 8);
+      // Warmer near the horizon.
       const warm = 1 - THREE.MathUtils.smoothstep(elevation, 2, 25);
       this._sun.color.setRGB(1, 1 - 0.25 * warm, 1 - 0.5 * warm, THREE.SRGBColorSpace);
-      this._sun.intensity = SUN_INTENSITY * this._num(this._config.sun_power, 1) * daylight;
     }
-    this._refreshLightShadow(this._sun, true);
+    // sun_power can be a numeric sensor (from the direct radiation, for example): read at every
+    // update, so that clouds dim the sun and its shadows.
+    const intensity = known ? SUN_INTENSITY * this._power('sun_power', 1) * daylight(elevation) : 0;
+    if (!moved && intensity === this._sun.intensity) return;
+    this._sun.intensity = intensity;
+    // The brightness doesn't change the shadow map, the position does: redrawn now if the sun
+    // shines, otherwise as soon as it does (it can move behind the clouds, with sun_power at 0).
+    if (moved) this._sun.userData.shadowStale = true;
+    this._refreshLightShadow(this._sun);
     this._scheduleRender();
   }
 
