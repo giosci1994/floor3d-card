@@ -21,7 +21,7 @@ export interface Floor3dCardConfig {
   style: string;
   header: string;
   backgroundColor: string;
-  globalLightPower: string;
+  globalLightPower: number | string; // a number or a numeric sensor
   hideLevelsMenu: string;
   initialLevel: number;
   selectionMode: string;
@@ -115,9 +115,12 @@ export interface Floor3dCardConfig {
   reversed_depth: string;
   sun: string;
   sun_entity: string;
-  sun_power: number | string;
+  sun_power: number | string; // a number or a numeric sensor
   sun_shadow: string;
   sun_roof: any;
+  sky_power: number | string; // a number or a numeric sensor
+  sky_color: string;
+  ground_color: string;
   long_press_action: string;
   // State colours
   state_colors: string;

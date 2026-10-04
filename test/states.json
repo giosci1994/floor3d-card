@@ -237,6 +237,24 @@
     "last_changed": "2026-09-26T16:00:00+00:00",
     "last_updated": "2026-09-26T16:00:00+00:00"
   },
+  "sensor.floor3d_sun_power": {
+    "entity_id": "sensor.floor3d_sun_power",
+    "state": "0.9",
+    "attributes": {
+      "friendly_name": "floor3d sun power"
+    },
+    "last_changed": "2026-09-26T16:00:00+00:00",
+    "last_updated": "2026-09-26T16:00:00+00:00"
+  },
+  "sensor.floor3d_sky_power": {
+    "entity_id": "sensor.floor3d_sky_power",
+    "state": "0.3",
+    "attributes": {
+      "friendly_name": "floor3d sky power"
+    },
+    "last_changed": "2026-09-26T16:00:00+00:00",
+    "last_updated": "2026-09-26T16:00:00+00:00"
+  },
   "sensor.radar_target_1_x": {
     "entity_id": "sensor.radar_target_1_x",
     "state": "-0.600",

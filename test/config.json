@@ -446,6 +446,8 @@
   "overlay_font": "arial",
   "hideZoomMenu": "no",
   "sun": "yes",
+  "sun_power": "sensor.floor3d_sun_power",
+  "sky_power": "sensor.floor3d_sky_power",
   "max_pixel_ratio": 2,
   "state_colors": "yes",
   "alarm_entity": "alarm_control_panel.home_alarm",

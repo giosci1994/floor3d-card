@@ -46,8 +46,9 @@ const BLOCK_SWITCHES: [string, string][] = [
 // Types whose options block the card reads without checking that it exists.
 const REQUIRED_BLOCKS = ['light', 'door', 'cover', 'rotate', 'room', 'text', 'gesture', 'hide', 'show'];
 
-// Numbers the editor used to save as text ('700'): written as numbers.
-const TOP_NUMBERS = ['overlay_width', 'overlay_height', 'globalLightPower'];
+// Numbers the editor used to save as text ('700'), or typed in a field that also takes the id of a
+// sensor (the light powers): written as numbers. A sensor id stays as it is.
+const TOP_NUMBERS = ['overlay_width', 'overlay_height', 'globalLightPower', 'sun_power', 'sky_power'];
 const BLOCK_NUMBERS: { [block: string]: string[] } = {
   light: ['lumens', 'decay', 'distance', 'angle'],
   door: ['degrees', 'percentage'],
