@@ -224,6 +224,10 @@ export class Floor3dCard extends LitElement {
   private _overlay_state: string;
 
   private _templateErrors = new Set<string>();
+  // TV screens: the picture being loaded for each entity (a newer one, or the TV switched off,
+  // drops it), and the entities whose picture failed to load (logged once).
+  private _pictureRequests: object[] = [];
+  private _pictureErrors = new Set<string>();
   private _firstcall?: boolean;
   private _resizeTimeout?: number;
   private _resizeObserver: ResizeObserver;
@@ -3811,7 +3815,29 @@ export class Floor3dCard extends LitElement {
     if (_foundobject) {
       const picture = this._hass.states[item.entity].attributes['entity_picture'];
       if (picture && !['off', 'standby', 'unavailable', 'unknown'].includes(this._hass.states[item.entity].state)) {
-        const texture = new THREE.TextureLoader().load(picture);
+        // The picture goes on the screen once it has loaded, and the card redraws then. Before, the
+        // empty texture went on at once: the screen, transparent, disappeared, and nothing redrew
+        // it when the picture arrived (a screen capture of Android TV changes every few seconds).
+        const request = {};
+        this._pictureRequests[index] = request;
+        const texture = new THREE.TextureLoader().load(
+          picture,
+          (loaded) => {
+            // A newer picture was asked for meanwhile, or the TV was switched off.
+            if (this._pictureRequests[index] !== request) {
+              loaded.dispose();
+              return;
+            }
+            this._showPicture(item, index, _foundobject, loaded);
+            this._scheduleRender();
+          },
+          undefined,
+          () => {
+            if (this._pictureErrors.has(item.entity)) return;
+            this._pictureErrors.add(item.entity);
+            console.warn('floor3d-card: the picture of ' + item.entity + ' did not load: ' + picture);
+          },
+        );
         texture.flipY = false;
         texture.colorSpace = THREE.SRGBColorSpace;
         if ((item.image && item.image.rotate) || (item.image && item.image.mirror)) {
@@ -3824,77 +3850,8 @@ export class Floor3dCard extends LitElement {
           texture.wrapS = THREE.RepeatWrapping;
           texture.repeat.x = -1;
         }
-        if (_foundobject instanceof THREE.Mesh) {
-          let material: any;
-          if (_foundobject.material.name.startsWith('f3dmat')) {
-            material = _foundobject.material;
-            if (material.map && material.map !== texture) material.map.dispose();
-            material.map = texture;
-          } else {
-            material = _foundobject.material.clone();
-            material.map = texture;
-            material.name = 'f3dmat' + _foundobject.name;
-            material.transparent = true;
-            _foundobject.material = material;
-          }
-          material.needsUpdate = true;
-          if (item.image && item.image.lumens) {
-            material.emissive = new THREE.Color(0xffffff);
-            material.emissiveMap = texture;
-            material.emissiveIntensity = Number(item.image.lumens) * SCREEN_EMISSIVE_SCALE;
-            const light: any = this._scene.getObjectByName(this._object_ids[index].objects[0].object_id + '_light');
-            if (light && item.image.lighting_lumens) {
-              light.intensity = this._lampIntensity(item.image.lighting_lumens);
-              this._refreshLightShadow(light);
-              const img = new Image();
-              img.crossOrigin = 'anonymous';
-              img.onload = () => {
-                try {
-                  const canvas = document.createElement('canvas');
-                  const ctx = canvas.getContext('2d');
-                  if (ctx) {
-                    canvas.width = 16;
-                    canvas.height = 16;
-                    ctx.drawImage(img, 0, 0, 16, 16);
-                    const data = ctx.getImageData(0, 0, 16, 16).data;
-                    let r = 0;
-                    let g = 0;
-                    let b = 0;
-                    const count = data.length / 4;
-                    for (let i = 0; i < data.length; i += 4) {
-                      r += data[i];
-                      g += data[i + 1];
-                      b += data[i + 2];
-                    }
-                    r = Math.floor(r / count);
-                    g = Math.floor(g / count);
-                    b = Math.floor(b / count);
-                    // Picture bytes are sRGB: converted to the linear working space.
-                    light.color.setRGB(r / 255, g / 255, b / 255, THREE.SRGBColorSpace);
-                    this._render();
-                  }
-                } catch (e) {
-                  console.log('Ambient light color extraction failed (CORS?), using white');
-                  light.color.setRGB(1, 1, 1);
-                }
-              };
-              img.onerror = () => {
-                light.color.setRGB(1, 1, 1);
-              };
-              img.src = picture;
-            } else if (light) {
-              light.intensity = 0;
-            }
-          } else {
-            material.emissive = new THREE.Color(0x000000);
-            material.emissiveIntensity = 0;
-            const light: any = this._scene.getObjectByName(this._object_ids[index].objects[0].object_id + '_light');
-            if (light) {
-              light.intensity = 0;
-            }
-          }
-        }
       } else {
+        this._pictureRequests[index] = null;
         const state = this._hass.states[item.entity].state;
         const offState = item.image && item.image.lighting_off_state ? item.image.lighting_off_state : 'unavailable';
         const light: any = this._scene.getObjectByName(this._object_ids[index].objects[0].object_id + '_light');
@@ -3921,6 +3878,86 @@ export class Floor3dCard extends LitElement {
         }
       }
     }
+  }
+
+  // A picture of a TV screen, once loaded: it replaces the previous one (or the material of the
+  // model, the first time), glows with image.lumens and tints the light of the room with its
+  // average colour (image.lighting_lumens).
+  private _showPicture(item: Floor3dCardConfig, index: number, object: any, texture: THREE.Texture<HTMLImageElement>): void {
+    if (!(object instanceof THREE.Mesh)) {
+      texture.dispose();
+      return;
+    }
+    let material: any;
+    if (object.material.name.startsWith('f3dmat')) {
+      material = object.material;
+      if (material.map && material.map !== texture) material.map.dispose();
+    } else {
+      material = object.material.clone();
+      material.name = 'f3dmat' + object.name;
+      material.transparent = true;
+      material.userData.screenColor = material.color.getHex();
+      object.material = material;
+    }
+    material.map = texture;
+    // The colour multiplies the picture. With image.lumens the picture glows and the screen keeps the
+    // colour of the model (dark glass, that the light of the TV doesn't brighten); without, the
+    // picture is the colour of the screen. Before, a dark screen showed nothing without lumens, and
+    // after being switched off the screen stayed black.
+    const lumens = item.image && Number(item.image.lumens) > 0;
+    material.color.setHex(lumens ? material.userData.screenColor ?? 0xffffff : 0xffffff);
+    material.needsUpdate = true;
+    const light: any = this._scene.getObjectByName(this._object_ids[index].objects[0].object_id + '_light');
+    if (lumens) {
+      material.emissive = new THREE.Color(0xffffff);
+      material.emissiveMap = texture;
+      material.emissiveIntensity = Number(item.image.lumens) * SCREEN_EMISSIVE_SCALE;
+      if (light && item.image.lighting_lumens) {
+        light.intensity = this._lampIntensity(item.image.lighting_lumens);
+        // From the picture already loaded: before, it was downloaded a second time, and the light
+        // could get the colour of the previous picture.
+        light.color.copy(this._averageColor(texture.image));
+        this._refreshLightShadow(light);
+      } else if (light) {
+        light.intensity = 0;
+      }
+    } else {
+      material.emissive = new THREE.Color(0x000000);
+      material.emissiveMap = null;
+      material.emissiveIntensity = 0;
+      if (light) {
+        light.intensity = 0;
+      }
+    }
+  }
+
+  // Average colour of a picture, white when it can't be read (a picture from another site without
+  // CORS headers).
+  private _averageColor(image: CanvasImageSource): THREE.Color {
+    const color = new THREE.Color(1, 1, 1);
+    try {
+      const canvas = document.createElement('canvas');
+      canvas.width = 16;
+      canvas.height = 16;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return color;
+      ctx.drawImage(image, 0, 0, 16, 16);
+      const data = ctx.getImageData(0, 0, 16, 16).data;
+      let r = 0;
+      let g = 0;
+      let b = 0;
+      const count = data.length / 4;
+      for (let i = 0; i < data.length; i += 4) {
+        r += data[i];
+        g += data[i + 1];
+        b += data[i + 2];
+      }
+      // Picture bytes are sRGB: converted to the linear working space.
+      color.setRGB(r / count / 255, g / count / 255, b / count / 255, THREE.SRGBColorSpace);
+    } catch (e) {
+      console.log('Ambient light color extraction failed (CORS?), using white');
+    }
+    return color;
   }
 
   // One render per frame even when many updates arrive together. None while the animation loop
