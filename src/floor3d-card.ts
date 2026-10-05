@@ -1305,15 +1305,7 @@ export class Floor3dCard extends LitElement {
               } else {
                 this._lights.push('');
               }
-              let i = this._color.push([255, 255, 255]) - 1;
-              // Un tempo qui c'era "color_mode = ..." (assegnazione, non confronto): modificava lo
-              // stato condiviso di HA letto anche dalle altre card. Il colore risultante e' lo stesso.
-              if (hass.states[entity.entity].attributes['color_mode']) {
-                this._color[i] = this._TemperatureToRGB(parseInt(hass.states[entity.entity].attributes['color_temp']));
-              }
-              if (hass.states[entity.entity].attributes['rgb_color'] !== this._color[i]) {
-                this._color[i] = hass.states[entity.entity].attributes['rgb_color'];
-              }
+              this._color.push(this._lightColor(hass.states[entity.entity]));
               let j = this._brightness.push(-1) - 1;
               if (hass.states[entity.entity].attributes['brightness']) {
                 this._brightness[j] = hass.states[entity.entity].attributes['brightness'];
@@ -1371,24 +1363,14 @@ export class Floor3dCard extends LitElement {
                   this._states[i] = state;
                   toupdate = true;
                 }
-                if (hass.states[entity.entity].attributes['color_mode']) {
-                  if (hass.states[entity.entity].attributes['color_mode'] == 'color_temp') {
-                    if (
-                      String(this._TemperatureToRGB(parseInt(hass.states[entity.entity].attributes['color_temp']))) !==
-                      String(this._color[i])
-                    ) {
-                      toupdate = true;
-                      this._color[i] = this._TemperatureToRGB(
-                        parseInt(hass.states[entity.entity].attributes['color_temp']),
-                      );
-                    }
-                  }
-                  if (hass.states[entity.entity].attributes['color_mode'] == 'rgb') {
-                    if (hass.states[entity.entity].attributes['rgb_color'] !== this._color[i]) {
-                      toupdate = true;
-                      this._color[i] = hass.states[entity.entity].attributes['rgb_color'];
-                    }
-                  }
+                // Every colour mode, the temperature of Adaptive Lighting included. Before, only rgb
+                // and color_temp were read, the latter from the mireds Home Assistant dropped in
+                // 2026.3: a lamp changing temperature turned white, and xy or hs lamps kept the
+                // colour they had when the card was loaded.
+                const color = this._lightColor(hass.states[entity.entity]);
+                if (color && String(color) !== String(this._color[i])) {
+                  toupdate = true;
+                  this._color[i] = color;
                 }
                 if (hass.states[entity.entity].attributes['brightness']) {
                   if (hass.states[entity.entity].attributes['brightness'] !== this._brightness[i]) {
@@ -3543,6 +3525,20 @@ export class Floor3dCard extends LitElement {
     }
   }
 
+  // Colour of a light as [r, g, b]: rgb_color, that Home Assistant gives in every colour mode
+  // (computed from the temperature in color_temp mode), else the temperature in kelvin, or in the
+  // mireds of Home Assistant before 2026.3. Undefined while the light is off.
+  private _lightColor(stateObj: HassEntity): number[] | undefined {
+    const attributes = stateObj.attributes;
+    if (Array.isArray(attributes.rgb_color) && attributes.rgb_color.length >= 3) {
+      return attributes.rgb_color.slice(0, 3).map(Number);
+    }
+    if (Number(attributes.color_temp_kelvin) > 0) return this._TemperatureToRGB(1000000 / Number(attributes.color_temp_kelvin));
+    if (Number(attributes.color_temp) > 0) return this._TemperatureToRGB(Number(attributes.color_temp));
+    return undefined;
+  }
+
+  // t in mireds
   private _TemperatureToRGB(t: number): number[] {
     let temp = 10000 / t; //kelvins = 1,000,000/mired (and that /100)
     let r: number, g: number, b: number;
@@ -3568,7 +3564,7 @@ export class Floor3dCard extends LitElement {
 
       b = 255;
     }
-    rgb = [Math.floor(r), Math.floor(g), Math.floor(b)];
+    rgb = [r, g, b].map((v) => Math.max(0, Math.min(255, Math.floor(v)))); // the formula goes past 255 near 6600 K
     return rgb;
   }
 
