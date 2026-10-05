@@ -3682,8 +3682,9 @@ export class Floor3dCard extends LitElement {
   }
 
   // Each shadow is a texture unit in the shaders: past the limit of the GPU (16 on phones) they no
-  // longer compile. Two units stay for the textures of a material (picture and glow of the TV); the
-  // sun comes first, then the lights in config order.
+  // longer compile. Two units stay for the textures of a material: its picture and, with the
+  // standard material of three.js (GLB models), a lookup table of the lighting. A TV screen showing
+  // a picture fits them (see _showPicture). The sun comes first, then the lights in config order.
   private _shadowBudget(): number {
     return Math.max(2, this._renderer.capabilities.maxTextures - 2);
   }
@@ -3864,10 +3865,8 @@ export class Floor3dCard extends LitElement {
             if (material && material.name && material.name.startsWith('f3dmat')) {
               if (material.map) material.map.dispose();
               material.map = null;
-              material.emissiveMap = null;
               material.color.setHex(0x000000);
-              material.emissive = new THREE.Color(0x000000);
-              material.emissiveIntensity = 0;
+              if (material.emissive) material.emissive.setHex(0x000000);
               material.needsUpdate = true;
             }
           }
@@ -3888,46 +3887,44 @@ export class Floor3dCard extends LitElement {
       texture.dispose();
       return;
     }
-    let material: any;
-    if (object.material.name.startsWith('f3dmat')) {
-      material = object.material;
+    const lumens = item.image && Number(item.image.lumens) > 0;
+    let material: any = object.material;
+    if (material.name.startsWith('f3dmat')) {
       if (material.map && material.map !== texture) material.map.dispose();
     } else {
-      material = object.material.clone();
+      // The screen gets a material of its own whose only texture is the picture. Every texture of a
+      // material takes one of the texture units the shadows leave (see _shadowBudget): with the
+      // picture, its glow and the textures of the model, the shader of the screen went past the
+      // limit of the GPU and the screen vanished. A screen that glows (image.lumens) is drawn
+      // without lights and shadows, as the light it gives off would be; otherwise the room lights
+      // the picture like a printed one.
+      if (lumens) {
+        material = new THREE.MeshBasicMaterial({ side: material.side });
+      } else {
+        material = material.clone();
+        Object.keys(material).forEach((key) => {
+          if (key !== 'map' && material[key] && material[key].isTexture) material[key] = null;
+        });
+        if (material.emissive) material.emissive.setHex(0x000000);
+      }
       material.name = 'f3dmat' + object.name;
       material.transparent = true;
-      material.userData.screenColor = material.color.getHex();
       object.material = material;
     }
     material.map = texture;
-    // The colour multiplies the picture. With image.lumens the picture glows and the screen keeps the
-    // colour of the model (dark glass, that the light of the TV doesn't brighten); without, the
-    // picture is the colour of the screen. Before, a dark screen showed nothing without lumens, and
-    // after being switched off the screen stayed black.
-    const lumens = item.image && Number(item.image.lumens) > 0;
-    material.color.setHex(lumens ? material.userData.screenColor ?? 0xffffff : 0xffffff);
+    // The colour multiplies the picture: its glow with image.lumens, white without (before, a dark
+    // screen of the model showed nothing, and a screen switched off and on again stayed black).
+    material.color.setScalar(lumens ? Number(item.image.lumens) * SCREEN_EMISSIVE_SCALE : 1);
     material.needsUpdate = true;
     const light: any = this._scene.getObjectByName(this._object_ids[index].objects[0].object_id + '_light');
-    if (lumens) {
-      material.emissive = new THREE.Color(0xffffff);
-      material.emissiveMap = texture;
-      material.emissiveIntensity = Number(item.image.lumens) * SCREEN_EMISSIVE_SCALE;
-      if (light && item.image.lighting_lumens) {
-        light.intensity = this._lampIntensity(item.image.lighting_lumens);
-        // From the picture already loaded: before, it was downloaded a second time, and the light
-        // could get the colour of the previous picture.
-        light.color.copy(this._averageColor(texture.image));
-        this._refreshLightShadow(light);
-      } else if (light) {
-        light.intensity = 0;
-      }
-    } else {
-      material.emissive = new THREE.Color(0x000000);
-      material.emissiveMap = null;
-      material.emissiveIntensity = 0;
-      if (light) {
-        light.intensity = 0;
-      }
+    if (light && lumens && item.image.lighting_lumens) {
+      light.intensity = this._lampIntensity(item.image.lighting_lumens);
+      // From the picture already loaded: before, it was downloaded a second time, and the light
+      // could get the colour of the previous picture.
+      light.color.copy(this._averageColor(texture.image));
+      this._refreshLightShadow(light);
+    } else if (light) {
+      light.intensity = 0;
     }
   }
 
