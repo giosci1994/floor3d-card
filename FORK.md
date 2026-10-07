@@ -33,6 +33,7 @@ npx --yes yarn@1.22.22 install --frozen-lockfile
 npm run build        # = rollup -c rollup.config.mjs
 npm start            # rebuilds on every change and serves dist/ on port 5000
 npm test             # tests of src/config.ts and of the language files (Node 22 or newer)
+npm run test:browser # the built card in headless Chromium (after npm run build), see Browser tests
 npm run lint         # ESLint on src/*.ts
 ```
 
@@ -393,6 +394,19 @@ rooms:
 - Original bug (2.4): `globalLightPower` as a sensor was read only when the model was loaded, and a state such as `unavailable` gave the torch an invalid intensity; `globalLightPower: 0` left the torch at 0.2. Now the sensor is read at every update, an unavailable one counts as the default (0.2), and 0 turns the torch off.
 
 Some of these were found and fixed first in other forks: [Steven-D-Morgan/hass-3d-floorplan](https://github.com/Steven-D-Morgan/hass-3d-floorplan) (covers, templates, textures, reload, WebGL context) and [dawidkulpa/HomeControl3D-card](https://github.com/dawidkulpa/HomeControl3D-card) (shadow limit).
+
+## Browser tests
+
+`test/browser/` runs the built card (`dist/`) in headless Chromium with software WebGL (SwiftShader), the same on every computer, on every pull request and push (`.github/workflows/build.yml`, about a minute). The test house is made by `model.mjs` when the tests start (OBJ + MTL, GLB, and a GLB whose walls have a material with 10 texture units), and `server.mjs` serves it with the test page. The tests check that:
+
+- the model is drawn, with 30 lamps, the TV and the sun casting shadows, without errors in the page or in the shaders, in OBJ and GLB, and with the material with many textures; and that the shadow limit is the one of the GPU (see [Shadows](#shadows));
+- one light for a lamp of several objects goes in the middle of them, or on `light_object`;
+- a lamp follows its state, brightness, colour and colour temperature;
+- the card follows the language of the profile, a regional variant and the `language` option;
+- the editor gets the objects of the model and the shadows from the preview, and shows its texts in the language of the card;
+- the refresh button brings the model back without errors.
+
+To run them locally: `npx playwright install --only-shell chromium` once, then `npm run build` and `npm run test:browser`.
 
 ## Test page
 
