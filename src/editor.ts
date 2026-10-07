@@ -174,9 +174,17 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
   @state() private _listObjects: string[] = [];
   @state() private _picking?: PickTarget;
   @state() private _paused = false; // preview paused (see preview.ts)
-  // Shadows of the preview: the limit of the GPU of this device, the lights with shadows, and the
-  // entities (by position) whose lights are left without.
-  @state() private _shadows?: { budget: number; lights: number; dropped: number[]; extralightmode: boolean };
+  // Shadows of the preview: the limit of the GPU of this device, the lights with shadows, the
+  // entities (by position) whose lights are left without, and the material of the model that takes
+  // the most texture units (they lower the limit).
+  @state() private _shadows?: {
+    budget: number;
+    lights: number;
+    dropped: number[];
+    extralightmode: boolean;
+    textures?: number;
+    material?: string;
+  };
   private _held?: string;
   private _pending?: any; // config waiting to be sent to Home Assistant
   private _timer?: number;
@@ -674,10 +682,15 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
     }
     const entities = this._list('entities');
     const names = s.dropped.map((i) => (entities[i] !== undefined ? this._entityName(isObject(entities[i]) ? entities[i] : { entity: entities[i] }) : 'other lights'));
+    // A material of the model with many textures takes units the shadows could have.
+    const material =
+      s.textures && s.textures > 2
+        ? html` The material ${s.material} of the model takes ${s.textures} texture units: each one above 2 is a shadow less.`
+        : nothing;
     return html`<ha-alert alert-type="warning">
       ${s.lights} lights with shadows, at most ${s.budget} on this device (the sun first, then the entities in their order). These are
       drawn without shadow, and their light goes through the walls: ${names.join(', ')}. Set Shadows to No on the lights whose
-      shadow doesn't show, or use one light for all the objects of a lamp.
+      shadow doesn't show, or use one light for all the objects of a lamp.${material}
     </ha-alert>`;
   }
 

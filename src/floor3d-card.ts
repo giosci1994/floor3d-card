@@ -255,7 +255,15 @@ export class Floor3dCard extends LitElement {
   private _zoomSelect?: HTMLSelectElement;
   private _cameraTweens: any[] = [];
   private _shadowLights: ShadowLight[] = [];
-  private _shadowStatus?: { budget: number; lights: number; dropped: number[]; extralightmode: boolean };
+  private _shadowStatus?: {
+    budget: number;
+    lights: number;
+    dropped: number[];
+    extralightmode: boolean;
+    textures: number; // texture units of the richest material of the model (see _materialTextures)
+    material: string;
+  };
+  private _textureUnits?: { units: number; material: string };
   private _sunTarget?: THREE.Object3D;
   private _sunRoof: THREE.Mesh[] = []; // invisible roof: shadow for the sun only
   private _sunKey?: string;
@@ -600,6 +608,7 @@ export class Floor3dCard extends LitElement {
     this._controls.removeEventListener('start', this._controlsStartListener);
     this._shadowLights = [];
     this._shadowStatus = undefined;
+    this._textureUnits = undefined;
     this._trackers = [];
     this._sun = null;
 
@@ -3691,19 +3700,48 @@ export class Floor3dCard extends LitElement {
   }
 
   // Each shadow is a texture unit in the shaders: past the limit of the GPU (16 on phones) they no
-  // longer compile. Two units stay for the textures of a material: its picture and, with the
-  // standard material of three.js (GLB models), a lookup table of the lighting. A TV screen showing
-  // a picture fits them (see _showPicture). Each shadow also takes a varying (a vec4 passed from the
-  // vertex to the fragment shader), and the position, normal and texture coordinates of a material
-  // take up to 4 more, clipping planes one: 6 stay for them. With 32 texture units and 31 varyings
-  // (some desktop GPUs) the varyings were the limit, and from 28 shadows the shaders failed.
+  // longer compile, and the objects of that material vanish. The units the materials of the model
+  // take stay for them (see _materialTextures): at least two, for a TV screen showing a picture
+  // (see _showPicture). Each shadow also takes a varying (a vec4 passed from the vertex to the
+  // fragment shader), and the position and normal take 2 more, clipping planes one, the texture
+  // coordinates one for every two textures: at least 6 stay for them. With 32 texture units and 31
+  // varyings (some desktop GPUs) the varyings were the limit, and from 28 shadows the shaders failed.
   // The sun comes first, then the lights in config order.
   private _shadowBudget(): number {
     const caps = this._renderer.capabilities;
-    return Math.max(2, Math.min(caps.maxTextures - 2, caps.maxVaryings - 6));
+    const textures = this._textureUnits ? this._textureUnits.units : 2;
+    return Math.max(2, Math.min(caps.maxTextures - textures, caps.maxVaryings - Math.max(6, 4 + Math.ceil(textures / 2))));
+  }
+
+  // The texture units of the material of the model that takes the most, among those lit by the
+  // lamps (and so drawn with their shadows): its textures, and the lookup table of the lighting of
+  // the standard material (GLB models). A GLB material with base colour, normal, roughness,
+  // metalness, occlusion and emissive textures takes 7: with the 14 shadows of a phone it went past
+  // the 16 units and its objects vanished.
+  private _materialTextures(): { units: number; material: string } {
+    const most = { units: 2, material: '' };
+    const lit = (m: any): boolean => m.isMeshLambertMaterial || m.isMeshPhongMaterial || m.isMeshStandardMaterial || m.isMeshToonMaterial;
+    this._scene.traverse((object: any) => {
+      const materials = Array.isArray(object.material) ? object.material : object.material ? [object.material] : [];
+      materials.forEach((material: any) => {
+        if (!lit(material)) return;
+        let units = material.isMeshStandardMaterial ? 1 : 0; // the lookup table (dfgLUT)
+        if (material.transmission > 0) units++; // what is behind a transparent material
+        // displacementMap is read by the vertex shader, which has units of its own.
+        Object.keys(material).forEach((key) => {
+          if (key !== 'displacementMap' && material[key] && material[key].isTexture) units++;
+        });
+        if (units > most.units) {
+          most.units = units;
+          most.material = material.name || material.type;
+        }
+      });
+    });
+    return most;
   }
 
   private _applyShadowBudget(): void {
+    this._textureUnits = this._materialTextures();
     const budget = this._shadowBudget();
     const ordered = this._shadowLights.filter((l) => l === this._sun).concat(this._shadowLights.filter((l) => l !== this._sun));
     const extralightmode = this._config.extralightmode == 'yes';
@@ -3723,8 +3761,11 @@ export class Floor3dCard extends LitElement {
         light.castShadow = false;
       });
       if (dropped.length > 0) {
+        const material = this._textureUnits.units > 2
+          ? ' (the material ' + this._textureUnits.material + ' of the model takes ' + this._textureUnits.units + ' texture units)'
+          : '';
         console.warn(
-          'floor3d-card: ' + dropped.length + ' lights over the limit of ' + budget + ' shadows, without shadow: ' +
+          'floor3d-card: ' + dropped.length + ' lights over the limit of ' + budget + ' shadows' + material + ', without shadow: ' +
             dropped.map((l) => l.name).join(', '),
         );
       }
@@ -3737,6 +3778,8 @@ export class Floor3dCard extends LitElement {
       lights: ordered.length,
       dropped: Array.from(new Set(dropped.map((l) => (l.userData.entityIndex ?? -1) as number))),
       extralightmode,
+      textures: this._textureUnits.units,
+      material: this._textureUnits.material,
     };
     if (this.preview) this._toEditor({ shadows: this._shadowStatus });
   }
@@ -4366,7 +4409,7 @@ export class Floor3dCard extends LitElement {
           background: rgba(0, 0, 0, 0.55); color: white; border: 1px solid rgba(255, 255, 255, 0.6); cursor: pointer;"
       >
         ${option('none', 'map_none')} ${option('temperature', 'map_temperature')} ${option('presence', 'map_presence')}
-        ${this._roomViews.some((r) => r.illuminance) ? option('illuminance', 'map_illuminance') : ''}
+        ${option('illuminance', 'map_illuminance')}
       </select>
     `;
   }
