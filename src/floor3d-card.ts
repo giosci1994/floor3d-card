@@ -255,6 +255,7 @@ export class Floor3dCard extends LitElement {
   private _zoomSelect?: HTMLSelectElement;
   private _cameraTweens: any[] = [];
   private _shadowLights: ShadowLight[] = [];
+  private _shadowStatus?: { budget: number; lights: number; dropped: number[]; extralightmode: boolean };
   private _sunTarget?: THREE.Object3D;
   private _sunRoof: THREE.Mesh[] = []; // invisible roof: shadow for the sun only
   private _sunKey?: string;
@@ -598,6 +599,7 @@ export class Floor3dCard extends LitElement {
     this._controls.removeEventListener('change', this._changeListener);
     this._controls.removeEventListener('start', this._controlsStartListener);
     this._shadowLights = [];
+    this._shadowStatus = undefined;
     this._trackers = [];
     this._sun = null;
 
@@ -1059,6 +1061,7 @@ export class Floor3dCard extends LitElement {
     if (!this.preview || !detail) return;
     if (detail.request === 'objects' && this._modelready) {
       this._toEditor({ objects: this._modelObjectNames() });
+      if (this._shadowStatus) this._toEditor({ shadows: this._shadowStatus });
     }
     if (detail.request === 'camera' && this._camera && this._controls) {
       const { position, rotation } = this._camera;
@@ -2612,6 +2615,50 @@ export class Floor3dCard extends LitElement {
     return;
   }
 
+  // The light of a lamp in the middle of box (at its top or bottom with vertical_alignment): a spot
+  // with light_target or light_direction, otherwise a point light. Off until _updatelight.
+  private _addLampLight(entity: Floor3dCardConfig, i: number, box: THREE.Box3, level: number, name: string): void {
+    const x = (box.max.x - box.min.x) / 2 + box.min.x;
+    const z = (box.max.z - box.min.z) / 2 + box.min.z;
+    let y = (box.max.y - box.min.y) / 2 + box.min.y;
+    if (entity.light.vertical_alignment == 'top') y = box.max.y;
+    else if (entity.light.vertical_alignment == 'bottom') y = box.min.y;
+
+    const decay = entity.light.decay ? Number(entity.light.decay) : 2;
+    const distance = entity.light.distance ? Number(entity.light.distance) : 600;
+
+    let light: THREE.PointLight | THREE.SpotLight;
+    if (entity.light.light_target || entity.light.light_direction) {
+      const angle = entity.light.angle ? THREE.MathUtils.degToRad(entity.light.angle) : Math.PI / 10;
+      const slight = new THREE.SpotLight(new THREE.Color('#ffffff'), 0, distance, angle, 0.5, decay);
+      this._levels[level].add(slight);
+      const target = new THREE.Object3D();
+      this._levels[level].add(target);
+      slight.position.set(x, y, z);
+      if (entity.light.light_direction) {
+        target.position.set(x + entity.light.light_direction.x, y + entity.light.light_direction.y, z + entity.light.light_direction.z);
+      } else {
+        const tobj = this._scene.getObjectByName(entity.light.light_target);
+        if (tobj) new THREE.Box3().setFromObject(tobj).getCenter(target.position);
+      }
+      slight.target = target;
+      light = slight;
+    } else {
+      const plight = new THREE.PointLight(new THREE.Color('#ffffff'), 0, distance, decay);
+      this._levels[level].add(plight);
+      plight.position.set(x, y, z);
+      light = plight;
+    }
+
+    light.userData.entityIndex = i; // for the shadows the editor reports (see _shadowReport)
+    if (entity.light.shadow == 'no') {
+      light.castShadow = false;
+    } else {
+      this._enableShadow(light, -0.0001);
+    }
+    light.name = name;
+  }
+
   private _onLoaded3DMaterials(materials: MTLLoader.MaterialCreator): void {
     // Materials Loaded Event: last root material passed to the function
     console.log('Material loaded start');
@@ -2890,117 +2937,32 @@ export class Floor3dCard extends LitElement {
               }
               if (entity.type3d == 'light') {
                 // Add Virtual Light Objects
-                this._object_ids[i].objects.forEach((element) => {
-                  const _foundobject: any = this._scene.getObjectByName(element.object_id);
-                  if (_foundobject) {
-                    const box: THREE.Box3 = new THREE.Box3();
-                    box.setFromObject(_foundobject);
-
-                    let light: THREE.PointLight | THREE.SpotLight;
-
-                    let x: number, y: number, z: number;
-
-                    x = (box.max.x - box.min.x) / 2 + box.min.x;
-                    z = (box.max.z - box.min.z) / 2 + box.min.z;
-                    y = (box.max.y - box.min.y) / 2 + box.min.y;
-
-                    if (entity.light.vertical_alignment) {
-                      switch (entity.light.vertical_alignment) {
-                        case 'top':
-                          y = box.max.y;
-                          break;
-                        case 'middle':
-                          y = (box.max.y - box.min.y) / 2 + box.min.y;
-                          break;
-                        case 'bottom':
-                          y = box.min.y;
-                          break;
-                      }
-                    }
-
-                    let decay: number;
-                    let distance: number;
-
-                    if (entity.light.decay) {
-                      decay = Number(entity.light.decay);
-                    } else {
-                      decay = 2;
-                    }
-
-                    if (entity.light.distance) {
-                      distance = Number(entity.light.distance);
-                    } else {
-                      distance = 600;
-                    }
-
-                    if (entity.light.light_target || entity.light.light_direction) {
-                      const angle = entity.light.angle ? THREE.MathUtils.degToRad(entity.light.angle) : Math.PI / 10;
-
-                      const slight: THREE.SpotLight = new THREE.SpotLight(
-                        new THREE.Color('#ffffff'),
-                        0,
-                        distance,
-                        angle,
-                        0.5,
-                        decay,
-                      );
-                      //this._bboxmodel.add(slight);
-                      this._levels[_foundobject.userData.level].add(slight);
-                      let target = new THREE.Object3D();
-                      //this._bboxmodel.add(target);
-                      this._levels[_foundobject.userData.level].add(target);
-                      slight.position.set(x, y, z);
-                      if (entity.light.light_direction) {
-                        target.position.set(
-                          x + entity.light.light_direction.x,
-                          y + entity.light.light_direction.y,
-                          z + entity.light.light_direction.z,
-                        );
-                      } else {
-                        const tobj: THREE.Object3D = this._scene.getObjectByName(entity.light.light_target);
-
-                        if (tobj) {
-                          const tbox: THREE.Box3 = new THREE.Box3();
-                          tbox.setFromObject(tobj);
-
-                          let tx: number, ty: number, tz: number;
-
-                          tx = (tbox.max.x - tbox.min.x) / 2 + tbox.min.x;
-                          tz = (tbox.max.z - tbox.min.z) / 2 + tbox.min.z;
-                          ty = (tbox.max.y - tbox.min.y) / 2 + tbox.min.y;
-
-                          target.position.set(tx, ty, tz);
-                        }
-                      }
-
-                      if (target) {
-                        slight.target = target;
-                      }
-
-                      light = slight;
-                    } else {
-                      const plight: THREE.PointLight = new THREE.PointLight(
-                        new THREE.Color('#ffffff'),
-                        0,
-                        distance,
-                        decay,
-                      );
-                      this._levels[_foundobject.userData.level].add(plight);
-                      plight.position.set(x, y, z);
-                      light = plight;
-                    }
-
-                    this._setNoShadowLight(_foundobject);
-                    _foundobject.traverseAncestors(this._setNoShadowLight.bind(this));
-
-                    if (entity.light.shadow == 'no') {
-                      light.castShadow = false;
-                    } else {
-                      this._enableShadow(light, -0.0001);
-                    }
-                    light.name = element.object_id + '_light';
-                  }
+                const parts: THREE.Object3D[] = this._object_ids[i].objects
+                  .map((element) => this._scene.getObjectByName(element.object_id))
+                  .filter((part) => part);
+                // The parts of the lamp don't stop its light.
+                parts.forEach((part) => {
+                  this._setNoShadowLight(part);
+                  part.traverseAncestors(this._setNoShadowLight.bind(this));
                 });
+                if (parts.length > 0 && (entity.light.single == 'yes' || entity.light.light_object)) {
+                  // One light for all the objects of the lamp (a chandelier, a row of spots): on
+                  // light_object, or in the middle of them all. Each light costs GPU time, and with
+                  // shadows a texture unit: five spots of a lamp were five lights.
+                  const on = entity.light.light_object ? this._scene.getObjectByName(entity.light.light_object) : undefined;
+                  if (entity.light.light_object && !on) {
+                    console.warn('floor3d-card: light_object ' + entity.light.light_object + ' of ' + entity.entity + ' is not in the model');
+                  }
+                  const box = new THREE.Box3();
+                  if (on) box.setFromObject(on);
+                  else parts.forEach((part) => box.expandByObject(part));
+                  // Named after the first object: _updatelight finds it through the objects of the entity.
+                  this._addLampLight(entity, i, box, (on || parts[0]).userData.level, parts[0].name + '_light');
+                } else {
+                  parts.forEach((part) => {
+                    this._addLampLight(entity, i, new THREE.Box3().setFromObject(part), part.userData.level, part.name + '_light');
+                  });
+                }
               }
               if (entity.type3d == 'image') {
                 this._object_ids[i].objects.forEach((element) => {
@@ -3047,6 +3009,7 @@ export class Floor3dCard extends LitElement {
                         2,
                       );
                       ambient.name = element.object_id + '_light';
+                      ambient.userData.entityIndex = i;
                       if (entity.image.lighting_shadow == 'no') {
                         ambient.castShadow = false;
                       } else {
@@ -3730,15 +3693,22 @@ export class Floor3dCard extends LitElement {
   // Each shadow is a texture unit in the shaders: past the limit of the GPU (16 on phones) they no
   // longer compile. Two units stay for the textures of a material: its picture and, with the
   // standard material of three.js (GLB models), a lookup table of the lighting. A TV screen showing
-  // a picture fits them (see _showPicture). The sun comes first, then the lights in config order.
+  // a picture fits them (see _showPicture). Each shadow also takes a varying (a vec4 passed from the
+  // vertex to the fragment shader), and the position, normal and texture coordinates of a material
+  // take up to 4 more, clipping planes one: 6 stay for them. With 32 texture units and 31 varyings
+  // (some desktop GPUs) the varyings were the limit, and from 28 shadows the shaders failed.
+  // The sun comes first, then the lights in config order.
   private _shadowBudget(): number {
-    return Math.max(2, this._renderer.capabilities.maxTextures - 2);
+    const caps = this._renderer.capabilities;
+    return Math.max(2, Math.min(caps.maxTextures - 2, caps.maxVaryings - 6));
   }
 
   private _applyShadowBudget(): void {
     const budget = this._shadowBudget();
     const ordered = this._shadowLights.filter((l) => l === this._sun).concat(this._shadowLights.filter((l) => l !== this._sun));
-    if (this._config.extralightmode == 'yes') {
+    const extralightmode = this._config.extralightmode == 'yes';
+    let dropped: ShadowLight[] = [];
+    if (extralightmode) {
       // Every light keeps its shadow set up, and only the lights that are on cast it, up to the
       // budget (see _manage_light_shadows).
       let casting = 0;
@@ -3747,19 +3717,28 @@ export class Floor3dCard extends LitElement {
         if (light.castShadow) casting++;
       });
       this._shadowLights = ordered;
-      return;
+    } else {
+      dropped = ordered.slice(budget);
+      dropped.forEach((light) => {
+        light.castShadow = false;
+      });
+      if (dropped.length > 0) {
+        console.warn(
+          'floor3d-card: ' + dropped.length + ' lights over the limit of ' + budget + ' shadows, without shadow: ' +
+            dropped.map((l) => l.name).join(', '),
+        );
+      }
+      this._shadowLights = ordered.slice(0, budget);
     }
-    const dropped = ordered.slice(budget);
-    dropped.forEach((light) => {
-      light.castShadow = false;
-    });
-    if (dropped.length > 0) {
-      console.warn(
-        'floor3d-card: ' + dropped.length + ' lights over the limit of ' + budget + ' shadows, without shadow: ' +
-          dropped.map((l) => l.name).join(', '),
-      );
-    }
-    this._shadowLights = ordered.slice(0, budget);
+    // For the editor: the entities whose lights are left without shadow, by their position in the
+    // config (-1: a light of no entity).
+    this._shadowStatus = {
+      budget,
+      lights: ordered.length,
+      dropped: Array.from(new Set(dropped.map((l) => (l.userData.entityIndex ?? -1) as number))),
+      extralightmode,
+    };
+    if (this.preview) this._toEditor({ shadows: this._shadowStatus });
   }
 
   // Something moved (a door, a cover, an object shown or hidden): the shadow maps of the lights

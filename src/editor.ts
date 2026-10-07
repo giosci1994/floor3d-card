@@ -101,6 +101,8 @@ function entityToForm(entity: any): any {
   Object.entries(BLOCK_SWITCHES).forEach(([block, switches]) => {
     if (isObject(data[block]) || data.type3d === block) data[block] = switchesToForm(data[block] || {}, switches);
   });
+  // light_object alone also means one light for all the objects (as in floor3dx-card).
+  if (isObject(entity.light) && entity.light.light_object && entity.light.single == null) data.light.single = true;
   Object.entries(ARRAY_VECTORS).forEach(([block, keys]) => {
     if (!isObject(data[block])) return;
     data[block] = { ...data[block] };
@@ -117,6 +119,12 @@ function entityFromForm(data: any, original: any): any {
   Object.entries(BLOCK_SWITCHES).forEach(([block, switches]) => {
     if (isObject(entity[block])) entity[block] = switchesFromForm(entity[block], (original || {})[block], switches);
   });
+  const light = entity.light;
+  const before = isObject((original || {}).light) ? original.light : {};
+  if (isObject(light) && light.light_object) {
+    if (light.single !== 'yes') delete light.light_object; // one light switched off: its object goes too
+    else if (before.single == null) delete light.single; // light_object alone says it
+  }
   Object.entries(ARRAY_VECTORS).forEach(([block, keys]) => {
     if (!isObject(entity[block])) return;
     keys.forEach((key) => {
@@ -166,6 +174,9 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
   @state() private _listObjects: string[] = [];
   @state() private _picking?: PickTarget;
   @state() private _paused = false; // preview paused (see preview.ts)
+  // Shadows of the preview: the limit of the GPU of this device, the lights with shadows, and the
+  // entities (by position) whose lights are left without.
+  @state() private _shadows?: { budget: number; lights: number; dropped: number[]; extralightmode: boolean };
   private _held?: string;
   private _pending?: any; // config waiting to be sent to Home Assistant
   private _timer?: number;
@@ -315,6 +326,7 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
       if (this._picking) this._toPreview({ pick: true });
       this._highlightCurrent();
     }
+    if (detail.shadows) this._shadows = detail.shadows;
     if (detail.picked && this._picking) this._onPicked(detail.picked);
     if (detail.camera && this._cameraTarget) {
       const target = this._cameraTarget;
@@ -529,6 +541,8 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
           `;
         case 'colorcondition':
           return this._renderColorConditions(list as ListKey, index as number, data);
+        case 'shadow_status':
+          return this._renderShadowStatus();
         default:
           if (item in HEADINGS) {
             // A vector inside the options block: block.key
@@ -576,6 +590,18 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
     return known.length > 0 && !known.includes(id);
   }
 
+  // The objects of an entity: those of its group, or those its name with * matches.
+  private _entityParts(id: string): string[] {
+    if (!id) return [];
+    const group = /^<(.*)>$/.exec(id);
+    if (group) {
+      const found = this._list('object_groups').find((g) => isObject(g) && g.object_group === group[1]);
+      return found ? (found.objects || []).map((o) => (isObject(o) ? o.object_id : o)).filter((o) => o) : [];
+    }
+    if (objectPattern(id)) return matchObjects(id, Array.from(new Set([...this._modelObjects, ...this._listObjects])));
+    return [id];
+  }
+
   // The object of an entity in its line: a name with * says how many objects it matches.
   private _objectText(id: string): string {
     if (!id) return 'no object';
@@ -586,20 +612,21 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
     return id + ' (' + count + ' object' + (count === 1 ? '' : 's') + ')';
   }
 
-  private _describe(list: ListKey, item: any): { icon: string; primary: string; secondary: string; warning?: boolean } {
+  private _describe(list: ListKey, item: any, index: number): { icon: string; primary: string; secondary: string; warning?: boolean } {
     if (list === 'entities') {
       const entity = isObject(item) ? item : { entity: item };
       const type = TYPES.find(([value]) => value === entity.type3d);
       const state = entity.entity && this.hass?.states[entity.entity];
-      const name = state ? state.attributes.friendly_name || entity.entity : entity.entity || 'No entity';
       const missing = this._missing(entity.object_id);
       const parts = [type ? type[1] : 'No type', this._objectText(entity.object_id)];
       if (entity.entity && !state) parts.unshift('Entity not found');
+      const noShadow = this._noShadow(index);
+      if (noShadow) parts.push('No shadow: past the GPU limit');
       return {
         icon: type ? type[2] : 'mdi:help-circle-outline',
-        primary: name,
+        primary: this._entityName(entity),
         secondary: parts.join(' · '),
-        warning: !state || !type || !entity.object_id || missing,
+        warning: !state || !type || !entity.object_id || missing || noShadow,
       };
     }
     if (list === 'object_groups') {
@@ -619,6 +646,41 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
     };
   }
 
+  private _entityName(entity: any): string {
+    const state = entity.entity && this.hass?.states[entity.entity];
+    return state ? state.attributes.friendly_name || entity.entity : entity.entity || 'No entity';
+  }
+
+  // The lights of the entity at this position are drawn without shadow: the GPU of this device draws
+  // no more (see _shadowBudget in floor3d-card.ts).
+  private _noShadow(index: number): boolean {
+    const shadow = this._config.shadow === 'yes' || this._config.shadow === true;
+    return shadow && !!this._shadows && this._shadows.dropped.includes(index);
+  }
+
+  // How many shadows the preview draws, against the limit of the GPU of this device. Past it, the
+  // last lights get none and their light goes through the walls.
+  private _renderShadowStatus(): TemplateResult {
+    const s = this._shadows;
+    if (!s) return html``;
+    if (s.lights <= s.budget) {
+      return html`<div class="hint">Lights with shadows: ${s.lights}, at most ${s.budget} on this device.</div>`;
+    }
+    if (s.extralightmode) {
+      return html`<ha-alert alert-type="info">
+        ${s.lights} lights with shadows, at most ${s.budget} at once on this device: when more are on, the last ones switched on
+        get their shadow when others are switched off.
+      </ha-alert>`;
+    }
+    const entities = this._list('entities');
+    const names = s.dropped.map((i) => (entities[i] !== undefined ? this._entityName(isObject(entities[i]) ? entities[i] : { entity: entities[i] }) : 'other lights'));
+    return html`<ha-alert alert-type="warning">
+      ${s.lights} lights with shadows, at most ${s.budget} on this device (the sun first, then the entities in their order). These are
+      drawn without shadow, and their light goes through the walls: ${names.join(', ')}. Set Shadows to No on the lights whose
+      shadow doesn't show, or use one light for all the objects of a lamp.
+    </ha-alert>`;
+  }
+
   private _renderList(list: ListKey, addLabel: string, newItem: any): TemplateResult {
     const items = this._list(list);
     return html`
@@ -628,7 +690,7 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
             items,
             (item) => this._key(item),
             (item, index) => {
-              const d = this._describe(list, item);
+              const d = this._describe(list, item, index);
               return html`
                 <div
                   class="row"
@@ -739,7 +801,7 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
       ...(entity.type3d
         ? [
             html`<div class="heading">${(TYPES.find(([value]) => value === entity.type3d) || [])[1] || ''} options</div>`,
-            ...this._renderContent(typeSchema(entity.type3d, objects), entity, onChange, false, 'entities', index),
+            ...this._renderContent(typeSchema(entity.type3d, objects, entity, this._entityParts(entity.object_id)), entity, onChange, false, 'entities', index),
           ]
         : []),
       html`
@@ -933,6 +995,10 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
       .hint {
         font-size: 12px;
         color: var(--secondary-text-color);
+      }
+      ha-alert {
+        display: block;
+        margin: 8px 0;
       }
       .rows {
         display: flex;

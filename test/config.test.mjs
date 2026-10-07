@@ -97,6 +97,19 @@ test('light powers: numbers typed as text written as numbers, sensor ids kept', 
   assert.equal(cleanConfig({ sun_power: 'sensor.direct_light', sky_power: 0.4, entities: [] }).sun_power, 'sensor.direct_light');
 });
 
+test('one light for a lamp: single read as yes/no and kept, light_object kept', () => {
+  const n = normalizeConfig({ entities: [{ entity: 'light.a', type3d: 'light', object_id: '<spots>', light: { single: true } }] });
+  assert.equal(n.entities[0].light.single, 'yes');
+  const c = cleanConfig({
+    entities: [
+      { entity: 'light.a', type3d: 'light', object_id: '<spots>', light: { single: 'no', lumens: '2500' } },
+      { entity: 'light.b', type3d: 'light', object_id: 'Lamp_*', light: { light_object: 'Lamp_2' } },
+    ],
+  });
+  assert.deepEqual(c.entities[0].light, { single: 'no', lumens: 2500 });
+  assert.deepEqual(c.entities[1].light, { light_object: 'Lamp_2' });
+});
+
 test('rotate: round_per_second and ramp written as numbers', () => {
   const c = cleanConfig({ entities: [{ entity: 'fan.a', type3d: 'rotate', rotate: { axis: 'y', round_per_second: '1', ramp: '0' } }] });
   assert.deepEqual(c.entities[0].rotate, { axis: 'y', round_per_second: 1, ramp: 0 });

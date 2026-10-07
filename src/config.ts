@@ -38,6 +38,7 @@ const VALUE_DEFAULTS: { [key: string]: string | number } = {
 // value differently from 'no' (light.shadow, for example), so they are never removed.
 const BLOCK_SWITCHES: [string, string][] = [
   ['light', 'shadow'],
+  ['light', 'single'],
   ['image', 'lighting_shadow'],
   ['room', 'label'],
   ['tracker', 'label'],

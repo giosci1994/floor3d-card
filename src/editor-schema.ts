@@ -59,6 +59,7 @@ export const SWITCHES: { [key: string]: 'yes' | 'no' } = {
 };
 // The same inside the options block of a type.
 export const BLOCK_SWITCHES: { [block: string]: { [key: string]: 'yes' | 'no' } } = {
+  light: { single: 'no' },
   image: { lighting_shadow: 'yes' },
   room: { label: 'no' },
   tracker: { label: 'yes', flip_x: 'no', flip_y: 'no' },
@@ -119,6 +120,10 @@ export const SECTIONS: Section[] = [
         row(text('globalLightPower'), num('light_power', { min: 0 })),
         row(num('exposure', { min: 0 }), choice('tone_mapping', [['neutral', 'Neutral'], ['agx', 'AgX'], ['aces', 'ACES Filmic'], ['linear', 'Linear']])),
         row(bool('shadow'), bool('extralightmode')),
+      ],
+      // How many shadows the preview draws, against the limit of the GPU.
+      ...(config.shadow === 'yes' || config.shadow === true ? ['shadow_status'] : []),
+      [
         text('sky_power'),
         // The colours of the sky light, once it is on (a number other than 0, or a sensor).
         ...(config.sky_power != null && Number(config.sky_power) !== 0 ? [row(text('sky_color'), text('ground_color'))] : []),
@@ -225,9 +230,11 @@ export const entityActionsSchema = (): Schema[] => [
 ];
 
 // Options of each type, stored under its name (light: {...}), except the text style of text and room.
-export const typeSchema = (type: string, objects: string[]): (Schema[] | string)[] => {
+// parts: the objects of the entity (those of its group, or those its name with * matches).
+export const typeSchema = (type: string, objects: string[], item: any = {}, parts: string[] = []): (Schema[] | string)[] => {
   switch (type) {
-    case 'light':
+    case 'light': {
+      const single = item.light && (item.light.single === 'yes' || item.light.single === true || item.light.light_object);
       return [
         [
           {
@@ -251,6 +258,8 @@ export const typeSchema = (type: string, objects: string[]): (Schema[] | string)
             ],
           },
         ],
+        // A lamp made of several objects: one light for them all.
+        [{ name: 'light', type: 'grid', column_min_width: '140px', schema: [bool('single'), ...(single ? [objectField('light_object', parts.length ? parts : objects)] : [])] }],
         'Spot (optional)',
         [
           {
@@ -262,6 +271,7 @@ export const typeSchema = (type: string, objects: string[]): (Schema[] | string)
         ],
         'light.light_direction',
       ];
+    }
     case 'door':
       return [
         [
@@ -550,6 +560,8 @@ const LABELS: { [name: string]: string } = {
   distance: 'Distance',
   vertical_alignment: 'Vertical position',
   light_target: 'Spot target object',
+  single: 'One light for all the objects',
+  light_object: 'Light on the object',
   angle: 'Spot angle',
   doortype: 'Door type',
   side: 'Side',
@@ -625,6 +637,8 @@ const HELPERS: { [name: string]: string } = {
   lumens: 'Default 800',
   decay: 'Default 2',
   distance: 'Default 600 cm',
+  single: 'For a lamp made of several objects: fewer lights and shadows',
+  light_object: 'Empty: in the middle of all the objects',
   round_per_second: '2 or less',
   ramp: 'Seconds to full speed or to stop. Default 1.5, 0 for none',
   objfile: 'A .glb can be compressed with Draco or meshopt',
