@@ -58,6 +58,20 @@ test('rooms: empty rows left out, rows being filled in kept', () => {
   assert.ok(!('rooms' in cleanConfig({ entities: [], rooms: [{ name: '' }] })));
 });
 
+test('rooms: illuminance kept, with the limits of its map', () => {
+  const c = cleanConfig({
+    room_colors: 'illuminance',
+    illuminance_min: 2,
+    illuminance_max: 2000,
+    entities: [],
+    rooms: [{ name: 'Living', object_id: 'f1', illuminance: 'sensor.lux', temperature: '' }],
+  });
+  assert.deepEqual(c.rooms, [{ name: 'Living', object_id: 'f1', illuminance: 'sensor.lux' }]);
+  assert.equal(c.room_colors, 'illuminance');
+  assert.equal(c.illuminance_min, 2);
+  assert.equal(c.illuminance_max, 2000);
+});
+
 test('numbers written as numbers; zero, entity ids and object ids kept', () => {
   const c = cleanConfig({
     globalLightPower: 'sensor.lux',

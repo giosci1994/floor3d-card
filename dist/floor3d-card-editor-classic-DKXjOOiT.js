@@ -1,4 +1,4 @@
-import{aG as e,aH as t,aI as i,aJ as o,_ as n,aK as l,aL as d,aM as a,aN as r,aO as c,aP as s,aQ as m,aR as h,aS as p,aT as f,aU as u,aV as g,aW as b,aX as x,t as _,aY as v,aZ as y,n as w,r as $,i as E,a as A,a_ as I,a$ as C,b0 as O,C as T,K as S,b1 as R,ar as L,f as k,am as F}from"./floor3d-card-core-Dxa_FUzn.js";
+import{aJ as e,aK as t,aL as i,aM as o,_ as n,aN as l,aO as d,aP as a,aQ as r,aR as c,aS as s,aT as m,aU as h,aV as p,aW as f,aX as u,aY as g,aZ as b,a_ as x,t as _,a$ as v,b0 as y,n as w,r as $,i as E,a as A,b1 as I,b2 as C,b3 as O,C as T,Q as S,b4 as R,as as L,f as k,an as F}from"./floor3d-card-core-B7-MuakF.js";
 /**
  * @license
  * Copyright 2018 Google Inc.
@@ -1255,7 +1255,7 @@ const ei=c`.mdc-floating-label{-moz-osx-font-smoothing:grayscale;-webkit-font-sm
                 ${this._yesNoField("Log depth (yes/<no>)",e,"log_depth","no")}
                 ${this._yesNoField("Highlight Open Doors/Windows (yes/<no>)",e,"state_colors","no")}
                 ${this._textField("Alarm Entity (e.g. alarm_control_panel.home)",e,"alarm_entity","")}
-                ${this._choiceField("Initial Room Map (<none>)",e,"room_colors","none",["none","temperature","presence"])}
+                ${this._choiceField("Initial Room Map (<none>)",e,"room_colors","none",["none","temperature","presence","illuminance"])}
                 <floor3d-select
                   label="+ Lights - Perf (yes/<no>)"
                   @selected=${this._valueChanged}

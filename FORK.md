@@ -64,6 +64,8 @@ The Validate workflow runs the HACS checks at every push and every night; the Bu
 - **Loading screen** (2.3): a bar with the step (materials, model, preparing the 3D scene), the percentage and the megabytes, in the colours of the theme. Before, only "1/2: 45%" in a corner, stuck at 100% while the model was being prepared. A model that doesn't load shows the file and the reason in the card.
 - **Object ids with `*`** (2.3): `object_id: Lamp_*` stands for all the matching objects. See [Object ids with *](#object-ids-with-).
 - **Sun and sky from sensors** (2.4): `sun_power` can be a numeric sensor, and `sky_power` adds the light of the sky, which fills the shade without shadows. Under clouds the card shows soft light instead of hard patches of sun. See [Sun and sky from sensors](#sun-and-sky-from-sensors).
+- **Illuminance map** (2.5): rooms coloured by the lux of an illuminance sensor, next to the temperature and presence maps. See [State colours](#state-colours).
+- **Paused preview** (2.5): the card editor can pause its preview while you edit, and sends the configuration to Home Assistant a second after the last change instead of at every keystroke. See [Card editor](#card-editor).
 - **Version label** at the top of the card editor and in the console banner.
 - The sky (`sky`) and the ambient light of the original card are removed on purpose, so that they don't affect the render; the light of the sky of 2.4 (`sky_power`) is there only when it is set. The light that follows the camera (torch) is always on.
 
@@ -86,7 +88,9 @@ The editor is built on the components of Home Assistant, like the editors of the
 - **Pick in the preview**: the button next to an object field turns the preview into a picker: a tap on an object fills the field. For an object group, every tap adds an object or takes it out, until the button is pressed again.
 - **Highlight**: while an item is edited, or the mouse is over its line, its objects are outlined in the preview, groups included.
 - **Use the current view**: in a view (zoom area), the button copies the position, target and rotation of the camera of the preview, after it has been moved there with the mouse or fingers.
-- The **refresh** button next to the version reloads the preview (recent Home Assistant versions already rebuild it at every change).
+- The **refresh** button next to the version reloads the preview.
+- **Fewer reloads of the preview** (2.5): Home Assistant builds the preview again, model included, at every configuration it gets. The editor sends it one second after the last change, and at once when you leave a field or click anywhere (the Save button included), so typing an entity id reloads the preview once instead of at every keystroke, and Home Assistant always has the last configuration.
+- **Pause** (2.5): the pause button next to refresh (also at the top of each entity, group, view and room) keeps the last picture of the preview, with "Preview paused" on it, while you make several changes; the play or refresh button shows them all at once. The configuration still goes to Home Assistant at every change, so Save never loses one. Picking an object or using the current view resumes the preview. The idea comes from [issue #13](https://github.com/giosci1994/floor3d-card/issues/13).
 - When Home Assistant doesn't provide the components the editor is built on (`ha-form` and `ha-expansion-panel`), the editor of version 2.1 is shown instead (`src/editor-classic.ts`). The new editor was tested on Home Assistant 2026.9.
 
 The editor and the preview talk through window events (`floor3d-card-editor` and `floor3d-card-preview`, see `src/editor.ts`); only a card that Home Assistant marks as `preview` answers.
@@ -282,8 +286,9 @@ The card reads the file first and loads a decoder only when the model needs it: 
 ### State colours
 
 - `state_colors: yes`: open doors and windows (`type3d: door`) light up (`open_color`, amber). With `alarm_entity` armed they turn red (`alarm_color`), and they blink when the alarm is triggered.
-- `rooms`: transparent copies of the floors, coloured by temperature (blue to red between `temperature_min` and `temperature_max`, 17 and 27 by default, with the value written on it) or by presence (`presence_color`).
-- A "Map" menu next to "Views" switches between no map, temperatures and presence; `room_colors` sets the initial choice.
+- `rooms`: transparent copies of the floors, coloured by temperature (blue to red between `temperature_min` and `temperature_max`, 17 and 27 by default, with the value written on it), by presence (`presence_color`) or by illuminance (2.5, below).
+- **Illuminance** (`illuminance` of a room, an illuminance sensor): dark blue at `illuminance_min` lux (5 by default) to yellow at `illuminance_max` (1000), through purple and orange, with the value written on it. The scale is logarithmic, as the eye sees light: a few lux at night, a few hundred in a lit room, thousands next to a sunny window. The idea comes from [issue #13](https://github.com/giosci1994/floor3d-card/issues/13).
+- A "Map" menu next to "Views" switches between no map, temperatures, presence and, when a room has an illuminance sensor, illuminance; `room_colors` sets the initial choice (`none`, `temperature`, `presence` or `illuminance`).
 
 | ![Open doors and windows in amber (state_colors: yes)](docs/images/state-open.jpg) | ![Alarm armed: the open ones turn red](docs/images/state-alarm.jpg) |
 | :---: | :---: |
@@ -301,6 +306,7 @@ rooms:
   - name: Living room
     object_id: room_2_102
     temperature: sensor.living_room_temperature
+    illuminance: sensor.living_room_illuminance
     presence: [binary_sensor.living_room_occupancy, binary_sensor.kitchen_occupancy]
 ```
 

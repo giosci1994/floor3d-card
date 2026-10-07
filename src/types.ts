@@ -132,6 +132,8 @@ export interface Floor3dCardConfig {
   room_colors: string;
   temperature_min: number | string;
   temperature_max: number | string;
+  illuminance_min: number | string;
+  illuminance_max: number | string;
   shower: any;
   tracker: any;
   image: any;

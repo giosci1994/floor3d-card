@@ -1160,7 +1160,7 @@ export class Floor3dCardClassicEditor extends LitElement implements LovelaceCard
                 ${this._yesNoField('Log depth (yes/<no>)', config, 'log_depth', 'no')}
                 ${this._yesNoField('Highlight Open Doors/Windows (yes/<no>)', config, 'state_colors', 'no')}
                 ${this._textField('Alarm Entity (e.g. alarm_control_panel.home)', config, 'alarm_entity', '')}
-                ${this._choiceField('Initial Room Map (<none>)', config, 'room_colors', 'none', ['none', 'temperature', 'presence'])}
+                ${this._choiceField('Initial Room Map (<none>)', config, 'room_colors', 'none', ['none', 'temperature', 'presence', 'illuminance'])}
                 <floor3d-select
                   label="+ Lights - Perf (yes/<no>)"
                   @selected=${this._valueChanged}
