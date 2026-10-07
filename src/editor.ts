@@ -20,12 +20,15 @@ import {
   mdiCursorDefaultClickOutline,
   mdiDelete,
   mdiDragHorizontalVariant,
+  mdiPause,
   mdiPencil,
+  mdiPlay,
   mdiPlus,
   mdiRefresh,
 } from '@mdi/js';
 import { cleanConfig, matchObjects, normalizeConfig, objectPattern } from './config';
 import { CARD_VERSION, EDITOR_EVENT, PREVIEW_EVENT } from './const';
+import { previewState } from './preview';
 import {
   ARRAY_VECTORS,
   BLOCK_SWITCHES,
@@ -53,6 +56,10 @@ type ListKey = 'entities' | 'object_groups' | 'zoom_areas' | 'rooms';
 type View = { list?: ListKey; index?: number };
 // Where a picked object goes: a field of the config (path of keys), or the objects of a group.
 type PickTarget = { path: (string | number)[]; add?: boolean };
+
+// Home Assistant builds the preview again, model included, at every config it gets: the config goes
+// to it this long after the last change, and at once when a field is left or something is clicked.
+const CONFIG_DELAY_MS = 1000;
 
 
 const isObject = (value: any): boolean => value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -158,7 +165,13 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
   @state() private _modelObjects: string[] = [];
   @state() private _listObjects: string[] = [];
   @state() private _picking?: PickTarget;
+  @state() private _paused = false; // preview paused (see preview.ts)
   private _held?: string;
+  private _pending?: any; // config waiting to be sent to Home Assistant
+  private _timer?: number;
+  private _flushListener = (): void => {
+    this._flush();
+  };
   private _internal?: any;
   private _classic?: any;
   private _keys = new WeakMap<Record<string, unknown>, string>();
@@ -168,6 +181,11 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
   public connectedCallback(): void {
     super.connectedCallback();
     window.addEventListener(PREVIEW_EVENT, this._previewListener);
+    // Leaving a field, or a click anywhere (the Save button of the dialog included), sends the config
+    // waiting: Home Assistant always has the last one.
+    this.addEventListener('focusout', this._flushListener);
+    window.addEventListener('pointerdown', this._flushListener, true);
+    this._paused = previewState.paused;
     this._toPreview({ request: 'objects' });
     if (this._mode === 'loading') {
       loadHaComponents().then((ready) => {
@@ -180,6 +198,10 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
   public disconnectedCallback(): void {
     super.disconnectedCallback();
     window.removeEventListener(PREVIEW_EVENT, this._previewListener);
+    this.removeEventListener('focusout', this._flushListener);
+    window.removeEventListener('pointerdown', this._flushListener, true);
+    this._flush();
+    previewState.paused = false; // the next editor starts with a live preview
     this._toPreview({ pick: false, highlight: [] });
   }
 
@@ -187,6 +209,11 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
     const json = JSON.stringify(config);
     const own = this._internal && json === this._held;
     this._held = json;
+    if (!own) {
+      // A config written elsewhere (the YAML editor): it wins over the one waiting to be sent.
+      window.clearTimeout(this._timer);
+      this._pending = undefined;
+    }
     const normalized: any = normalizeConfig(own ? this._internal : config);
     if (!Array.isArray(normalized.entities)) normalized.entities = [];
     if (!this._config) this._expanded = normalized.entities.length ? ['entities'] : ['model'];
@@ -200,11 +227,53 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
   private _update(config: any): void {
     this._config = config;
     this._internal = normalizeConfig(config);
-    const clean = cleanConfig(config);
+    this._pending = cleanConfig(config);
+    window.clearTimeout(this._timer);
+    this._timer = window.setTimeout(() => this._flush(), CONFIG_DELAY_MS);
+  }
+
+  // Sends the config waiting, if any: true when Home Assistant got a new one (and so builds the
+  // preview again).
+  private _flush(): boolean {
+    window.clearTimeout(this._timer);
+    this._timer = undefined;
+    const clean = this._pending;
+    this._pending = undefined;
+    if (!clean) return false;
     const json = JSON.stringify(clean);
-    if (json === this._held) return; // same YAML (a row still empty was added): nothing to send
+    if (json === this._held) return false; // same YAML (a row still empty was added): nothing to send
     this._held = json;
     fireEvent(this, 'config-changed', { config: clean });
+    return true;
+  }
+
+  // Pause and reload of the preview, at the top of the editor and of each item.
+  private _previewButtons(): TemplateResult {
+    return html`
+      <ha-icon-button
+        .label=${this._paused ? 'Resume the preview' : 'Pause the preview (it keeps its last picture while you edit)'}
+        .path=${this._paused ? mdiPlay : mdiPause}
+        @click=${() => this._setPaused(!this._paused)}
+      ></ha-icon-button>
+      <ha-icon-button .label=${'Reload the preview'} .path=${mdiRefresh} @click=${() => this._reloadPreview()}></ha-icon-button>
+    `;
+  }
+
+  private _setPaused(paused: boolean): void {
+    this._paused = paused;
+    previewState.paused = paused;
+    if (paused) {
+      previewState.image = undefined;
+      this._toPreview({ request: 'snapshot' });
+    } else {
+      this._reloadPreview();
+    }
+  }
+
+  // The config waiting, if any, makes Home Assistant build the preview again; otherwise the preview
+  // loads the model again.
+  private _reloadPreview(): void {
+    if (!this._flush()) this._toPreview({ request: 'reload' });
   }
 
   private _setTop(data: any): void {
@@ -257,6 +326,11 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
   private _cameraTarget?: { list?: ListKey; index?: number };
 
   private _useCurrentView(list?: ListKey, index?: number): void {
+    // A paused preview has no camera: it is resumed first, to be moved to the view.
+    if (this._paused) {
+      this._setPaused(false);
+      return;
+    }
     this._cameraTarget = { list, index };
     this._toPreview({ request: 'camera' });
   }
@@ -281,6 +355,7 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
   }
 
   private _startPick(target: PickTarget): void {
+    if (this._paused) this._setPaused(false); // objects are picked in the live preview
     const same = this._picking && JSON.stringify(this._picking) === JSON.stringify(target);
     this._picking = same ? undefined : target;
     this._toPreview({ pick: !same });
@@ -387,8 +462,7 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
     }
     return html`
       <div class="version">
-        floor3d-card ${CARD_VERSION}
-        <ha-icon-button .label=${'Reload the preview'} .path=${mdiRefresh} @click=${() => this._toPreview({ request: 'reload' })}></ha-icon-button>
+        floor3d-card ${CARD_VERSION} ${this._previewButtons()}
       </div>
       ${SECTIONS.map((section) => this._renderPanel(section.key, section.title, section.icon, () =>
         this._renderContent(section.content(this._config), this._config, (data) => this._setTop(data), true),
@@ -624,7 +698,8 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
     return html`
       <div class="subheader">
         <ha-icon-button .label=${'Back'} .path=${mdiArrowLeft} @click=${() => this._back()}></ha-icon-button>
-        <span>${titles[list]}</span>
+        <span class="title">${titles[list]}</span>
+        ${this._previewButtons()}
       </div>
       ${content}
     `;
@@ -916,6 +991,9 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
         gap: 8px;
         font-size: 18px;
         margin-bottom: 8px;
+      }
+      .subheader .title {
+        flex: 1;
       }
       .object-row {
         display: flex;

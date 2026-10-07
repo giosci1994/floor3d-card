@@ -10,6 +10,8 @@
     "map_none": "No map",
     "map_temperature": "Temperatures",
     "map_presence": "Presence",
+    "map_illuminance": "Illuminance",
+    "preview_paused": "Preview paused: changes show when it is resumed",
     "loading_materials": "Loading the materials",
     "loading_model": "Loading the model",
     "preparing": "Preparing the 3D scene",

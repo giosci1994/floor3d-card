@@ -170,10 +170,12 @@ export const SECTIONS: Section[] = [
             ['none', 'None'],
             ['temperature', 'Temperature'],
             ['presence', 'Presence'],
+            ['illuminance', 'Illuminance'],
           ]),
           text('presence_color'),
         ),
         row(num('temperature_min'), num('temperature_max')),
+        row(num('illuminance_min', { min: 0 }), num('illuminance_max', { min: 0 })),
       ],
       'rooms',
     ],
@@ -473,7 +475,8 @@ const textStyle = (): Schema[] => [
 export const groupSchema = (): Schema[] => [text('object_group')];
 export const roomSchema = (objects: string[]): Schema[] => [
   row(text('name'), objectField('object_id', objects)),
-  row(entity('temperature', 'sensor'), entity('presence', ['binary_sensor', 'person', 'device_tracker'], true)),
+  row(entity('temperature', 'sensor'), entity('illuminance', 'sensor')),
+  entity('presence', ['binary_sensor', 'person', 'device_tracker'], true),
 ];
 export const zoomSchema = (): Schema[] => [row(text('zoom'), num('level', { step: 1 }))];
 export const zoomObjectSchema = (objects: string[]): Schema[] => [
@@ -530,6 +533,8 @@ const LABELS: { [name: string]: string } = {
   presence_color: 'Presence colour',
   temperature_min: 'Temperature for blue',
   temperature_max: 'Temperature for red',
+  illuminance_min: 'Lux for dark blue',
+  illuminance_max: 'Lux for yellow',
   max_pixel_ratio: 'Maximum pixel ratio',
   log_depth: 'Logarithmic depth buffer',
   reversed_depth: 'Reversed depth buffer',
@@ -591,6 +596,7 @@ const LABELS: { [name: string]: string } = {
   sensor_rotation: 'Sensor rotation',
   object_group: 'Group name',
   temperature: 'Temperature sensor',
+  illuminance: 'Illuminance sensor',
   presence: 'Presence entities',
   zoom: 'Name',
   level: 'Level',
@@ -613,6 +619,8 @@ const HELPERS: { [name: string]: string } = {
   max_pixel_ratio: 'Default 2',
   temperature_min: 'Default 17',
   temperature_max: 'Default 27',
+  illuminance_min: 'Default 5 (the scale is logarithmic)',
+  illuminance_max: 'Default 1000',
   entity_template: 'JavaScript between [[[ ]]], $entity is the state',
   lumens: 'Default 800',
   decay: 'Default 2',

@@ -15,6 +15,7 @@ import { createConfigArray, createObjectGroupConfigArray, getLovelace } from './
 import { matchObjects, normalizeConfig, objectPattern } from './config';
 import type { Floor3dCardConfig } from './types';
 import { CARD_VERSION, EDITOR_EVENT, PREVIEW_EVENT } from './const';
+import { previewState } from './preview';
 import { localize } from './localize/localize';
 //import three.js libraries for 3D rendering
 import * as TWEEN from '@tweenjs/tween.js';
@@ -118,6 +119,9 @@ const TONE_MAPPINGS: { [name: string]: THREE.ToneMapping } = {
 
 type ShadowLight = THREE.PointLight | THREE.SpotLight | THREE.DirectionalLight;
 
+// What the rooms can be coloured by (room_colors and the Map menu), besides none.
+const MAP_MODES = ['temperature', 'presence', 'illuminance'];
+
 // Share of daylight for an elevation of the sun, in degrees: night below -3, full light from 8.
 function daylight(elevation: number): number {
   return THREE.MathUtils.smoothstep(elevation, -3, 8);
@@ -127,8 +131,9 @@ interface RoomView {
   name: string;
   material: THREE.MeshBasicMaterial; // translucent copy of the floor, above it
   overlays: THREE.Mesh[];
-  center: THREE.Vector3; // for the temperature label (world coordinates)
+  center: THREE.Vector3; // for the label of the map (world coordinates)
   temperature?: string;
+  illuminance?: string;
   presence: string[];
   label?: THREE.Sprite;
   labelText?: string;
@@ -239,6 +244,7 @@ export class Floor3dCard extends LitElement {
   private _pointerCancelListener: EventListener;
   private _contextRestoredListener = (): void => this._onContextRestored();
   private _loadingEl?: HTMLElement;
+  private _pausedEl?: HTMLElement; // paused preview of the card editor: its last picture
   private _urlListener = (): void => this._applyUrlView(true);
   private _urlView?: string | null; // value of the url_parameters.zoom parameter last applied
   private _longpressTimeout: any;
@@ -256,7 +262,7 @@ export class Floor3dCard extends LitElement {
   private _modelRadius?: number;
   private _trackers: TrackerView[] = [];
   private _roomViews: RoomView[] = [];
-  private _mapMode = 'none'; // rooms coloured by: none, temperature, presence
+  private _mapMode = 'none'; // rooms coloured by: none, temperature, presence, illuminance
   private _colorDeps?: HassEntity[];
   private _alarmPulse = false; // alarm triggered with something open: the openings blink
   private _cardObscured: boolean;
@@ -752,7 +758,8 @@ export class Floor3dCard extends LitElement {
       }
 
       if (this._content && !this._renderer) {
-        this.display3dmodel();
+        if (this.preview && previewState.paused) this._showPausedPreview();
+        else this.display3dmodel();
       }
 
       if (!this._zoommenu) {
@@ -1069,7 +1076,50 @@ export class Floor3dCard extends LitElement {
       if (this._renderer) this._renderer.domElement.style.cursor = this._pickMode ? 'crosshair' : '';
     }
     if ('highlight' in detail) this._setHighlight(detail.highlight || []);
-    if (detail.request === 'reload') this.rerender();
+    if (detail.request === 'snapshot') {
+      // The preview is being paused: its picture stays on show in the cards created meanwhile.
+      previewState.image = undefined;
+      if (this._renderer && this._modelready) {
+        this._render(); // the drawing buffer can be read only in the task that draws it
+        try {
+          previewState.image = this._renderer.domElement.toDataURL('image/jpeg', 0.85);
+        } catch {
+          previewState.image = undefined;
+        }
+      }
+    }
+    if (detail.request === 'reload') {
+      if (this._renderer) {
+        this.rerender();
+      } else if (this._pausedEl) {
+        this._pausedEl.remove();
+        this._pausedEl = undefined;
+        this.display3dmodel();
+      }
+    }
+  }
+
+  // The preview of the card editor while it is paused (see preview.ts): the last picture of the
+  // preview, or an empty box, with a label; the model loads when the editor asks for a reload.
+  private _showPausedPreview(): void {
+    const box = document.createElement('div');
+    box.style.cssText = 'position: relative; width: 100%; min-height: 200px;';
+    box.style.background = this._config.backgroundColor || '#aaaaaa';
+    if (previewState.image) {
+      const img = document.createElement('img');
+      img.src = previewState.image;
+      img.alt = '';
+      img.style.cssText = 'display: block; width: 100%;';
+      box.appendChild(img);
+    }
+    const label = document.createElement('div');
+    label.textContent = this._t('preview_paused');
+    label.style.cssText =
+      'position: absolute; top: 10px; left: 10px; padding: 6px 10px; border-radius: 8px; font-size: 14px;' +
+      ' background: rgba(0, 0, 0, 0.55); color: white; border: 1px solid rgba(255, 255, 255, 0.6);';
+    box.appendChild(label);
+    this._content.appendChild(box);
+    this._pausedEl = box;
   }
 
   // Names of the objects of the model (without the level prefix), for the object menus of the editor.
@@ -4337,17 +4387,19 @@ export class Floor3dCard extends LitElement {
           background: rgba(0, 0, 0, 0.55); color: white; border: 1px solid rgba(255, 255, 255, 0.6); cursor: pointer;"
       >
         ${option('none', 'map_none')} ${option('temperature', 'map_temperature')} ${option('presence', 'map_presence')}
+        ${this._roomViews.some((r) => r.illuminance) ? option('illuminance', 'map_illuminance') : ''}
       </select>
     `;
   }
 
   private _setMapMode(mode: string): void {
-    this._mapMode = ['temperature', 'presence'].includes(mode) ? mode : 'none';
+    this._mapMode = MAP_MODES.includes(mode) ? mode : 'none';
     this._updateStateColors(true);
   }
 
-  // rooms: [{ name, object_id (floor object or <group>), temperature, presence }]: a translucent
-  // copy of each floor, coloured by temperature or presence, with the temperature written on it.
+  // rooms: [{ name, object_id (floor object or <group>), temperature, illuminance, presence }]: a
+  // translucent copy of each floor, coloured by temperature, illuminance or presence, with the
+  // temperature or the illuminance written on it.
   private _initRooms(): void {
     this._roomViews = [];
     const rooms = Array.isArray(this._config.rooms) ? this._config.rooms : [];
@@ -4394,11 +4446,12 @@ export class Floor3dCard extends LitElement {
         // Level with the top of the walls: seen from above it sits inside the outline of the room.
         center: box.getCenter(new THREE.Vector3()).setY(box.max.y + 250),
         temperature: room.temperature,
+        illuminance: room.illuminance,
         presence,
       });
     });
     const initial = this._config.room_colors;
-    this._mapMode = ['temperature', 'presence'].includes(initial) ? initial : 'none';
+    this._mapMode = MAP_MODES.includes(initial) ? initial : 'none';
   }
 
   // current_position of a cover, null when the cover doesn't report it.
@@ -4419,7 +4472,7 @@ export class Floor3dCard extends LitElement {
     if (!this._hass || !this._scene || !this._modelready) return;
     const doors = this._config.state_colors == 'yes' ? this._config.entities.filter((e) => e.type3d == 'door') : [];
     const ids: string[] = [this._config.alarm_entity, ...doors.map((e) => e.entity)];
-    this._roomViews.forEach((r) => ids.push(r.temperature, ...r.presence));
+    this._roomViews.forEach((r) => ids.push(r.temperature, r.illuminance, ...r.presence));
     const deps = ids.map((id) => (id ? this._hass.states[id] : undefined));
     if (!force && this._colorDeps && deps.every((d, k) => d === this._colorDeps[k])) return;
     this._colorDeps = deps;
@@ -4455,6 +4508,14 @@ export class Floor3dCard extends LitElement {
           const unit = (s.attributes && s.attributes.unit_of_measurement) || '°';
           label = t.toLocaleString(this._hass.language || 'it', { maximumFractionDigits: 1 }) + ' ' + unit;
         }
+      } else if (this._mapMode == 'illuminance' && room.illuminance) {
+        const s = this._hass.states[room.illuminance];
+        const lux = s ? parseFloat(s.state) : NaN;
+        if (!isNaN(lux)) {
+          color = this._illuminanceColor(lux);
+          const unit = (s.attributes && s.attributes.unit_of_measurement) || 'lx';
+          label = lux.toLocaleString(this._hass.language || 'it', { maximumFractionDigits: 0 }) + ' ' + unit;
+        }
       } else if (this._mapMode == 'presence') {
         const present = room.presence.some((id) => this._hass.states[id] && this._hass.states[id].state == 'on');
         if (present) {
@@ -4476,6 +4537,16 @@ export class Floor3dCard extends LitElement {
     const max = this._num(this._config.temperature_max, 27);
     const k = THREE.MathUtils.clamp((t - min) / (max - min || 1), 0, 1);
     return new THREE.Color().setHSL(((1 - k) * 220) / 360, 0.85, 0.55, THREE.SRGBColorSpace);
+  }
+
+  // Dark blue (illuminance_min lux, 5 by default) to yellow (illuminance_max, 1000), through purple
+  // and orange. The scale is logarithmic, as the eye sees light: a few lux at night, hundreds in a
+  // lit room, thousands next to a sunny window.
+  private _illuminanceColor(lux: number): THREE.Color {
+    const min = Math.max(this._num(this._config.illuminance_min, 5), 0.1);
+    const max = Math.max(this._num(this._config.illuminance_max, 1000), min * 1.01);
+    const k = THREE.MathUtils.clamp(Math.log(Math.max(lux, 0.01) / min) / Math.log(max / min), 0, 1);
+    return new THREE.Color().setHSL(((230 + k * 180) % 360) / 360, 0.85, 0.3 + 0.3 * k, THREE.SRGBColorSpace);
   }
 
   private _setRoomLabel(room: RoomView, text: string): void {
