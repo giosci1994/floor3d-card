@@ -1,6 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-// Fields of the editor, as ha-form schemas, with their labels and help texts.
-// The defaults written in the help texts are the values the card uses when an option is missing.
+// Fields of the editor, as ha-form schemas. Their labels, help texts, menu entries and headings are
+// in the language files of the editor (src/localize/editor/), by the name of the field: see
+// localizeSchema, labelFor and helperFor. The defaults written in the help texts are the values the
+// card uses when an option is missing.
 
 export type Schema = any;
 
@@ -10,9 +12,11 @@ const num = (name: string, options: any = {}): Schema => ({
   selector: { number: { mode: 'box', step: 'any', ...options } },
 });
 const bool = (name: string): Schema => ({ name, selector: { boolean: {} } });
-const choice = (name: string, options: [string, string][]): Schema => ({
+// A menu: the label of each value is the text <key>.<value> (options.<name>.<value> by default).
+const choice = (name: string, values: string[], key = 'options.' + name): Schema => ({
   name,
-  selector: { select: { mode: 'dropdown', options: options.map(([value, label]) => ({ value, label })) } },
+  options_key: key,
+  selector: { select: { mode: 'dropdown', options: values.map((value) => ({ value, label: value })) } },
 });
 const entity = (name: string, domain?: string | string[], multiple = false): Schema => ({
   name,
@@ -71,8 +75,7 @@ export const ARRAY_VECTORS: { [block: string]: string[] } = {
 };
 
 export interface Section {
-  key: string;
-  title: string;
+  key: string; // its title is the text sections.<key>
   icon: string;
   // Fields and headings, in order; a heading is a string.
   content: (config: any) => (Schema[] | string)[];
@@ -81,20 +84,18 @@ export interface Section {
 export const SECTIONS: Section[] = [
   {
     key: 'model',
-    title: '3D model',
     icon: 'mdi:cube-outline',
     content: () => [
-      [text('name'), bool('header')],
+      [row(text('name'), choice('language', ['auto', 'en', 'it', 'de', 'nb'])), bool('header')],
       [text('path'), row(text('objfile'), text('mtlfile')), text('objectlist')],
       [row(text('backgroundColor'), text('style'))],
     ],
   },
   {
     key: 'view',
-    title: 'Camera and navigation',
     icon: 'mdi:camera-outline',
     content: () => [
-      'Initial view',
+      'initial_view',
       [vector('camera_position')],
       [vector('camera_target')],
       [vector('camera_rotate')],
@@ -104,21 +105,20 @@ export const SECTIONS: Section[] = [
           name: 'url_parameters',
           type: 'grid',
           column_min_width: '140px',
-          schema: [{ ...text('zoom'), label: 'View from the page address', helper: 'A parameter name, e.g. area: ?area=kitchen shows the view kitchen' }],
+          schema: [{ ...text('zoom'), label_key: 'url_zoom', helper_key: 'url_zoom' }],
         },
       ],
-      'North (orients the sun)',
+      'north',
       [vector('north', ['x', 'z'])],
     ],
   },
   {
     key: 'light',
-    title: 'Light and shadows',
     icon: 'mdi:lightbulb-on-outline',
     content: (config) => [
       [
         row(text('globalLightPower'), num('light_power', { min: 0 })),
-        row(num('exposure', { min: 0 }), choice('tone_mapping', [['neutral', 'Neutral'], ['agx', 'AgX'], ['aces', 'ACES Filmic'], ['linear', 'Linear']])),
+        row(num('exposure', { min: 0 }), choice('tone_mapping', ['neutral', 'agx', 'aces', 'linear'])),
         row(bool('shadow'), bool('extralightmode')),
       ],
       // How many shadows the preview draws, against the limit of the GPU.
@@ -136,22 +136,16 @@ export const SECTIONS: Section[] = [
   },
   {
     key: 'interaction',
-    title: 'Interaction',
     icon: 'mdi:gesture-tap',
     content: (config) => [
       [row(bool('click'), bool('editModeNotifications')), row(bool('selectionMode'), bool('show_axes')), bool('overlay')],
       ...(config.overlay === 'yes' || config.overlay === true
         ? [
-            'Overlay',
+            'overlay',
             [
               row(text('overlay_bgcolor'), text('overlay_fgcolor')),
               row(
-                choice('overlay_alignment', [
-                  ['top-left', 'Top left'],
-                  ['top-right', 'Top right'],
-                  ['bottom-left', 'Bottom left'],
-                  ['bottom-right', 'Bottom right'],
-                ]),
+                choice('overlay_alignment', ['top-left', 'top-right', 'bottom-left', 'bottom-right']),
                 num('overlay_width', { min: 0, max: 100, unit_of_measurement: '%' }),
                 num('overlay_height', { min: 0, max: 100, unit_of_measurement: '%' }),
               ),
@@ -163,7 +157,6 @@ export const SECTIONS: Section[] = [
   },
   {
     key: 'colours',
-    title: 'State colours and room maps',
     icon: 'mdi:palette-outline',
     content: () => [
       [
@@ -171,12 +164,7 @@ export const SECTIONS: Section[] = [
         row(text('open_color'), text('alarm_color')),
         entity('alarm_entity', 'alarm_control_panel'),
         row(
-          choice('room_colors', [
-            ['none', 'None'],
-            ['temperature', 'Temperature'],
-            ['presence', 'Presence'],
-            ['illuminance', 'Illuminance'],
-          ]),
+          choice('room_colors', ['none', 'temperature', 'presence', 'illuminance']),
           text('presence_color'),
         ),
         row(num('temperature_min'), num('temperature_max')),
@@ -187,7 +175,6 @@ export const SECTIONS: Section[] = [
   },
   {
     key: 'rendering',
-    title: 'Rendering',
     icon: 'mdi:tune-variant',
     content: () => [
       [row(num('max_pixel_ratio', { min: 0.5, max: 4 }), bool('log_depth')), bool('reversed_depth'), text('draco_decoder_path')],
@@ -195,37 +182,34 @@ export const SECTIONS: Section[] = [
   },
 ];
 
-export const TYPES: [string, string, string][] = [
-  ['light', 'Light', 'mdi:lightbulb-outline'],
-  ['hide', 'Hidden in a state', 'mdi:eye-off-outline'],
-  ['show', 'Shown in a state', 'mdi:eye-outline'],
-  ['color', 'Colour by state', 'mdi:palette-outline'],
-  ['text', 'Text', 'mdi:format-text'],
-  ['room', 'Room label and colour', 'mdi:floor-plan'],
-  ['door', 'Door or window', 'mdi:door-open'],
-  ['cover', 'Cover (roller shutter)', 'mdi:window-shutter'],
-  ['rotate', 'Rotating object (fan)', 'mdi:fan'],
-  ['gesture', 'Service on tap', 'mdi:gesture-tap'],
-  ['camera', 'Camera', 'mdi:cctv'],
-  ['image', 'Picture (TV screen)', 'mdi:television'],
-  ['info', 'Info box', 'mdi:information-outline'],
-  ['shower', 'Shower', 'mdi:shower-head'],
-  ['tracker', 'Person tracker', 'mdi:account-search-outline'],
+// Types of entity and their icons; the name of each is the text types.<type>.
+export const TYPES: [string, string][] = [
+  ['light', 'mdi:lightbulb-outline'],
+  ['hide', 'mdi:eye-off-outline'],
+  ['show', 'mdi:eye-outline'],
+  ['color', 'mdi:palette-outline'],
+  ['text', 'mdi:format-text'],
+  ['room', 'mdi:floor-plan'],
+  ['door', 'mdi:door-open'],
+  ['cover', 'mdi:window-shutter'],
+  ['rotate', 'mdi:fan'],
+  ['gesture', 'mdi:gesture-tap'],
+  ['camera', 'mdi:cctv'],
+  ['image', 'mdi:television'],
+  ['info', 'mdi:information-outline'],
+  ['shower', 'mdi:shower-head'],
+  ['tracker', 'mdi:account-search-outline'],
 ];
 
-const ACTIONS: [string, string][] = [
-  ['more-info', 'Show the entity details'],
-  ['overlay', 'Show the state in the overlay'],
-  ['default', 'Default (toggle a light, run the service, open the camera)'],
-];
+const ACTIONS = ['more-info', 'overlay', 'default'];
 
 // First fields of an entity (object_id is added by the editor, with the objects of the model).
 export const entitySchema = (): Schema[] => [
   entity('entity'),
-  { name: 'type3d', selector: { select: { mode: 'dropdown', options: TYPES.map(([value, label]) => ({ value, label })) } } },
+  { name: 'type3d', options_key: 'types', selector: { select: { mode: 'dropdown', options: TYPES.map(([value]) => ({ value, label: value })) } } },
 ];
 export const entityActionsSchema = (): Schema[] => [
-  row(choice('action', ACTIONS), choice('long_press_action', ACTIONS)),
+  row(choice('action', ACTIONS), choice('long_press_action', ACTIONS, 'options.action')),
   text('entity_template'),
 ];
 
@@ -246,21 +230,14 @@ export const typeSchema = (type: string, objects: string[], item: any = {}, part
               text('color'),
               num('decay', { min: 0 }),
               num('distance', { min: 0, unit_of_measurement: 'cm' }),
-              choice('shadow', [
-                ['yes', 'Yes'],
-                ['no', 'No'],
-              ]),
-              choice('vertical_alignment', [
-                ['top', 'Top'],
-                ['middle', 'Middle'],
-                ['bottom', 'Bottom'],
-              ]),
+              choice('shadow', ['yes', 'no']),
+              choice('vertical_alignment', ['top', 'middle', 'bottom']),
             ],
           },
         ],
         // A lamp made of several objects: one light for them all.
         [{ name: 'light', type: 'grid', column_min_width: '140px', schema: [bool('single'), ...(single ? [objectField('light_object', parts.length ? parts : objects)] : [])] }],
-        'Spot (optional)',
+        'spot',
         [
           {
             name: 'light',
@@ -280,20 +257,9 @@ export const typeSchema = (type: string, objects: string[], item: any = {}, part
             type: 'grid',
             column_min_width: '140px',
             schema: [
-              choice('doortype', [
-                ['swing', 'Swing'],
-                ['slide', 'Slide'],
-              ]),
-              choice('side', [
-                ['left', 'Left'],
-                ['right', 'Right'],
-                ['up', 'Up'],
-                ['down', 'Down'],
-              ]),
-              choice('direction', [
-                ['inner', 'Inner'],
-                ['outer', 'Outer'],
-              ]),
+              choice('doortype', ['swing', 'slide']),
+              choice('side', ['left', 'right', 'up', 'down']),
+              choice('direction', ['inner', 'outer']),
               num('degrees', { min: -180, max: 180, unit_of_measurement: '°' }),
               num('percentage', { min: 0, max: 100, unit_of_measurement: '%' }),
               objectField('hinge', objects),
@@ -311,10 +277,7 @@ export const typeSchema = (type: string, objects: string[], item: any = {}, part
             column_min_width: '140px',
             schema: [
               objectField('pane', objects),
-              choice('side', [
-                ['up', 'Up'],
-                ['down', 'Down'],
-              ]),
+              choice('side', ['up', 'down']),
             ],
           },
         ],
@@ -327,11 +290,7 @@ export const typeSchema = (type: string, objects: string[], item: any = {}, part
             type: 'grid',
             column_min_width: '140px',
             schema: [
-              choice('axis', [
-                ['x', 'X'],
-                ['y', 'Y'],
-                ['z', 'Z'],
-              ]),
+              choice('axis', ['x', 'y', 'z']),
               num('round_per_second', { min: 0 }),
               num('ramp', { min: 0, unit_of_measurement: 's' }),
               objectField('hinge', objects),
@@ -351,17 +310,14 @@ export const typeSchema = (type: string, objects: string[], item: any = {}, part
               num('transparency', { min: 0, max: 100, unit_of_measurement: '%' }),
               num('elevation', { min: 0, unit_of_measurement: 'cm' }),
               bool('label'),
-              choice('label_text', [
-                ['state', 'State'],
-                ['template', 'Template'],
-              ]),
+              choice('label_text', ['state', 'template']),
               text('attribute'),
               num('width', { min: 0 }),
               num('height', { min: 0 }),
             ],
           },
         ],
-        'Label text',
+        'label_text',
         textStyle(),
         'colorcondition',
       ];
@@ -389,7 +345,7 @@ export const typeSchema = (type: string, objects: string[], item: any = {}, part
             ],
           },
         ],
-        'Room light from the picture',
+        'picture_light',
         [
           {
             name: 'image',
@@ -397,14 +353,7 @@ export const typeSchema = (type: string, objects: string[], item: any = {}, part
             column_min_width: '140px',
             schema: [
               num('lighting_lumens', { min: 0 }),
-              choice('lighting_direction', [
-                ['positive_z', '+Z'],
-                ['negative_z', '−Z'],
-                ['positive_x', '+X'],
-                ['negative_x', '−X'],
-                ['positive_y', '+Y'],
-                ['negative_y', '−Y'],
-              ]),
+              choice('lighting_direction', ['positive_z', 'negative_z', 'positive_x', 'negative_x', 'positive_y', 'negative_y']),
               num('lighting_distance', { min: 0, unit_of_measurement: 'cm' }),
               text('lighting_off_state'),
               bool('lighting_shadow'),
@@ -452,11 +401,7 @@ export const typeSchema = (type: string, objects: string[], item: any = {}, part
             schema: [
               entity('sensor_x', 'sensor'),
               entity('sensor_y', 'sensor'),
-              choice('unit', [
-                ['mm', 'mm'],
-                ['cm', 'cm'],
-                ['m', 'm'],
-              ]),
+              choice('unit', ['mm', 'cm', 'm']),
               num('scale', { min: 0 }),
               bool('flip_x'),
               bool('flip_y'),
@@ -494,170 +439,29 @@ export const zoomObjectSchema = (objects: string[]): Schema[] => [
 ];
 export const colorConditionSchema = (): Schema[] => [row(text('state'), text('color'))];
 
-const LABELS: { [name: string]: string } = {
-  name: 'Name',
-  header: 'Show the header',
-  path: 'Folder of the model',
-  objfile: 'Model file (.obj or .glb)',
-  mtlfile: 'Materials file (.mtl)',
-  objectlist: 'Object list (JSON file)',
-  backgroundColor: 'Background colour',
-  style: 'Canvas style (CSS)',
-  x: 'X',
-  y: 'Y',
-  z: 'Z',
-  lock_camera: 'Lock the camera',
-  hideZoomMenu: 'Buttons instead of the Views menu',
-  hideLevelsMenu: 'Hide the levels menu',
-  initialLevel: 'Initial level',
-  globalLightPower: 'Light following the camera',
-  light_power: 'Lamp power',
-  exposure: 'Exposure',
-  tone_mapping: 'Tone mapping',
-  shadow: 'Shadows',
-  extralightmode: 'Extra light mode',
-  sun: 'Sunlight',
-  sun_entity: 'Sun entity',
-  sun_power: 'Sun power',
-  sun_shadow: 'Sun shadows',
-  sky_power: 'Sky light',
-  sky_color: 'Sky colour',
-  ground_color: 'Ground colour',
-  click: 'Tap runs the action',
-  editModeNotifications: 'Object names on double click (dashboard in edit mode)',
-  selectionMode: 'Selection mode',
-  show_axes: 'Show the axes',
-  overlay: 'Overlay',
-  overlay_bgcolor: 'Background colour',
-  overlay_fgcolor: 'Text colour',
-  overlay_alignment: 'Position',
-  overlay_width: 'Width',
-  overlay_height: 'Height',
-  overlay_font: 'Font',
-  overlay_fontsize: 'Font size',
-  state_colors: 'Colour open doors and windows',
-  open_color: 'Colour when open',
-  alarm_color: 'Colour when the alarm is armed',
-  alarm_entity: 'Alarm',
-  room_colors: 'Initial room map',
-  presence_color: 'Presence colour',
-  temperature_min: 'Temperature for blue',
-  temperature_max: 'Temperature for red',
-  illuminance_min: 'Lux for dark blue',
-  illuminance_max: 'Lux for yellow',
-  max_pixel_ratio: 'Maximum pixel ratio',
-  log_depth: 'Logarithmic depth buffer',
-  reversed_depth: 'Reversed depth buffer',
-  entity: 'Entity',
-  type3d: 'Type',
-  object_id: 'Object',
-  action: 'Tap action',
-  long_press_action: 'Long press action',
-  entity_template: 'Entity template',
-  lumens: 'Lumens',
-  color: 'Colour',
-  decay: 'Decay',
-  distance: 'Distance',
-  vertical_alignment: 'Vertical position',
-  light_target: 'Spot target object',
-  single: 'One light for all the objects',
-  light_object: 'Light on the object',
-  angle: 'Spot angle',
-  doortype: 'Door type',
-  side: 'Side',
-  direction: 'Direction',
-  degrees: 'Opening angle (swing)',
-  percentage: 'Opening (slide)',
-  hinge: 'Hinge object',
-  pane: 'Pane object',
-  axis: 'Axis',
-  round_per_second: 'Rounds per second',
-  ramp: 'Spin-up and coast-down',
-  draco_decoder_path: 'Draco decoder folder',
-  transparency: 'Transparency',
-  elevation: 'Height of the room',
-  label: 'Label',
-  label_text: 'Label shows',
-  attribute: 'Attribute',
-  width: 'Width',
-  height: 'Height',
-  font: 'Font',
-  span: 'Width of the text',
-  textfgcolor: 'Text colour',
-  textbgcolor: 'Background colour',
-  state: 'State',
-  domain: 'Service domain',
-  service: 'Service',
-  mirror: 'Mirror',
-  lighting_lumens: 'Lumens',
-  lighting_direction: 'Direction',
-  lighting_distance: 'Distance',
-  lighting_off_state: 'Off in state',
-  lighting_shadow: 'Shadows',
-  text: 'Text or template',
-  size: 'Size',
-  velocity: 'Speed',
-  count: 'Drops',
-  sensor_x: 'X sensor',
-  sensor_y: 'Y sensor',
-  unit: 'Unit of the coordinates',
-  scale: 'Scale',
-  flip_x: 'Mirror X',
-  flip_y: 'Mirror Y',
-  zone: 'Zone entity',
-  sensor_rotation: 'Sensor rotation',
-  object_group: 'Group name',
-  temperature: 'Temperature sensor',
-  illuminance: 'Illuminance sensor',
-  presence: 'Presence entities',
-  zoom: 'Name',
-  level: 'Level',
-};
+// The texts of the fields, in the language of the editor (see Translator in localize/editor.ts). A
+// field can name its own texts (label_key, helper_key), when its name is used elsewhere with another
+// meaning.
+export const labelFor =
+  (lookup: (key: string) => string | undefined) =>
+  (schema: Schema): string =>
+    lookup('labels.' + (schema.label_key || schema.name)) ?? schema.name;
+export const helperFor =
+  (lookup: (key: string) => string | undefined) =>
+  (schema: Schema): string | undefined =>
+    lookup('helpers.' + (schema.helper_key || schema.name));
 
-const HELPERS: { [name: string]: string } = {
-  path: 'For example /local/floor3d/',
-  objectlist: 'Optional: a JSON list of the object names, for the object menus',
-  backgroundColor: 'A colour, #rrggbb or transparent. Default #aaaaaa',
-  globalLightPower: 'From 0 to 1, or a numeric sensor. Default 0.2',
-  light_power: 'Multiplies all the lamps. Default 1',
-  exposure: 'Default 1',
-  sun_power: 'A number or a numeric sensor, to dim it with clouds. Default 1',
-  sky_power: 'Fills the shade, without shadows: a number or a numeric sensor. Default 0 (off)',
-  sky_color: 'Light from above. Default #e6eeff',
-  ground_color: 'Light from below. Default #706458',
-  extralightmode: 'Only the lights that are on cast shadows',
-  click: 'Off: a double click runs it',
-  selectionMode: 'Taps color the objects and list them, to build groups',
-  max_pixel_ratio: 'Default 2',
-  temperature_min: 'Default 17',
-  temperature_max: 'Default 27',
-  illuminance_min: 'Default 5 (the scale is logarithmic)',
-  illuminance_max: 'Default 1000',
-  entity_template: 'JavaScript between [[[ ]]], $entity is the state',
-  lumens: 'Default 800',
-  decay: 'Default 2',
-  distance: 'Default 600 cm',
-  single: 'For a lamp made of several objects: fewer lights and shadows',
-  light_object: 'Empty: in the middle of all the objects',
-  round_per_second: '2 or less',
-  ramp: 'Seconds to full speed or to stop. Default 1.5, 0 for none',
-  objfile: 'A .glb can be compressed with Draco or meshopt',
-  draco_decoder_path: 'Only for .glb models compressed with Draco. Default: Google CDN',
-  span: 'Of the object, in %',
-  lighting_off_state: 'Default off, standby, unavailable, unknown',
-  scale: 'Default 0.001',
-  text: 'A text or a template',
-};
+// The labels of the menus, in the language of the editor.
+export const localizeSchema = (schemas: Schema[], lookup: (key: string) => string | undefined): Schema[] =>
+  schemas.map((schema) => {
+    if (schema.schema) return { ...schema, schema: localizeSchema(schema.schema, lookup) };
+    const select = schema.selector && schema.selector.select;
+    if (!schema.options_key || !select) return schema;
+    const options = select.options.map((o: any) => ({ value: o.value, label: lookup(schema.options_key + '.' + o.value) ?? o.label }));
+    return { ...schema, selector: { select: { ...select, options } } };
+  });
 
-// A field can bring its own label and help text, when its name is used elsewhere with another meaning.
-export const computeLabel = (schema: Schema): string => schema.label ?? LABELS[schema.name] ?? schema.name;
-export const computeHelper = (schema: Schema): string | undefined => schema.helper ?? HELPERS[schema.name];
-
-export const HEADINGS: { [key: string]: string } = {
-  camera_position: 'Camera position',
-  camera_target: 'Camera target',
-  camera_rotate: 'Camera rotation',
-  'light.light_direction': 'Spot direction',
-  'info.position': 'Position (optional)',
-  'tracker.sensor_position': 'Sensor position',
-};
+// Vectors shown under a heading (a grid has no label of its own): the text headings.<name>, with _
+// for the . of a vector inside an options block.
+export const VECTOR_HEADINGS = ['camera_position', 'camera_target', 'camera_rotate', 'light.light_direction', 'info.position', 'tracker.sensor_position'];
+export const headingKey = (name: string): string => 'headings.' + name.replace('.', '_');

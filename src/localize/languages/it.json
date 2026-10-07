@@ -6,6 +6,7 @@
     "show_error": "Mostra errore",
     "views": "Viste",
     "initial_view": "Vista iniziale",
+    "reset": "ripristina",
     "map": "Mappa",
     "map_none": "Nessuna mappa",
     "map_temperature": "Temperature",
@@ -16,6 +17,9 @@
     "loading_model": "Caricamento del modello",
     "preparing": "Preparazione della scena 3D",
     "load_error": "Impossibile caricare il modello",
-    "setup_error": "errore durante la preparazione del modello, vedi la console del browser"
+    "setup_error": "errore durante la preparazione del modello, vedi la console del browser",
+    "clear_selections": "annulla selezione ({count})",
+    "enable_selection": "Attiva selezione",
+    "disable_selection": "Disattiva selezione"
   }
 }

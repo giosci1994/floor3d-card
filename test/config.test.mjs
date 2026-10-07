@@ -28,6 +28,11 @@ test('overlay size and colours left out when they are the defaults', () => {
   assert.deepEqual(c, { overlay: 'yes', overlay_height: 25, overlay_fgcolor: 'white', entities: [] });
 });
 
+test('language: left out on auto (the language of the user), kept when chosen', () => {
+  assert.ok(!('language' in cleanConfig({ language: 'auto', entities: [] })));
+  assert.equal(cleanConfig({ language: 'de', entities: [] }).language, 'de');
+});
+
 test('object groups: plain ids read and written', () => {
   const n = normalizeConfig({ object_groups: [{ object_group: 'g', objects: ['a', { object_id: 'b' }] }, { object_group: 'h' }] });
   assert.deepEqual(n.object_groups[0].objects, [{ object_id: 'a' }, { object_id: 'b' }]);

@@ -28,6 +28,7 @@ const SWITCH_DEFAULTS: { [key: string]: 'yes' | 'no' } = {
 
 // Other top-level options whose value, when missing, is the one written here.
 const VALUE_DEFAULTS: { [key: string]: string | number } = {
+  language: 'auto',
   overlay_width: 33,
   overlay_height: 20,
   overlay_bgcolor: 'transparent',

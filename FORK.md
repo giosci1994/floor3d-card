@@ -32,7 +32,7 @@ At every update copy the new files and change the `?v=` of the resource: Home As
 npx --yes yarn@1.22.22 install --frozen-lockfile
 npm run build        # = rollup -c rollup.config.mjs
 npm start            # rebuilds on every change and serves dist/ on port 5000
-npm test             # tests of src/config.ts (Node 22 or newer)
+npm test             # tests of src/config.ts and of the language files (Node 22 or newer)
 npm run lint         # ESLint on src/*.ts
 ```
 
@@ -40,7 +40,7 @@ npm run lint         # ESLint on src/*.ts
 
 - **Tooling.** Rollup 4 with the official `@rollup/plugin-*` packages, TypeScript 5.9 (target ES2021), Lit 3, custom-card-helpers 2 and the types of home-assistant-js-websocket 9. Babel is gone: without a configuration it did nothing. `.yarnrc` skips the `engines` check because custom-card-helpers 2 asks for Node ≥ 24 for its own development tools, while its code ends up in the browser bundle. three.js went from 0.130 to 0.186; tween.js stays at 18.
 - **Lit 2 kept for the classic editor.** The classic editor (`src/editor-classic.ts`, see [Card editor](#card-editor)) uses `@material/mwc-*` 0.27 components, written for Lit 2; on Lit 3 some of them break (for example `mwc-formfield` with the old signature of `@queryAssignedNodes`). The `litForMaterial` plugin in `rollup.config.mjs` makes all of `@material/*` use a single Lit 2 copy (the `lit2` alias in `package.json`), while the card and the new editor use Lit 3. Alias, plugin and classic editor can go once no supported Home Assistant version needs them.
-- **Editor loaded separately.** The card doesn't import the editor at startup: `getConfigElement()` loads it when the card is edited. Devices that only show the card download about 810 KB. The build makes four files: `floor3d-card.js` (the card), `floor3d-card-core-<hash>.js` (libraries and code shared with the editor), `floor3d-card-editor-<hash>.js` (the editor, about 40 KB) and `floor3d-card-editor-classic-<hash>.js` (about 340 KB, loaded only when Home Assistant doesn't provide the components of the new editor). Nothing imports `floor3d-card.js`: the resource has a query (`?hacstag=` added by HACS, `?v=` by hand), and an import without it would load a second copy of the card, whose `customElements.define` fails. `coreChunk()` in `rollup.config.mjs` does this split, and `removeOldChunks()` removes from `dist/` the chunks of older builds. Two more chunks are loaded only by [compressed models](#compressed-models): `floor3d-card-meshopt_decoder.module-<hash>.js` (about 25 KB) and `floor3d-card-DRACOLoader-<hash>.js` (the loader; the Draco decoder itself comes from `draco_decoder_path`).
+- **Editor loaded separately.** The card doesn't import the editor at startup: `getConfigElement()` loads it when the card is edited. Devices that only show the card download about 810 KB. The build makes four files: `floor3d-card.js` (the card), `floor3d-card-core-<hash>.js` (libraries and code shared with the editor), `floor3d-card-editor-<hash>.js` (the editor with its texts in every language, about 65 KB) and `floor3d-card-editor-classic-<hash>.js` (about 340 KB, loaded only when Home Assistant doesn't provide the components of the new editor). Nothing imports `floor3d-card.js`: the resource has a query (`?hacstag=` added by HACS, `?v=` by hand), and an import without it would load a second copy of the card, whose `customElements.define` fails. `coreChunk()` in `rollup.config.mjs` does this split, and `removeOldChunks()` removes from `dist/` the chunks of older builds. Two more chunks are loaded only by [compressed models](#compressed-models): `floor3d-card-meshopt_decoder.module-<hash>.js` (about 25 KB) and `floor3d-card-DRACOLoader-<hash>.js` (the loader; the Draco decoder itself comes from `draco_decoder_path`).
 - **Components Home Assistant no longer provides.** Recent Home Assistant versions don't define `mwc-menu` anymore, so the drop-down menus of the classic editor didn't open. `elements/menu.ts` defines `mwc-menu`, `mwc-menu-surface`, `mwc-list` and `mwc-list-item` only when they are missing. The card also reads `isPanel`, `editMode` and `preview` directly from Home Assistant (2024+), and falls back to the page structure on older versions.
 
 ## Publishing a release
@@ -67,6 +67,7 @@ The Validate workflow runs the HACS checks at every push and every night; the Bu
 - **Illuminance map** (2.5): rooms coloured by the lux of an illuminance sensor, next to the temperature and presence maps. See [State colours](#state-colours).
 - **Paused preview** (2.5): the card editor can pause its preview while you edit, and sends the configuration to Home Assistant a second after the last change instead of at every keystroke. See [Card editor](#card-editor).
 - **One light for a lamp** (2.6, `light.single`, `light.light_object`): a lamp made of several objects (a chandelier, a row of spots) gets one light instead of one per object, so fewer shadows. See [Shadows](#shadows).
+- **Languages** (2.6): the card and its editor in English, Italian and German (the card also in Norwegian). Each user sees the language of their Home Assistant profile; the `language` option sets one for the card. See [Languages](#languages).
 - **Shadows in the editor** (2.6): the card editor says how many lights cast a shadow and how many the device can draw, and names the lights left without. See [Shadows](#shadows).
 - **Version label** at the top of the card editor and in the console banner.
 - The sky (`sky`) and the ambient light of the original card are removed on purpose, so that they don't affect the render; the light of the sky of 2.4 (`sky_power`) is there only when it is set. The light that follows the camera (torch) is always on.
@@ -97,6 +98,25 @@ The editor is built on the components of Home Assistant, like the editors of the
 - When Home Assistant doesn't provide the components the editor is built on (`ha-form` and `ha-expansion-panel`), the editor of version 2.1 is shown instead (`src/editor-classic.ts`). The new editor was tested on Home Assistant 2026.9.
 
 The editor and the preview talk through window events (`floor3d-card-editor` and `floor3d-card-preview`, see `src/editor.ts`); only a card that Home Assistant marks as `preview` answers.
+
+### Languages
+
+The card and the editor show the language of the profile of each user in Home Assistant, so in the same house everyone sees their own; `language` (`en`, `it`, `de`, `nb`) sets one for the card and its editor, whatever the profile. A regional variant uses its language (`de-CH`: German), and a language without texts shows English.
+
+| Language | Card | Editor |
+|---|---|---|
+| English | ✓ | ✓ |
+| Italiano | ✓ | ✓ |
+| Deutsch | ✓ | ✓ |
+| Norsk bokmål | ✓ | English |
+
+The texts are in JSON files: `src/localize/languages/<code>.json` for the card (menus, loading screen, errors) and `src/localize/editor/<code>.json` for the editor (labels, help texts, menus, headings), loaded only with the editor. A text missing in a language is the English one. To add a language:
+
+1. copy the two `en.json` files to `<code>.json` (the code Home Assistant uses: `fr`, `es`, `pt-BR`…) and translate the texts, leaving `{name}` placeholders as they are;
+2. add the file to `languages` in `src/localize/localize.ts` and in `src/localize/editor.ts`, and the code to the `language` menu in `src/editor-schema.ts` (with its name under `options.language` in the editor files);
+3. `npm test` checks that every key exists in English and that the placeholders match.
+
+The classic editor (`src/editor-classic.ts`, for Home Assistant versions without the components of the new editor) stays in English.
 
 ### Shorter configuration
 

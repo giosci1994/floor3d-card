@@ -16,7 +16,7 @@ import { matchObjects, normalizeConfig, objectPattern } from './config';
 import type { Floor3dCardConfig } from './types';
 import { CARD_VERSION, EDITOR_EVENT, PREVIEW_EVENT } from './const';
 import { previewState } from './preview';
-import { localize } from './localize/localize';
+import { localize, pickLanguage } from './localize/localize';
 //import three.js libraries for 3D rendering
 import * as TWEEN from '@tweenjs/tween.js';
 import { mdiAlertCircleOutline, mdiCubeOutline } from '@mdi/js';
@@ -562,7 +562,7 @@ export class Floor3dCard extends LitElement {
     console.log('floor3d-card: Set Config Start');
 
     if (!config) {
-      throw new Error(localize('common.invalid_configuration'));
+      throw new Error(localize('common.invalid_configuration', config && config.language));
     }
 
     // Short forms (true/false, object_id strings in object_groups, missing options block) become
@@ -590,12 +590,12 @@ export class Floor3dCard extends LitElement {
     console.log('floor3d-card: Set Config End');
 
     if (this._config.show_warning) {
-      render(this._showWarning(localize('common.show_warning')), this._card);
+      render(this._showWarning(this._t('show_warning')), this._card);
       return;
     }
 
     if (this._config.show_error) {
-      render(this._showError(localize('common.show_error')), this._card);
+      render(this._showError(this._t('show_error')), this._card);
       return;
     }
   }
@@ -1837,7 +1837,7 @@ export class Floor3dCard extends LitElement {
     el.querySelector('.f3d-bar').classList.toggle('indeterminate', !known);
     (el.querySelector('.f3d-fill') as HTMLElement).style.width = known ? percent + '%' : '';
     const mb = (bytes: number): string =>
-      (bytes / 1048576).toLocaleString(this._hass?.language, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+      (bytes / 1048576).toLocaleString(this._language(), { minimumFractionDigits: 1, maximumFractionDigits: 1 });
     el.querySelector('.f3d-detail').textContent = !progress
       ? ''
       : known
@@ -2191,7 +2191,7 @@ export class Floor3dCard extends LitElement {
     iconArray.push(html`
       <div class="row" style="background-color:black;">
         <font color="white">
-          <floor3d-button style="opacity: 100%;" label="reset" .index=${-1} @click=${this._handleZoomClick.bind(this)}>
+          <floor3d-button style="opacity: 100%;" label=${this._t('reset')} .index=${-1} @click=${this._handleZoomClick.bind(this)}>
           </floor3d-button>
         </font>
       </div>
@@ -2318,8 +2318,13 @@ export class Floor3dCard extends LitElement {
     this._cameraTweens = [];
   }
 
-  private _t(key: string): string {
-    return localize('common.' + key, '', '', this._hass && this._hass.language);
+  // The language of the card (see pickLanguage): its language option, else the one of the user.
+  private _language(): string {
+    return pickLanguage(this._config && this._config.language, this._hass && this._hass.locale && this._hass.locale.language, this._hass && this._hass.language);
+  }
+
+  private _t(key: string, vars: { [name: string]: string | number } = {}): string {
+    return localize('common.' + key, this._language(), vars);
   }
   private _getLevelBar(): TemplateResult {
     if (this._levels) {
@@ -2381,7 +2386,7 @@ export class Floor3dCard extends LitElement {
           <font color="white">
             <floor3d-button
               style="opacity: 100%;"
-              label="clear selections (${this._selectedobjects.length})"
+              label=${this._t('clear_selections', { count: this._selectedobjects.length })}
               @click=${this._handleClearSelectionsClick.bind(this)}
             >
             </floor3d-button>
@@ -2394,7 +2399,7 @@ export class Floor3dCard extends LitElement {
           <font color="white">
             <floor3d-button
               style="opacity: 100%;"
-              label="${this._selectionModeEnabled ? 'Disable Selection' : 'Enable Selection'}"
+              label=${this._t(this._selectionModeEnabled ? 'disable_selection' : 'enable_selection')}
               @click=${this._handleToggleSelectionMode.bind(this)}
             >
             </floor3d-button>
@@ -4528,7 +4533,7 @@ export class Floor3dCard extends LitElement {
         if (!isNaN(t)) {
           color = this._temperatureColor(t);
           const unit = (s.attributes && s.attributes.unit_of_measurement) || '°';
-          label = t.toLocaleString(this._hass.language || 'it', { maximumFractionDigits: 1 }) + ' ' + unit;
+          label = t.toLocaleString(this._language(), { maximumFractionDigits: 1 }) + ' ' + unit;
         }
       } else if (this._mapMode == 'illuminance' && room.illuminance) {
         const s = this._hass.states[room.illuminance];
@@ -4536,7 +4541,7 @@ export class Floor3dCard extends LitElement {
         if (!isNaN(lux)) {
           color = this._illuminanceColor(lux);
           const unit = (s.attributes && s.attributes.unit_of_measurement) || 'lx';
-          label = lux.toLocaleString(this._hass.language || 'it', { maximumFractionDigits: 0 }) + ' ' + unit;
+          label = lux.toLocaleString(this._language(), { maximumFractionDigits: 0 }) + ' ' + unit;
         }
       } else if (this._mapMode == 'presence') {
         const present = room.presence.some((id) => this._hass.states[id] && this._hass.states[id].state == 'on');
@@ -5040,7 +5045,7 @@ export class Floor3dCard extends LitElement {
 
   protected render(): TemplateResult | void {
     if (this._config.show_error) {
-      return this._showError(localize('common.show_error'));
+      return this._showError(this._t('show_error'));
     }
 
     let htmlHeight: string;

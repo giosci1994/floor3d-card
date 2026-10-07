@@ -6,6 +6,7 @@
     "show_error": "Show Error",
     "views": "Views",
     "initial_view": "Initial view",
+    "reset": "reset",
     "map": "Map",
     "map_none": "No map",
     "map_temperature": "Temperatures",
@@ -16,6 +17,9 @@
     "loading_model": "Loading the model",
     "preparing": "Preparing the 3D scene",
     "load_error": "The model could not be loaded",
-    "setup_error": "an error while setting up the model, see the browser console"
+    "setup_error": "an error while setting up the model, see the browser console",
+    "clear_selections": "clear selections ({count})",
+    "enable_selection": "Enable Selection",
+    "disable_selection": "Disable Selection"
   }
 }
