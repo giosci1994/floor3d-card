@@ -144,7 +144,7 @@ For each zoom in zoom_areas
 | rotation         | object | {x:0, y:0, z:0} | the rotation of the camera pointing to the area.                                                                                                                                                      |
 | direction        | object  | {x:0, y:0, z:0}   | the direction vector of the canera pointing to the area.                                                                                                                             |
 | distance        | number  | 500   | the number of cm from the camera to the target point                                                                                              |
-| level        | number  | - | the index of the level. If set, selecting this zoom level will show the level and hide the other levels.                                                                                 |
+| level        | number  | - | the index of the level. If set, selecting this zoom level will show the level and hide the other levels. If not set, all the levels are shown.                                                                                 |
 
 
 ### Client Side Javascript template example

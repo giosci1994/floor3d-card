@@ -2094,8 +2094,7 @@ export class Floor3dCard extends LitElement {
       this._renderMenus();
       this._updateStateColors(true);
 
-      const initialLevel = typeof this._config.initialLevel === 'undefined' ? -1 : this._config.initialLevel;
-      this._setVisibleLevel(initialLevel);
+      this._setVisibleLevel(this._viewLevel(this._config.initialLevel));
 
       this._urlView = undefined; // a new model: the view of the page applies again
       this._applyUrlView(false);
@@ -2234,6 +2233,12 @@ export class Floor3dCard extends LitElement {
     console.log('End Init Objects. Number of levels found: ' + this._levels.length);
   }
 
+  // The level of a view or of initialLevel: -1 (all the levels) when it is empty.
+  private _viewLevel(level: unknown): number {
+    const n = level === undefined || level === null || String(level).trim() === '' ? NaN : Number(level);
+    return Number.isInteger(n) && n >= 0 ? n : -1;
+  }
+
   private _setVisibleLevel(level: number) {
     this._levels.forEach((element, i) => {
       if (level == -1) {
@@ -2342,12 +2347,16 @@ export class Floor3dCard extends LitElement {
     this._goToView(index);
   }
 
-  // Shows a view (zoom area); -1 is the initial view. With animate the camera flies there.
+  // Shows a view (zoom area); -1 is the initial view. With animate the camera flies there. The
+  // levels follow: the level of the view, or all of them when it has none; the initial view shows
+  // initialLevel again.
   private _goToView(index: number, animate = true): void {
     if (index == -1) {
-      if (this._config.camera_position && this._config.camera_target) {
+      this._setVisibleLevel(this._viewLevel(this._config.initialLevel));
+      if (animate && this._config.camera_position && this._config.camera_target) {
         this._flyTo(this._config.camera_position, this._config.camera_target);
       } else {
+        this._stopCameraTweens();
         this._setCamera();
         this._setLookAt();
         this._controls.update();
@@ -2357,9 +2366,7 @@ export class Floor3dCard extends LitElement {
     }
     const zoom = this._zoom[index];
     if (!zoom) return;
-    if (zoom.level != null) {
-      this._setVisibleLevel(zoom.level);
-    }
+    this._setVisibleLevel(this._viewLevel(zoom.level));
     if (animate) {
       this._flyTo(zoom.position, zoom.target);
       return;
@@ -2540,50 +2547,10 @@ export class Floor3dCard extends LitElement {
     render(this._getSelectionBar(), this._selectionbar);
   }
 
+  // The buttons of the views (hideZoomMenu: yes) jump to the view, the menu flies there.
   private _handleZoomClick(ev): void {
     ev.stopPropagation();
-
-    if (ev.target.index == -1) {
-      this._setCamera();
-
-      this._setLookAt();
-
-      this._controls.update();
-
-      this._render();
-
-      return;
-    }
-
-    const zoom = this._zoom[ev.target.index];
-
-    if (zoom.level != null) {
-      this._setVisibleLevel(zoom.level);
-    }
-
-    this._camera.position.set(
-      this._zoom[ev.target.index].position.x,
-      this._zoom[ev.target.index].position.y,
-      this._zoom[ev.target.index].position.z,
-    );
-
-    this._camera.rotation.set(
-      this._zoom[ev.target.index].rotation.x,
-      this._zoom[ev.target.index].rotation.y,
-      this._zoom[ev.target.index].rotation.z,
-    );
-
-    this._controls.target.set(
-      this._zoom[ev.target.index].target.x,
-      this._zoom[ev.target.index].target.y,
-      this._zoom[ev.target.index].target.z,
-    );
-
-    this._camera.updateProjectionMatrix();
-
-    this._controls.update();
-
-    this._render();
+    this._goToView(ev.target.index, false);
   }
 
   private _handleLevelClick(ev): void {

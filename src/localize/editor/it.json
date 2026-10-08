@@ -183,6 +183,8 @@
     "scale": "Predefinito 0.001",
     "text": "Un testo o un template",
     "url_zoom": "Il nome di un parametro, per esempio area: ?area=cucina mostra la vista cucina",
+    "initialLevel": "Mostrato all'apertura della card e con la vista iniziale. Vuoto: tutti i piani",
+    "level": "La vista mostra solo questo piano. Vuoto: tutti i piani",
     "object_id_entity": "Un oggetto, un <gruppo>, o un nome con * per tutti gli oggetti corrispondenti (Lampada_*)",
     "language": "Della card e di questo editor",
     "alarm_view": "La telecamera va sulla stanza quando scatta uno dei suoi allarmi",

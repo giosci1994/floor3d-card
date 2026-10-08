@@ -11,6 +11,7 @@ const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.json': 'applic
 export async function start() {
   const files = new Map([
     ['/local/floor3d/home.obj', objFile()],
+    ['/local/floor3d/levels.obj', objFile(['floor_bed', 'bed', 'wardrobe'])], // the bedroom on level 1
     ['/local/floor3d/home.mtl', mtlFile()],
     ['/local/floor3d/home.glb', glbFile()],
     ['/local/floor3d/rich.glb', glbFile(true)],
