@@ -3,7 +3,18 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { test } from 'node:test';
-import { SECTIONS, TYPES, VECTOR_HEADINGS, entityActionsSchema, entitySchema, typeSchema } from '../src/editor-schema.ts';
+import {
+  SECTIONS,
+  TYPES,
+  VECTOR_HEADINGS,
+  entityActionsSchema,
+  entitySchema,
+  mapSchema,
+  roomAlarmsSchema,
+  roomSchema,
+  roomSensorsSchema,
+  typeSchema,
+} from '../src/editor-schema.ts';
 
 const read = (path) => JSON.parse(fs.readFileSync(new URL(path, import.meta.url), 'utf8'));
 const flat = (o, p = '', out = {}) => {
@@ -28,10 +39,21 @@ for (const [dir, languages] of [['../src/localize/languages/', ['it', 'de', 'nb'
 test('card: every common.* key the card asks for is in English', () => {
   const en = flat(read('../src/localize/languages/en.json'));
   const src = fs.readFileSync(new URL('../src/floor3d-card.ts', import.meta.url), 'utf8');
-  const keys = [...src.matchAll(/_t\(\s*'(\w+)'/g)].map((m) => 'common.' + m[1]);
+  // Keys built from a name ('map_' + key) are checked below, with the names they are built from.
+  const keys = [...src.matchAll(/_t\(\s*'(\w+)'/g)].map((m) => 'common.' + m[1]).filter((k) => !k.endsWith('_'));
   const ternary = [...src.matchAll(/_t\([^)]*\? '(\w+)' : '(\w+)'/g)].flatMap((m) => ['common.' + m[1], 'common.' + m[2]]);
   assert.ok(keys.length > 10);
   for (const key of [...keys, ...ternary]) assert.ok(key in en, 'missing: ' + key);
+});
+
+test('card: every map and every kind of alarm has its name in every language', async () => {
+  const { PRESET_MAPS, alarmKind } = await import('../src/maps.ts');
+  const kinds = ['smoke', 'gas', 'carbon_monoxide', 'heat', 'moisture', 'cold', 'safety', 'problem', 'tamper', undefined].map((d) => alarmKind(d).key);
+  for (const lang of ['en', 'it', 'de', 'nb']) {
+    const texts = flat(read('../src/localize/languages/' + lang + '.json'));
+    for (const key of ['temperature', 'presence', 'illuminance', ...PRESET_MAPS.map((p) => p.key)]) assert.ok('common.map_' + key in texts, lang + ': map_' + key);
+    for (const kind of kinds) assert.ok('common.alarm_' + kind in texts, lang + ': alarm_' + kind);
+  }
 });
 
 test('editor: every text the editor asks for is in English', () => {
@@ -43,7 +65,7 @@ test('editor: every text the editor asks for is in English', () => {
   // Keys built from names: sections, types, list titles, vectors.
   SECTIONS.forEach((s) => assert.ok('sections.' + s.key in en, s.key));
   TYPES.forEach(([type]) => assert.ok('types.' + type in en, type));
-  ['entities', 'object_groups', 'zoom_areas', 'rooms'].forEach((list) => assert.ok('ui.title_' + list in en, list));
+  ['entities', 'object_groups', 'zoom_areas', 'rooms', 'maps'].forEach((list) => assert.ok('ui.title_' + list in en, list));
   VECTOR_HEADINGS.forEach((name) => assert.ok('headings.' + name.replace('.', '_') in en, name));
 });
 
@@ -53,11 +75,11 @@ test('editor: every field, menu entry and heading has its English text', () => {
   const contents = [
     ...SECTIONS.map((s) => s.content(config)),
     ...TYPES.map(([type]) => typeSchema(type, [], { light: { single: 'yes' } })),
-    [entitySchema(), entityActionsSchema()],
+    [entitySchema(), entityActionsSchema(), roomSchema([]), roomSensorsSchema(), roomAlarmsSchema(), mapSchema()],
   ].flat();
   const walk = (schema) => {
     if (typeof schema === 'string') {
-      if (!['sun_roof', 'rooms', 'colorcondition', 'shadow_status'].includes(schema)) {
+      if (!['sun_roof', 'rooms', 'maps', 'colorcondition', 'shadow_status'].includes(schema)) {
         assert.ok(('headings.' + schema.replace('.', '_')) in en, 'heading ' + schema);
       }
       return;

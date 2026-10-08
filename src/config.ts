@@ -23,6 +23,7 @@ const SWITCH_DEFAULTS: { [key: string]: 'yes' | 'no' } = {
   log_depth: 'no',
   reversed_depth: 'yes',
   state_colors: 'no',
+  alarm_view: 'no',
   sky: 'no', // no longer used by the card
 };
 
@@ -187,6 +188,18 @@ export function cleanConfig<T>(config: T): T {
   if (Array.isArray(c.rooms)) {
     c.rooms = c.rooms.map((room) => cleanItem(room, 'name')).filter((room) => room !== undefined);
     if (c.rooms.length === 0) delete c.rooms;
+  }
+
+  // Sensor maps of the configuration (see maps.ts): limits and decimals written as numbers.
+  if (Array.isArray(c.maps)) {
+    c.maps = c.maps
+      .map((map) => {
+        const clean = cleanItem(map, 'key');
+        if (isObject(clean)) ['min', 'max', 'decimals'].forEach((key) => toNumber(clean, key));
+        return clean;
+      })
+      .filter((map) => map !== undefined);
+    if (c.maps.length === 0) delete c.maps;
   }
 
   if (isObject(c.url_parameters)) {

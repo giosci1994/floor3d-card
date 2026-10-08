@@ -68,6 +68,9 @@ The Validate workflow runs the HACS checks at every push and every night; the Bu
 - **Illuminance map** (2.5): rooms coloured by the lux of an illuminance sensor, next to the temperature and presence maps. See [State colours](#state-colours).
 - **Paused preview** (2.5): the card editor can pause its preview while you edit, and sends the configuration to Home Assistant a second after the last change instead of at every keystroke. See [Card editor](#card-editor).
 - **One light for a lamp** (2.6, `light.single`, `light.light_object`): a lamp made of several objects (a chandelier, a row of spots) gets one light instead of one per object, so fewer shadows. See [Shadows](#shadows).
+- **Sensor maps** (2.7): rooms coloured by humidity, CO₂, PM2.5, PM10, VOC, formaldehyde, radon, noise or the power of their smart plugs, with a legend under the Map menu, and maps of any other sensor. See [Sensor maps](#sensor-maps).
+- **Alarms** (2.7): a room blinks in red with a smoke, gas or carbon monoxide sensor on, in blue with a water leak, with the kind of alarm written on it; an object can blink too, and the camera can go to the room. See [Alarms](#alarms).
+- **Heating and cooling** (2.7): a radiator, a split or a heated floor glows orange while it heats and light blue while it cools; on the temperature map a room shows the target of its thermostat. See [Heating and cooling](#heating-and-cooling).
 - **Languages** (2.6): the card and its editor in English, Italian and German (the card also in Norwegian). Each user sees the language of their Home Assistant profile; the `language` option sets one for the card. See [Languages](#languages).
 - **Shadows in the editor** (2.6): the card editor says how many lights cast a shadow and how many the device can draw, and names the lights left without. See [Shadows](#shadows).
 - **Version label** at the top of the card editor and in the console banner.
@@ -337,7 +340,7 @@ The card reads the file first and loads a decoder only when the model needs it: 
 - `state_colors: yes`: open doors and windows (`type3d: door`) light up (`open_color`, amber). With `alarm_entity` armed they turn red (`alarm_color`), and they blink when the alarm is triggered.
 - `rooms`: transparent copies of the floors, coloured by temperature (blue to red between `temperature_min` and `temperature_max`, 17 and 27 by default, with the value written on it), by presence (`presence_color`) or by illuminance (2.5, below).
 - **Illuminance** (`illuminance` of a room, an illuminance sensor): dark blue at `illuminance_min` lux (5 by default) to yellow at `illuminance_max` (1000), through purple and orange, with the value written on it. The scale is logarithmic, as the eye sees light: a few lux at night, a few hundred in a lit room, thousands next to a sunny window. The idea comes from [issue #13](https://github.com/giosci1994/floor3d-card/issues/13).
-- A "Map" menu next to "Views" switches between no map, temperatures, presence and illuminance; `room_colors` sets the initial choice (`none`, `temperature`, `presence` or `illuminance`). A room shows the map only when it has the sensor of that map (2.6: the illuminance map is in the menu even before a room has an illuminance sensor, like the other two).
+- A "Map" menu next to "Views" switches between no map, temperatures, presence, illuminance and the [sensor maps](#sensor-maps) (2.7) the rooms have sensors for, with a legend of the colours under it; `room_colors` sets the initial choice (`none`, `temperature`, `presence`, `illuminance` or the key of a sensor map). A room shows the map only when it has the sensor of that map (2.6: the illuminance map is in the menu even before a room has an illuminance sensor, like the other two). With a thermostat (`climate`, 2.7) a room shows the temperature it measures when it has no sensor, and its target: see [Heating and cooling](#heating-and-cooling).
 
 | ![Open doors and windows in amber (state_colors: yes)](docs/images/state-open.jpg) | ![Alarm armed: the open ones turn red](docs/images/state-alarm.jpg) |
 | :---: | :---: |
@@ -362,6 +365,89 @@ rooms:
 | ![Room map by temperature, chosen in the "Map" menu at the top right](docs/images/map-temperature.jpg) | ![Room map by presence](docs/images/map-presence.jpg) |
 | :---: | :---: |
 | Room map by temperature, chosen in the "Map" menu at the top right | Room map by presence |
+
+### Sensor maps
+
+Any room can have more sensors, one per map; a map is in the Map menu once a room has its sensor, and a legend under the menu shows its colours from the lowest value to the highest. The colours go from good (green) to bad (red), with the thresholds of the WHO and of the European guidelines for indoor air:
+
+| Key | Map | Green → red | Units read |
+|---|---|---|---|
+| `humidity` | Humidity | orange below 40 %, green 40–60 %, blue above 60 % | % |
+| `co2` | CO₂ | 600 → 1000 (yellow) → 2000 ppm | ppm |
+| `pm25` | PM2.5 | 5 → 15 (yellow) → 75 µg/m³, purple at 150 | µg/m³, mg/m³ |
+| `pm10` | PM10 | 15 → 45 (yellow) → 150 µg/m³, purple at 300 | µg/m³, mg/m³ |
+| `voc` | VOC | 200 → 500 (yellow) → 3000 µg/m³; an index without unit (Sensirion VOC index): 100 → 150 → 400 | µg/m³, mg/m³, ppb, ppm, index |
+| `hcho` | Formaldehyde | 30 → 60 (yellow) → 200 µg/m³ (WHO: 100) | µg/m³, mg/m³, ppb, ppm |
+| `radon` | Radon | 50 → 100 (yellow) → 300 Bq/m³ | Bq/m³, pCi/L |
+| `noise` | Noise | 35 → 50 (yellow) → 80 dB (the loudest sensor of the room) | dB |
+| `power` | Power | 0 → 1000 (yellow) → 3000 W (the plugs of the room added up) | W, kW |
+
+A sensor in another unit of the same quantity is converted (formaldehyde in mg/m³ or ppb, power in kW). Several sensors of a room are averaged; `power` adds them up, `noise` takes the loudest. A sensor `unavailable` or not numeric doesn't count, and a room without readings isn't coloured.
+
+```yaml
+rooms:
+  - name: Living room
+    object_id: room_2_102
+    co2: sensor.living_co2
+    humidity: sensor.living_humidity
+    hcho: sensor.living_formaldehyde
+    power: [sensor.tv_plug_power, sensor.pc_plug_power]
+maps:                                # optional: other colours, or maps of other sensors
+  - key: co2
+    min: 400                         # the colours of the ready map, between 400 and 1400
+    max: 1400
+  - key: fridge                      # a new map: rooms get a "fridge" sensor
+    name: Fridge
+    unit: °C
+    min: 2
+    max: 8
+    colors: ['#3b82f6', '#22c55e', '#ef4444']
+```
+
+In `maps`, `min` and `max` move the colours of a ready map between them, `colors` spreads new colours (from the lowest value to the highest), `stops` gives them one by one (`[[400, '#22c55e'], [1000, '#facc15']]`), `aggregate` is `mean`, `sum` or `max`, `decimals` those of the label. In the editor, the sensors are in the page of a room (*Sensors of the maps*), and the maps in *State colours and room maps*. Only the sensors of the map on show redraw the card: plugs reporting their power every few seconds don't keep it busy while it shows another map.
+
+![The CO₂ map: 1,200 ppm in the living room, 650 in the bedroom, and the legend under the menu](docs/images/map-co2.jpg)
+
+### Alarms
+
+`alarms` of a room lists sensors of alarms (`binary_sensor`): while one of them is on, the room blinks, whatever the map (even with *No map*), with the kind of alarm written on it in its colour. The kind comes from the device class of the sensor: red for smoke, gas and carbon monoxide, orange-red for heat, blue for a water leak, light blue for cold, orange for safety, problem and tampering. With several alarms on, the most serious gives the colour.
+
+- `alarm_view: yes`: the camera goes to the room when one of its alarms goes on, from the side it was looking from, and shows its level if it was hidden.
+- `type3d: alarm`: the objects of a sensor blink in the colour of its kind (`alarm.color` changes it). For example, the dishwasher with the leak sensor under it. A tap opens the sensor.
+
+```yaml
+alarm_view: yes
+rooms:
+  - name: Kitchen
+    object_id: room_3_103
+    alarms: [binary_sensor.kitchen_smoke, binary_sensor.sink_leak]
+entities:
+  - entity: binary_sensor.dishwasher_leak
+    type3d: alarm
+    object_id: dishwasher
+```
+
+The blinking runs only while an alarm is on; when all are off the rooms show their map again.
+
+![A water leak in the bedroom: the room blinks in blue](docs/images/map-alarm.jpg)
+
+### Heating and cooling
+
+- `type3d: climate`: the objects of a heater or a cooler (a radiator, a split, a heated floor) glow orange while it heats, light blue while it cools, teal while it dries. A thermostat (`climate.*`) says what it does in `hvac_action`; without it, its mode and its current and target temperatures tell it. Any other entity heats while it is on: the switch of a boiler, the plug of an electric radiator (`climate.mode: cool` for a cooler). Options: `climate.heat_color`, `climate.cool_color`, `climate.glow` (0.8). A tap opens the entity, to change the target.
+- `climate` of a room (a thermostat): on the temperature map the label shows the target, `20.5 °C → 22 °C`, on orange while it heats and on blue while it cools. A room without a temperature sensor shows the temperature the thermostat measures.
+
+```yaml
+rooms:
+  - name: Living room
+    object_id: room_2_102
+    climate: climate.living_room        # no temperature sensor needed
+entities:
+  - entity: climate.living_room_valve   # or switch.boiler
+    type3d: climate
+    object_id: radiator_living
+```
+
+![A thermostat heating: the target on the label, the radiator glowing](docs/images/map-thermostat.jpg)
 
 ## Fixes
 
@@ -391,6 +477,7 @@ rooms:
 - Original bug (2.4.1): lamp colours. A lamp that changes colour temperature (Adaptive Lighting, for example) turned white at its first change and stayed white: the card read the temperature in mireds (`color_temp`), which Home Assistant removed from the state of lights in 2026.3. Lamps in `xy` or `hs` mode kept the colour they had when the card was loaded. Now the colour comes from `rgb_color`, which Home Assistant gives in every colour mode (computed from the temperature in `color_temp` mode), else from `color_temp_kelvin`, or from `color_temp` on older versions.
 - 2.6: on GPUs with 32 texture units the limit of the shadows was 30, but from 28 lights with shadows the shaders no longer compiled and the model went black: each shadow also takes a varying of the shaders, and these GPUs have 31 (a few go to the position, normal and texture coordinates of the materials). The limit now counts both, see [Shadows](#shadows). GPUs with 16 texture units keep their limit of 14.
 - 2.6: objects whose material has several textures (a GLB material with normal, metallic-roughness, occlusion or emissive textures) vanished when many lights had shadows: the limit left 2 texture units to the materials, and such a material takes up to 7 or more, so its shader no longer compiled. The limit now leaves the units the richest material of the model takes; the console and the card editor name it. See [Shadows](#shadows).
+- 2.7: a card without `entities` (only rooms, for example) never read the states: its rooms didn't change and the canvas kept its first size (300 × 150). The entities list is now empty when it is missing.
 - Original bug (2.4): `globalLightPower` as a sensor was read only when the model was loaded, and a state such as `unavailable` gave the torch an invalid intensity; `globalLightPower: 0` left the torch at 0.2. Now the sensor is read at every update, an unavailable one counts as the default (0.2), and 0 turns the torch off.
 
 Some of these were found and fixed first in other forks: [Steven-D-Morgan/hass-3d-floorplan](https://github.com/Steven-D-Morgan/hass-3d-floorplan) (covers, templates, textures, reload, WebGL context) and [dawidkulpa/HomeControl3D-card](https://github.com/dawidkulpa/HomeControl3D-card) (shadow limit).
@@ -404,7 +491,12 @@ Some of these were found and fixed first in other forks: [Steven-D-Morgan/hass-3
 - a lamp follows its state, brightness, colour and colour temperature;
 - the card follows the language of the profile, a regional variant and the `language` option;
 - the editor gets the objects of the model and the shadows from the preview, and shows its texts in the language of the card;
-- the refresh button brings the model back without errors.
+- the refresh button brings the model back without errors;
+- the sensor maps are in the menu once a room has their sensor, with the right colour, value, unit conversions and legend (2.7);
+- an alarm makes its room blink over any map with its kind written on it, its object glow, and the camera go to the room; everything goes back when it ends (2.7);
+- a heater glows while it heats (thermostat or switch), and a room shows the target and the temperature of its thermostat (2.7);
+- a card with only rooms, without `entities`, follows its sensors (2.7);
+- the editor shows the sensors, alarms and thermostat of a room, a field for each map of the configuration, and the list of maps (2.7).
 
 To run them locally: `npx playwright install --only-shell chromium` once, then `npm run build` and `npm run test:browser`.
 

@@ -178,3 +178,16 @@ test('example config: nothing is lost except defaults and empty values', () => {
   }
   for (const p of Object.keys(after)) assert.ok(p in before, 'added: ' + p);
 });
+
+test('sensor maps and rooms: empty maps left out, numbers written as numbers, sensors and alarms kept', () => {
+  const c = cleanConfig({
+    alarm_view: true,
+    entities: [],
+    maps: [{ key: 'co2', min: '400', max: '1400', colors: ['#00ff00', '', '#ff0000'] }, { key: '' }, { name: 'Fridge', key: 'fridge', decimals: '1' }],
+    rooms: [{ name: 'Kitchen', object_id: 'floor_kitchen', co2: 'sensor.co2', power: ['sensor.a', 'sensor.b'], alarms: 'binary_sensor.smoke', climate: '' }],
+  });
+  assert.equal(c.alarm_view, 'yes');
+  assert.deepEqual(c.maps, [{ key: 'co2', min: 400, max: 1400, colors: ['#00ff00', '#ff0000'] }, { name: 'Fridge', key: 'fridge', decimals: 1 }]);
+  assert.deepEqual(c.rooms[0], { name: 'Kitchen', object_id: 'floor_kitchen', co2: 'sensor.co2', power: ['sensor.a', 'sensor.b'], alarms: 'binary_sensor.smoke' });
+  assert.ok(!('alarm_view' in cleanConfig({ alarm_view: 'no', entities: [] })));
+});

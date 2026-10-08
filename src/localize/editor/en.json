@@ -114,7 +114,7 @@
     "count": "Drops",
     "sensor_x": "X sensor",
     "sensor_y": "Y sensor",
-    "unit": "Unit of the coordinates",
+    "unit": "Unit",
     "scale": "Scale",
     "flip_x": "Mirror X",
     "flip_y": "Mirror Y",
@@ -128,7 +128,29 @@
     "level": "Level",
     "add": "Add an object",
     "url_zoom": "View from the page address",
-    "language": "Language"
+    "language": "Language",
+    "alarm_view": "Go to the room of an alarm",
+    "humidity": "Humidity",
+    "co2": "CO₂",
+    "pm25": "PM2.5",
+    "pm10": "PM10",
+    "voc": "VOC",
+    "hcho": "Formaldehyde",
+    "radon": "Radon",
+    "noise": "Noise",
+    "power": "Power (smart plugs)",
+    "alarms": "Alarm sensors",
+    "climate": "Thermostat or heating",
+    "heat_color": "Colour when heating",
+    "cool_color": "Colour when cooling",
+    "glow": "Glow",
+    "mode": "When on, it",
+    "key": "Map",
+    "aggregate": "Several sensors",
+    "min": "Lowest value",
+    "max": "Highest value",
+    "decimals": "Decimals",
+    "colors": "Colours"
   },
   "helpers": {
     "path": "For example /local/floor3d/",
@@ -165,7 +187,24 @@
     "text": "A text or a template",
     "url_zoom": "A parameter name, e.g. area: ?area=kitchen shows the view kitchen",
     "object_id_entity": "An object, a <group>, or a name with * for all the objects it matches (Lamp_*)",
-    "language": "Of the card and of this editor"
+    "language": "Of the card and of this editor",
+    "alarm_view": "The camera goes to a room when one of its alarms goes on",
+    "power": "Their power is added up",
+    "voc": "µg/m³, ppb or an index without unit",
+    "hcho": "µg/m³, mg/m³ or ppb",
+    "alarms": "Smoke, gas, water…: the room blinks while one is on",
+    "climate": "Its target on the temperature map, and its temperature when the room has no sensor",
+    "heat_color": "Default #ff6a00",
+    "cool_color": "Default #38bdf8",
+    "glow": "Default 0.8",
+    "mode": "For a switch or a plug: on means heating or cooling",
+    "alarm_object_color": "Default: the colour of the kind of alarm",
+    "key": "A ready map, to change its colours, or a new name for other sensors of the rooms",
+    "unit": "Written after the value",
+    "min": "Of the first colour",
+    "max": "Of the last colour",
+    "decimals": "Of the value written on the room",
+    "colors": "From the lowest value to the highest, #rrggbb"
   },
   "options": {
     "language": {
@@ -191,7 +230,16 @@
       "none": "None",
       "temperature": "Temperature",
       "presence": "Presence",
-      "illuminance": "Illuminance"
+      "illuminance": "Illuminance",
+      "humidity": "Humidity",
+      "co2": "CO₂",
+      "pm25": "PM2.5",
+      "pm10": "PM10",
+      "voc": "VOC",
+      "hcho": "Formaldehyde",
+      "radon": "Radon",
+      "noise": "Noise",
+      "power": "Power"
     },
     "action": {
       "more-info": "Show the entity details",
@@ -242,6 +290,26 @@
       "mm": "mm",
       "cm": "cm",
       "m": "m"
+    },
+    "map_key": {
+      "humidity": "Humidity",
+      "co2": "CO₂",
+      "pm25": "PM2.5",
+      "pm10": "PM10",
+      "voc": "VOC",
+      "hcho": "Formaldehyde",
+      "radon": "Radon",
+      "noise": "Noise",
+      "power": "Power"
+    },
+    "aggregate": {
+      "mean": "Average",
+      "sum": "Sum",
+      "max": "Highest"
+    },
+    "mode": {
+      "heat": "Heats",
+      "cool": "Cools"
     }
   },
   "types": {
@@ -259,7 +327,9 @@
     "image": "Picture (TV screen)",
     "info": "Info box",
     "shower": "Shower",
-    "tracker": "Person tracker"
+    "tracker": "Person tracker",
+    "climate": "Heating or cooling",
+    "alarm": "Alarm (smoke, water…)"
   },
   "headings": {
     "initial_view": "Initial view",
@@ -282,7 +352,10 @@
     "camera_rotate": "Camera rotation",
     "light_light_direction": "Spot direction",
     "info_position": "Position (optional)",
-    "tracker_sensor_position": "Sensor position"
+    "tracker_sensor_position": "Sensor position",
+    "maps": "Sensor maps",
+    "map_sensors": "Sensors of the maps",
+    "alarms_climate": "Alarms and climate"
   },
   "ui": {
     "loading": "Loading…",
@@ -329,6 +402,12 @@
     "shadows_ok": "Lights with shadows: {lights}, at most {budget} on this device.",
     "shadows_extra": "{lights} lights with shadows, at most {budget} at once on this device: when more are on, the last ones switched on get their shadow when others are switched off.",
     "shadows_over": "{lights} lights with shadows, at most {budget} on this device (the sun first, then the entities in their order). These are drawn without shadow, and their light goes through the walls: {names}. Set Shadows to No on the lights whose shadow doesn't show, or use one light for all the objects of a lamp.",
-    "shadows_material": "The material {material} of the model takes {textures} texture units: each one above 2 is a shadow less."
+    "shadows_material": "The material {material} of the model takes {textures} texture units: each one above 2 is a shadow less.",
+    "add_map": "Add map",
+    "title_maps": "Sensor map",
+    "map_preset": "Ready map, other colours",
+    "map_custom": "New map",
+    "maps_hint": "The ready maps (humidity, CO₂, PM2.5, PM10, VOC, formaldehyde, radon, noise, power) only need the sensors in the rooms. Here: other colours for them, or maps of other sensors.",
+    "map_hint": "Lowest and highest value move the colours of a ready map; colours spreads new ones between them. A new map adds a sensor field to the rooms."
   }
 }
