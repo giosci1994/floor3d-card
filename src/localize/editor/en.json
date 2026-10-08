@@ -186,6 +186,8 @@
     "scale": "Default 0.001",
     "text": "A text or a template",
     "url_zoom": "A parameter name, e.g. area: ?area=kitchen shows the view kitchen",
+    "initialLevel": "Shown when the card opens and with the initial view. Empty: all the levels",
+    "level": "The view shows only this level. Empty: all the levels",
     "object_id_entity": "An object, a <group>, or a name with * for all the objects it matches (Lamp_*)",
     "language": "Of the card and of this editor",
     "alarm_view": "The camera goes to a room when one of its alarms goes on",

@@ -1,6 +1,7 @@
 // The test house, made when the tests start: ground, two rooms with floors, walls with windows and
 // doors, furniture, 30 small lamps under the ceiling and a TV. Sizes in cm, y up.
-// objFile()/mtlFile(): OBJ + MTL (MeshPhongMaterial in three.js); glbFile(rich): the same as a GLB
+// objFile()/mtlFile(): OBJ + MTL (MeshPhongMaterial in three.js), with objFile(level1) the objects
+// named in level1 on level 1 and the others on level 0; glbFile(rich): the same as a GLB
 // (MeshStandardMaterial), with rich the walls get every texture glTF has plus a clearcoat
 // (MeshPhysicalMaterial, 10 texture units with the lighting lookup table).
 import zlib from 'node:zlib';
@@ -69,13 +70,15 @@ export function mtlFile() {
     .join('');
 }
 
-export function objFile() {
+// Names with lvl000 or lvl001 in front, as the ExportToHASS plugin of Sweet Home 3D writes the levels.
+export function objFile(level1 = []) {
+  const level = (name) => (level1.length ? (level1.includes(name) ? 'lvl001' : 'lvl000') : '') + name;
   const lines = ['mtllib home.mtl'];
   [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]].forEach((n) => lines.push('vn ' + n.join(' ')));
   [[0, 0], [1, 0], [1, 1], [0, 1]].forEach((t) => lines.push('vt ' + t.join(' ')));
   let vi = 0;
   for (const [name, mat, x0, x1, y0, y1, z0, z1] of boxes) {
-    lines.push(`o ${name}`, `usemtl ${mat}`);
+    lines.push(`o ${level(name)}`, `usemtl ${mat}`);
     [[x0, y0, z0], [x1, y0, z0], [x1, y1, z0], [x0, y1, z0], [x0, y0, z1], [x1, y0, z1], [x1, y1, z1], [x0, y1, z1]].forEach((p) =>
       lines.push('v ' + p.join(' ')),
     );

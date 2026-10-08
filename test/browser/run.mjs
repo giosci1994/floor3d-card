@@ -636,3 +636,46 @@ test('card editor: only its preview answers (not the cards of the dashboard in e
   assert.deepEqual(errors, []);
   await page.close();
 });
+
+test('views: one with a level shows only that level, one without shows them all, the initial view shows initialLevel again', { timeout: TIMEOUT }, async () => {
+  const view = (zoom, x, level) => ({ zoom, camera_position: { x, y: 500, z: 300 }, camera_target: { x, y: 0, z: 0 }, ...(level === undefined ? {} : { level }) });
+  const zoom_areas = [view('Bedroom', 200, 1), view('Living', -200), view('Ground floor', 0, 0)];
+  const levels = (page) => page.evaluate(() => window.__card._levels.map((l) => l.visible));
+  const camera = (page) => page.evaluate(() => window.__card._camera.position.toArray().map((v) => Math.round(v)));
+
+  // The Views menu.
+  let { page, errors } = await open(house({ objfile: 'levels.obj', zoom_areas }));
+  const choose = (index) =>
+    page.evaluate((index) => {
+      const select = window.__card._zoommenu.querySelector('select[aria-label="Views"]');
+      select.value = String(index);
+      select.dispatchEvent(new Event('change'));
+    }, index);
+  assert.deepEqual(await levels(page), [true, true], 'the bedroom on level 1, the rest on level 0');
+  await choose(0);
+  assert.deepEqual(await levels(page), [false, true], 'Bedroom: level 1');
+  await choose(1);
+  assert.deepEqual(await levels(page), [true, true], 'Living, without a level: all the levels');
+  await choose(2);
+  assert.deepEqual(await levels(page), [true, false], 'Ground floor: level 0');
+  await choose(-1);
+  assert.deepEqual(await levels(page), [true, true], 'the initial view: all the levels');
+  assert.deepEqual(errors, []);
+  await page.close();
+
+  // The buttons of hideZoomMenu: yes jump to the view; the initial view shows initialLevel again.
+  ({ page, errors } = await open(house({ objfile: 'levels.obj', zoom_areas, hideZoomMenu: 'yes', initialLevel: 1 })));
+  const press = (index) => page.evaluate((index) => [...window.__card._zoombar.querySelectorAll('floor3d-button')].find((b) => b.index === index).click(), index);
+  const start = await camera(page);
+  assert.deepEqual(await levels(page), [false, true], 'initialLevel: 1');
+  await press(2);
+  assert.deepEqual(await levels(page), [true, false]);
+  await press(1);
+  assert.deepEqual(await levels(page), [true, true]);
+  assert.deepEqual(await camera(page), [-200, 500, 300]);
+  await press(-1);
+  assert.deepEqual(await levels(page), [false, true], 'initialLevel again');
+  assert.deepEqual(await camera(page), start);
+  assert.deepEqual(errors, []);
+  await page.close();
+});

@@ -273,6 +273,8 @@ With `click: yes`, a tap runs the action of the object: lights toggle. A long pr
 
 With `hideZoomMenu: no`, the "Views" menu at the top right moves smoothly to the `zoom_areas` and back to the initial view. The old button bar appears only with `hideZoomMenu: yes`.
 
+A view with `level` shows only that level, a view without it shows all the levels, and the initial view shows `initialLevel` again (all the levels when it is not set). The level buttons at the top left still show or hide a level at any time.
+
 ### Views from the page address
 
 With `url_parameters`, a parameter of the page address picks the view. The syntax is the one of [MephistoJB/floor3d-card](https://github.com/MephistoJB/floor3d-card), where the idea comes from.
@@ -481,13 +483,14 @@ entities:
 - 2.6: objects whose material has several textures (a GLB material with normal, metallic-roughness, occlusion or emissive textures) vanished when many lights had shadows: the limit left 2 texture units to the materials, and such a material takes up to 7 or more, so its shader no longer compiled. The limit now leaves the units the richest material of the model takes; the console and the card editor name it. See [Shadows](#shadows).
 - 2.7: Home Assistant sets `preview` not only on the card next to the editor but on every card of the dashboard in edit mode, and those answered the editor too: "Use the current view" could take the camera of the card behind the dialog (it seemed to work only once, without the target and the rotation), the object lists and the shadows could come from it, and after Save while paused the dashboard showed "Preview paused" until pause and play were pressed. Only the card outside the views of the dashboard answers now, and closing the editor ends the pause of any preview left. Reported in [issue #13](https://github.com/giosci1994/floor3d-card/issues/13).
 - 2.7: a card without `entities` (only rooms, for example) never read the states: its rooms didn't change and the canvas kept its first size (300 × 150). The entities list is now empty when it is missing.
+- 2.7.1: a view without `level` kept the levels hidden by the view chosen before it, and so did the initial view. Now a view without `level` shows all the levels, and the initial view shows `initialLevel` again. Reported in [issue #13](https://github.com/giosci1994/floor3d-card/issues/13).
 - Original bug (2.4): `globalLightPower` as a sensor was read only when the model was loaded, and a state such as `unavailable` gave the torch an invalid intensity; `globalLightPower: 0` left the torch at 0.2. Now the sensor is read at every update, an unavailable one counts as the default (0.2), and 0 turns the torch off.
 
 Some of these were found and fixed first in other forks: [Steven-D-Morgan/hass-3d-floorplan](https://github.com/Steven-D-Morgan/hass-3d-floorplan) (covers, templates, textures, reload, WebGL context) and [dawidkulpa/HomeControl3D-card](https://github.com/dawidkulpa/HomeControl3D-card) (shadow limit).
 
 ## Browser tests
 
-`test/browser/` runs the built card (`dist/`) in headless Chromium with software WebGL (SwiftShader), the same on every computer, on every pull request and push (`.github/workflows/build.yml`, about a minute). The test house is made by `model.mjs` when the tests start (OBJ + MTL, GLB, and a GLB whose walls have a material with 10 texture units), and `server.mjs` serves it with the test page. The tests check that:
+`test/browser/` runs the built card (`dist/`) in headless Chromium with software WebGL (SwiftShader), the same on every computer, on every pull request and push (`.github/workflows/build.yml`, about a minute). The test house is made by `model.mjs` when the tests start (OBJ + MTL, the same with the bedroom on a second level, GLB, and a GLB whose walls have a material with 10 texture units), and `server.mjs` serves it with the test page. The tests check that:
 
 - the model is drawn, with 30 lamps, the TV and the sun casting shadows, without errors in the page or in the shaders, in OBJ and GLB, and with the material with many textures; and that the shadow limit is the one of the GPU (see [Shadows](#shadows));
 - one light for a lamp of several objects goes in the middle of them, or on `light_object`;
@@ -500,7 +503,8 @@ Some of these were found and fixed first in other forks: [Steven-D-Morgan/hass-3
 - a heater glows while it heats (thermostat or switch), and a room shows the target and the temperature of its thermostat (2.7);
 - a card with only rooms, without `entities`, follows its sensors (2.7);
 - the editor shows the sensors, alarms and thermostat of a room, a field for each map of the configuration, and the list of maps (2.7);
-- only the preview answers the editor, not the cards of a dashboard in edit mode; picking an object and using the current view keep the pause; the camera of the preview stays where it was; closing the editor ends the pause (2.7).
+- only the preview answers the editor, not the cards of a dashboard in edit mode; picking an object and using the current view keep the pause; the camera of the preview stays where it was; closing the editor ends the pause (2.7);
+- a view with a level shows only that level, a view without one all of them, and the initial view `initialLevel` again, from the menu and from the buttons (2.7.1).
 
 To run them locally: `npx playwright install --only-shell chromium` once, then `npm run build` and `npm run test:browser`.
 

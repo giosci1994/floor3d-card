@@ -183,6 +183,8 @@
     "scale": "Standard 0.001",
     "text": "Ein Text oder ein Template",
     "url_zoom": "Ein Parametername, z. B. area: ?area=kueche zeigt die Ansicht kueche",
+    "initialLevel": "Gezeigt beim Öffnen der Karte und mit der Startansicht. Leer: alle Etagen",
+    "level": "Die Ansicht zeigt nur diese Etage. Leer: alle Etagen",
     "object_id_entity": "Ein Objekt, eine <Gruppe> oder ein Name mit * für alle passenden Objekte (Lampe_*)",
     "language": "Der Karte und dieses Editors",
     "alarm_view": "Die Kamera fährt zu einem Raum, wenn einer seiner Alarme ausgelöst wird",
