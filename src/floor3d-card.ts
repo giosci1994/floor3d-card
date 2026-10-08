@@ -137,6 +137,8 @@ type ShadowLight = THREE.PointLight | THREE.SpotLight | THREE.DirectionalLight;
 // The maps of the rooms that are always in the Map menu; the sensor maps (see maps.ts) are there once a
 // room has a sensor for them, or the configuration defines them.
 const MAP_MODES = ['temperature', 'presence', 'illuminance'];
+// Elements of a dashboard: Home Assistant sets preview on its cards while it is in edit mode.
+const DASHBOARD_TAGS = ['HUI-VIEW', 'HUI-SECTION', 'HUI-MASONRY-VIEW', 'HUI-SECTIONS-VIEW', 'HUI-PANEL-VIEW', 'HUI-SIDEBAR-VIEW'];
 const LABEL_BACKGROUND = 'rgba(0, 0, 0, 0.55)'; // behind the text of a room label, without alarm or thermostat
 
 // Share of daylight for an elevation of the sun, in degrees: night below -3, full light from 8.
@@ -313,8 +315,10 @@ export class Floor3dCard extends LitElement {
   @property({ attribute: false }) public layout?: string;
   @property({ attribute: false }) public isPanel?: boolean;
   @property({ attribute: false }) public editMode?: boolean;
-  // Set by Home Assistant on the card shown next to the card editor.
+  // Set by Home Assistant on the card shown next to the card editor, and on every card of a dashboard
+  // in edit mode: see _isEditorPreview.
   @property({ attribute: false }) public preview?: boolean;
+  private _wasEditorPreview?: boolean;
   // Editor of the card (only in the preview): a tap picks an object, and some objects are highlighted.
   private _pickMode = false;
   private _highlightHelpers: THREE.Object3D[] = [];
@@ -359,6 +363,7 @@ export class Floor3dCard extends LitElement {
     this._changeListener = () => {
       this._updateNearPlane();
       this._scheduleRender();
+      this._rememberCamera();
     };
     // The user moved the camera: the views menu no longer shows where the camera is.
     this._controlsStartListener = () => {
@@ -420,6 +425,9 @@ export class Floor3dCard extends LitElement {
     window.clearInterval(this._zIndexInterval);
 
     this._cancelTap();
+    // The preview going away while the editor is paused (Home Assistant replaces it at every change
+    // of the config): the next one shows its last picture, with the camera where it was.
+    if (previewState.paused && this._modelready && this._isEditorPreview()) this._snapshot();
     if (this._modelready) {
       // _to_animate stays as it is: connectedCallback restarts the loop if it is still needed.
       this._lastFrameTime = null;
@@ -799,7 +807,7 @@ export class Floor3dCard extends LitElement {
       }
 
       if (this._content && !this._renderer) {
-        if (this.preview && previewState.paused) this._showPausedPreview();
+        if (this._isEditorPreview() && previewState.paused) this._showPausedPreview();
         else this.display3dmodel();
       }
 
@@ -1095,25 +1103,40 @@ export class Floor3dCard extends LitElement {
   // --- Editor (only the card in the preview of the card editor listens) ---------------------------
 
   private _toEditor(detail: any): void {
+    if (!this._isEditorPreview()) return;
     window.dispatchEvent(new CustomEvent(PREVIEW_EVENT, { detail }));
   }
 
+  // The card next to the card editor. Home Assistant sets preview on it, but also on every card of
+  // the dashboard in edit mode (hui-view: element.preview = lovelace.editMode): those are inside a
+  // view or a section, and must not answer the editor (they did, and "Use the current view" could
+  // take the camera of the card behind the dialog) nor stay paused (after Save, the dashboard showed
+  // "Preview paused"). Once disconnected, the answer of the last time it was connected.
+  private _isEditorPreview(): boolean {
+    if (!this.preview) return false;
+    if (!this.isConnected) return !!this._wasEditorPreview;
+    let node: any = this.parentNode || (this.getRootNode() as any).host;
+    while (node) {
+      if (DASHBOARD_TAGS.includes(node.nodeName)) {
+        this._wasEditorPreview = false;
+        return false;
+      }
+      node = node.parentNode || node.host;
+    }
+    this._wasEditorPreview = true;
+    return true;
+  }
+
   private _onEditor(detail: any): void {
-    if (!this.preview || !detail) return;
+    if (!detail || !this._isEditorPreview()) return;
     if (detail.request === 'objects' && this._modelready) {
       this._toEditor({ objects: this._modelObjectNames() });
       if (this._shadowStatus) this._toEditor({ shadows: this._shadowStatus });
     }
-    if (detail.request === 'camera' && this._camera && this._controls) {
-      const { position, rotation } = this._camera;
-      const target = this._controls.target;
-      this._toEditor({
-        camera: {
-          camera_position: { x: position.x, y: position.y, z: position.z },
-          camera_target: { x: target.x, y: target.y, z: target.z },
-          camera_rotate: { x: rotation.x, y: rotation.y, z: rotation.z },
-        },
-      });
+    if (detail.request === 'camera') {
+      // A paused preview has no camera: where the camera of the last live preview was.
+      if (this._camera && this._controls) this._toEditor({ camera: this._cameraView() });
+      else if (previewState.camera) this._toEditor({ camera: previewState.camera.view });
     }
     if ('pick' in detail) {
       this._pickMode = !!detail.pick;
@@ -1123,24 +1146,64 @@ export class Floor3dCard extends LitElement {
     if (detail.request === 'snapshot') {
       // The preview is being paused: its picture stays on show in the cards created meanwhile.
       previewState.image = undefined;
-      if (this._renderer && this._modelready) {
-        this._render(); // the drawing buffer can be read only in the task that draws it
-        try {
-          previewState.image = this._renderer.domElement.toDataURL('image/jpeg', 0.85);
-        } catch {
-          previewState.image = undefined;
-        }
-      }
+      if (this._renderer && this._modelready) this._snapshot();
     }
-    if (detail.request === 'reload') {
-      if (this._renderer) {
-        this.rerender();
-      } else if (this._pausedEl) {
-        this._pausedEl.remove();
-        this._pausedEl = undefined;
-        this.display3dmodel();
-      }
+    if (detail.request === 'reload' && this._renderer) {
+      this.rerender();
+    } else if (['reload', 'live', 'resume'].includes(detail.request) && this._pausedEl) {
+      // The model, in place of the picture: to pick an object while the preview stays paused
+      // (live), or because the pause ended (resume, reload).
+      this._pausedEl.remove();
+      this._pausedEl = undefined;
+      this.display3dmodel();
     }
+  }
+
+  // The picture of the preview, kept for the cards created while it is paused.
+  private _snapshot(): void {
+    try {
+      this._render(); // the drawing buffer can be read only in the task that draws it
+      previewState.image = this._renderer.domElement.toDataURL('image/jpeg', 0.85);
+    } catch {
+      previewState.image = undefined;
+    }
+  }
+
+  // Where the camera is, as the initial view and the views write it.
+  private _cameraView(): { camera_position: any; camera_target: any; camera_rotate: any } {
+    const { position, rotation } = this._camera;
+    const target = this._controls.target;
+    return {
+      camera_position: { x: position.x, y: position.y, z: position.z },
+      camera_target: { x: target.x, y: target.y, z: target.z },
+      camera_rotate: { x: rotation.x, y: rotation.y, z: rotation.z },
+    };
+  }
+
+  // The model and the initial view a remembered camera is for (see _rememberCamera).
+  private _cameraKey(): string {
+    const c = this._config;
+    return JSON.stringify([c.path, c.objfile, c.camera_position, c.camera_target, c.camera_rotate]);
+  }
+
+  // The preview remembers where its camera is: Home Assistant creates the preview again at every
+  // change of the configuration, and the new one went back to the initial view, so zoom and camera
+  // had to be set again after each change (or each object picked). See _restoreCamera.
+  private _rememberCamera(): void {
+    if (!this._camera || !this._controls || !this._modelready || !this._isEditorPreview()) return;
+    previewState.camera = { key: this._cameraKey(), view: this._cameraView() };
+  }
+
+  // A new preview goes back to the camera of the previous one, unless the initial view or the model
+  // changed (then it shows the new initial view, as "Use the current view" does).
+  private _restoreCamera(): void {
+    const remembered = previewState.camera;
+    if (!remembered || remembered.key !== this._cameraKey() || !this._isEditorPreview()) return;
+    const { camera_position: p, camera_target: t } = remembered.view;
+    this._camera.position.set(p.x, p.y, p.z);
+    this._controls.target.set(t.x, t.y, t.z);
+    this._controls.update();
+    this._updateNearPlane();
   }
 
   // The preview of the card editor while it is paused (see preview.ts): the last picture of the
@@ -1164,6 +1227,9 @@ export class Floor3dCard extends LitElement {
     box.appendChild(label);
     this._content.appendChild(box);
     this._pausedEl = box;
+    // The editor may be picking objects (those of a group, one tap after the other): it asks then
+    // for the model.
+    this._toEditor({ paused: true });
   }
 
   // Names of the objects of the model (without the level prefix), for the object menus of the editor.
@@ -1968,7 +2034,7 @@ export class Floor3dCard extends LitElement {
 
     if (this._content && this._renderer) {
       this._modelready = true;
-      if (this.preview) this._toEditor({ objects: this._modelObjectNames() });
+      this._toEditor({ objects: this._modelObjectNames() });
       console.log('Show canvas');
       this._levelbar = document.createElement('div');
       this._zoombar = document.createElement('div');
@@ -2033,6 +2099,8 @@ export class Floor3dCard extends LitElement {
 
       this._urlView = undefined; // a new model: the view of the page applies again
       this._applyUrlView(false);
+      this._restoreCamera();
+      this._rememberCamera();
 
       this._resizeCanvas();
 
@@ -3818,7 +3886,7 @@ export class Floor3dCard extends LitElement {
       textures: this._textureUnits.units,
       material: this._textureUnits.material,
     };
-    if (this.preview) this._toEditor({ shadows: this._shadowStatus });
+    this._toEditor({ shadows: this._shadowStatus });
   }
 
   // Something moved (a door, a cover, an object shown or hidden): the shadow maps of the lights

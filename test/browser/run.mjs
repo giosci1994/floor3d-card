@@ -525,3 +525,114 @@ test('card editor: a room with the sensors of the maps, its alarms and thermosta
   assert.deepEqual(errors, []);
   await page.close();
 });
+
+test('card editor: only its preview answers (not the cards of the dashboard in edit mode); picking and the current view keep the pause; the camera stays', { timeout: TIMEOUT }, async () => {
+  const config = house({ sun: 'no', shadow: 'no', entities: lamps(2) });
+  const { page, errors } = await open(config);
+  const ready = (name) => page.waitForFunction((name) => window[name] && window[name]._modelready, name, { timeout: 120000 });
+  // A card of the dashboard in edit mode (Home Assistant sets preview on it too) and the preview.
+  const add = (name, inView) =>
+    page.evaluate(
+      ({ name, inView }) => {
+        const card = document.createElement('floor3d-card');
+        card.setConfig(JSON.parse(JSON.stringify(window.__card._config)));
+        card.hass = window.__hass();
+        card.preview = true;
+        const box = document.createElement('div');
+        box.style.cssText = 'width: 500px; height: 380px';
+        box.appendChild(card);
+        if (inView) {
+          const view = document.createElement('hui-view');
+          view.appendChild(box);
+          document.body.appendChild(view);
+        } else {
+          document.body.appendChild(box);
+        }
+        window[name] = card;
+      },
+      { name, inView },
+    );
+  await page.evaluate(() => window.__card.remove()); // not part of this test
+  await add('__dashboard', true);
+  await ready('__dashboard');
+  await add('__preview', false);
+  await ready('__preview');
+  const camera = (name) => page.evaluate((name) => window[name]._camera.position.toArray().map((v) => Math.round(v)), name);
+  // The user moves the camera of the preview.
+  await page.evaluate(() => {
+    window.__preview._camera.position.set(300, 700, 500);
+    window.__preview._controls.update();
+  });
+  const moved = await camera('__preview');
+  const editorCamera = () => page.evaluate(() => window.__ed._config.camera_position && [window.__ed._config.camera_position.x, window.__ed._config.camera_position.y, window.__ed._config.camera_position.z].map(Math.round));
+  await page.evaluate(async () => {
+    const ed = await window.__preview.constructor.getConfigElement();
+    ed.hass = window.__hass();
+    ed.setConfig(JSON.parse(JSON.stringify(window.__preview._config)));
+    document.body.append(ed);
+    window.__ed = ed;
+    await new Promise((r) => setTimeout(r, 100));
+    ed._useCurrentView();
+  });
+  assert.deepEqual(await editorCamera(), moved, 'the camera of the preview, not the one of the card behind');
+
+  // Pause, then Home Assistant replaces the preview (a change of the configuration).
+  await page.evaluate(() => {
+    window.__ed._setPaused(true);
+    window.__preview.remove();
+  });
+  await add('__preview2', false);
+  await add('__dashboard2', true);
+  await ready('__dashboard2');
+  let state = await page.evaluate(() => ({
+    placeholder: !!window.__preview2._pausedEl,
+    image: !!(window.__preview2._pausedEl && window.__preview2._pausedEl.querySelector('img')),
+    dashboardLive: !!window.__dashboard2._renderer && !window.__dashboard2._pausedEl,
+  }));
+  assert.deepEqual(state, { placeholder: true, image: true, dashboardLive: true }, 'only the preview shows the picture of the pause');
+
+  // "Use the current view" while paused: the camera of the last live preview, and the pause stays.
+  await page.evaluate(() => {
+    window.__ed._config = { ...window.__ed._config, camera_position: undefined };
+    window.__ed._useCurrentView();
+  });
+  assert.deepEqual(await editorCamera(), moved);
+  assert.equal(await page.evaluate(() => window.__ed._paused), true);
+
+  // "Pick in the preview" while paused: the preview loads the model, where the camera was; the
+  // pause stays, also after the object is picked.
+  await page.evaluate(() => window.__ed._startPick({ path: ['entities', 0, 'object_id'] }));
+  await ready('__preview2');
+  assert.deepEqual(await camera('__preview2'), moved, 'the camera where it was, not the initial view');
+  state = await page.evaluate(() => ({ paused: window.__ed._paused, pick: window.__preview2._pickMode }));
+  assert.deepEqual(state, { paused: true, pick: true });
+  await page.evaluate(() => window.__preview2._toEditor({ picked: 'lamp_7' }));
+  state = await page.evaluate(() => ({ paused: window.__ed._paused, object: window.__ed._config.entities[0].object_id }));
+  assert.deepEqual(state, { paused: true, object: 'lamp_7' });
+
+  // Closing the editor (Save or X) ends the pause: a preview still showing the picture loads.
+  await page.evaluate(() => window.__preview2.remove());
+  await add('__preview3', false);
+  assert.equal(await page.evaluate(() => !!window.__preview3._pausedEl), true);
+  await page.evaluate(() => window.__ed.remove());
+  await ready('__preview3');
+  assert.equal(await page.evaluate(() => !!window.__preview3._pausedEl), false);
+  // A new preview with the same initial view goes back to the camera; with another, to the new one.
+  await add('__preview4', false);
+  await ready('__preview4');
+  assert.deepEqual(await camera('__preview4'), moved);
+  await page.evaluate(() => {
+    const config = JSON.parse(JSON.stringify(window.__card._config));
+    config.camera_position = { x: 0, y: 1500, z: 10 };
+    const card = document.createElement('floor3d-card');
+    card.setConfig(config);
+    card.hass = window.__hass();
+    card.preview = true;
+    document.body.appendChild(card);
+    window.__preview5 = card;
+  });
+  await ready('__preview5');
+  assert.notDeepEqual(await camera('__preview5'), moved, 'another initial view: shown');
+  assert.deepEqual(errors, []);
+  await page.close();
+});

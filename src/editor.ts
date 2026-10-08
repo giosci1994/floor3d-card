@@ -247,8 +247,10 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
     this.removeEventListener('focusout', this._flushListener);
     window.removeEventListener('pointerdown', this._flushListener, true);
     this._flush();
-    previewState.paused = false; // the next editor starts with a live preview
-    this._toPreview({ pick: false, highlight: [] });
+    // The next editor starts with a live preview; a preview still paused shows the model.
+    const paused = previewState.paused;
+    previewState.paused = false;
+    this._toPreview({ pick: false, highlight: [], ...(paused ? { request: 'resume' } : {}) });
   }
 
   public setConfig(config: any): void {
@@ -362,6 +364,8 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
       this._highlightCurrent();
     }
     if (detail.shadows) this._shadows = detail.shadows;
+    // A new preview showing the picture of the pause, while objects are being picked: the model.
+    if (detail.paused && this._picking) this._toPreview({ request: 'live' });
     if (detail.picked && this._picking) this._onPicked(detail.picked);
     if (detail.camera && this._cameraTarget) {
       const target = this._cameraTarget;
@@ -373,11 +377,7 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
   private _cameraTarget?: { list?: ListKey; index?: number };
 
   private _useCurrentView(list?: ListKey, index?: number): void {
-    // A paused preview has no camera: it is resumed first, to be moved to the view.
-    if (this._paused) {
-      this._setPaused(false);
-      return;
-    }
+    // A paused preview answers with the camera of the last live one: the pause stays.
     this._cameraTarget = { list, index };
     this._toPreview({ request: 'camera' });
   }
@@ -402,9 +402,11 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
   }
 
   private _startPick(target: PickTarget): void {
-    if (this._paused) this._setPaused(false); // objects are picked in the live preview
     const same = this._picking && JSON.stringify(this._picking) === JSON.stringify(target);
     this._picking = same ? undefined : target;
+    // Objects are picked in the model: a paused preview showing its picture loads it, and the
+    // pause stays (before, picking resumed the preview, which went back to the initial view).
+    if (!same && this._paused) this._toPreview({ request: 'live' });
     this._toPreview({ pick: !same });
   }
 
