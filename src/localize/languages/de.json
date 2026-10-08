@@ -1,0 +1,25 @@
+{
+  "common": {
+    "version": "Version",
+    "invalid_configuration": "Ungültige Konfiguration",
+    "show_warning": "Warnung anzeigen",
+    "show_error": "Fehler anzeigen",
+    "views": "Ansichten",
+    "initial_view": "Startansicht",
+    "reset": "zurücksetzen",
+    "map": "Karte",
+    "map_none": "Keine Karte",
+    "map_temperature": "Temperaturen",
+    "map_presence": "Anwesenheit",
+    "map_illuminance": "Helligkeit",
+    "preview_paused": "Vorschau angehalten: Änderungen erscheinen, sobald sie fortgesetzt wird",
+    "loading_materials": "Materialien werden geladen",
+    "loading_model": "Modell wird geladen",
+    "preparing": "3D-Szene wird vorbereitet",
+    "load_error": "Das Modell konnte nicht geladen werden",
+    "setup_error": "Fehler beim Vorbereiten des Modells, siehe Browserkonsole",
+    "clear_selections": "Auswahl aufheben ({count})",
+    "enable_selection": "Auswahl aktivieren",
+    "disable_selection": "Auswahl deaktivieren"
+  }
+}

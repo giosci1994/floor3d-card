@@ -103,6 +103,7 @@ export interface Floor3dCardConfig {
   color: string;
   show_warning: boolean;
   show_error: boolean;
+  language: string; // en, it, de, nb; missing or auto: the language of the user
   hideZoomMenu: string;
   // Rendering (three.js 0.186 build)
   exposure: number | string;

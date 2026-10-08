@@ -32,17 +32,19 @@ import { previewState } from './preview';
 import {
   ARRAY_VECTORS,
   BLOCK_SWITCHES,
-  HEADINGS,
   SECTIONS,
   SWITCHES,
   TYPES,
   Schema,
+  VECTOR_HEADINGS,
   colorConditionSchema,
-  computeHelper,
-  computeLabel,
   entityActionsSchema,
   entitySchema,
   groupSchema,
+  headingKey,
+  helperFor,
+  labelFor,
+  localizeSchema,
   objectField,
   objectListField,
   roomSchema,
@@ -51,6 +53,8 @@ import {
   zoomObjectSchema,
   zoomSchema,
 } from './editor-schema';
+import { pickLanguage } from './localize/localize';
+import { Translator, translator } from './localize/editor';
 
 type ListKey = 'entities' | 'object_groups' | 'zoom_areas' | 'rooms';
 type View = { list?: ListKey; index?: number };
@@ -87,6 +91,12 @@ function switchesFromForm(data: any, original: any, switches: { [key: string]: '
   return object;
 }
 
+// The top-level options in the form: switches as toggles, and the language menu on "of your profile"
+// while the card has none (cleanConfig leaves out language: auto).
+function topToForm(config: any): any {
+  return { ...switchesToForm(config, SWITCHES), language: config.language || 'auto' };
+}
+
 // Values cleared in a form: removed from the config.
 function dropEmpty(object: any): any {
   Object.keys(object).forEach((key) => {
@@ -101,6 +111,8 @@ function entityToForm(entity: any): any {
   Object.entries(BLOCK_SWITCHES).forEach(([block, switches]) => {
     if (isObject(data[block]) || data.type3d === block) data[block] = switchesToForm(data[block] || {}, switches);
   });
+  // light_object alone also means one light for all the objects (as in floor3dx-card).
+  if (isObject(entity.light) && entity.light.light_object && entity.light.single == null) data.light.single = true;
   Object.entries(ARRAY_VECTORS).forEach(([block, keys]) => {
     if (!isObject(data[block])) return;
     data[block] = { ...data[block] };
@@ -117,6 +129,12 @@ function entityFromForm(data: any, original: any): any {
   Object.entries(BLOCK_SWITCHES).forEach(([block, switches]) => {
     if (isObject(entity[block])) entity[block] = switchesFromForm(entity[block], (original || {})[block], switches);
   });
+  const light = entity.light;
+  const before = isObject((original || {}).light) ? original.light : {};
+  if (isObject(light) && light.light_object) {
+    if (light.single !== 'yes') delete light.light_object; // one light switched off: its object goes too
+    else if (before.single == null) delete light.single; // light_object alone says it
+  }
   Object.entries(ARRAY_VECTORS).forEach(([block, keys]) => {
     if (!isObject(entity[block])) return;
     keys.forEach((key) => {
@@ -166,6 +184,17 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
   @state() private _listObjects: string[] = [];
   @state() private _picking?: PickTarget;
   @state() private _paused = false; // preview paused (see preview.ts)
+  // Shadows of the preview: the limit of the GPU of this device, the lights with shadows, the
+  // entities (by position) whose lights are left without, and the material of the model that takes
+  // the most texture units (they lower the limit).
+  @state() private _shadows?: {
+    budget: number;
+    lights: number;
+    dropped: number[];
+    extralightmode: boolean;
+    textures?: number;
+    material?: string;
+  };
   private _held?: string;
   private _pending?: any; // config waiting to be sent to Home Assistant
   private _timer?: number;
@@ -177,6 +206,18 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
   private _keys = new WeakMap<Record<string, unknown>, string>();
   private _objectlist?: string;
   private _previewListener = (ev: Event): void => this._onPreview((ev as CustomEvent).detail);
+  private _translator?: Translator & { language: string };
+
+  // The texts in the language of the card (its language option, else the one of the user).
+  private get _tr(): Translator {
+    const language = pickLanguage(this._config && this._config.language, this.hass && this.hass.locale && this.hass.locale.language, this.hass && this.hass.language);
+    if (!this._translator || this._translator.language !== language) this._translator = { ...translator(language), language };
+    return this._translator;
+  }
+
+  private _t(key: string, vars?: { [name: string]: string | number }): string {
+    return this._tr.t(key, vars);
+  }
 
   public connectedCallback(): void {
     super.connectedCallback();
@@ -251,11 +292,11 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
   private _previewButtons(): TemplateResult {
     return html`
       <ha-icon-button
-        .label=${this._paused ? 'Resume the preview' : 'Pause the preview (it keeps its last picture while you edit)'}
+        .label=${this._t(this._paused ? 'ui.resume_preview' : 'ui.pause_preview')}
         .path=${this._paused ? mdiPlay : mdiPause}
         @click=${() => this._setPaused(!this._paused)}
       ></ha-icon-button>
-      <ha-icon-button .label=${'Reload the preview'} .path=${mdiRefresh} @click=${() => this._reloadPreview()}></ha-icon-button>
+      <ha-icon-button .label=${this._t('ui.reload_preview')} .path=${mdiRefresh} @click=${() => this._reloadPreview()}></ha-icon-button>
     `;
   }
 
@@ -315,6 +356,7 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
       if (this._picking) this._toPreview({ pick: true });
       this._highlightCurrent();
     }
+    if (detail.shadows) this._shadows = detail.shadows;
     if (detail.picked && this._picking) this._onPicked(detail.picked);
     if (detail.camera && this._cameraTarget) {
       const target = this._cameraTarget;
@@ -455,7 +497,7 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
   protected render(): TemplateResult | typeof nothing {
     if (!this.hass || !this._config) return nothing;
     if (this._mode === 'classic') return html`${this._classic || nothing}`;
-    if (this._mode === 'loading') return html`<div class="loading">Loading…</div>`;
+    if (this._mode === 'loading') return html`<div class="loading">${this._t('ui.loading')}</div>`;
     const { list, index } = this._view;
     if (list && index !== undefined && this._list(list)[index] !== undefined) {
       return this._renderItemEditor(list, index);
@@ -464,17 +506,17 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
       <div class="version">
         floor3d-card ${CARD_VERSION} ${this._previewButtons()}
       </div>
-      ${SECTIONS.map((section) => this._renderPanel(section.key, section.title, section.icon, () =>
+      ${SECTIONS.map((section) => this._renderPanel(section.key, this._t('sections.' + section.key), section.icon, () =>
         this._renderContent(section.content(this._config), this._config, (data) => this._setTop(data), true),
       ))}
-      ${this._renderPanel('entities', `Entities (${this._list('entities').length})`, 'mdi:format-list-bulleted', () =>
-        this._renderList('entities', 'Add entity', { entity: '' }),
+      ${this._renderPanel('entities', this._t('ui.entities', { count: this._list('entities').length }), 'mdi:format-list-bulleted', () =>
+        this._renderList('entities', this._t('ui.add_entity'), { entity: '' }),
       )}
-      ${this._renderPanel('object_groups', `Object groups (${this._list('object_groups').length})`, 'mdi:group', () =>
-        this._renderList('object_groups', 'Add group', { object_group: '', objects: [] }),
+      ${this._renderPanel('object_groups', this._t('ui.object_groups', { count: this._list('object_groups').length }), 'mdi:group', () =>
+        this._renderList('object_groups', this._t('ui.add_group'), { object_group: '', objects: [] }),
       )}
-      ${this._renderPanel('zoom_areas', `Views (${this._list('zoom_areas').length})`, 'mdi:magnify-expand', () =>
-        this._renderList('zoom_areas', 'Add view', { zoom: '' }),
+      ${this._renderPanel('zoom_areas', this._t('ui.views', { count: this._list('zoom_areas').length }), 'mdi:magnify-expand', () =>
+        this._renderList('zoom_areas', this._t('ui.add_view'), { zoom: '' }),
       )}
     `;
   }
@@ -510,7 +552,7 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
   ): TemplateResult[] {
     return items.map((item) => {
       if (typeof item !== 'string') {
-        return this._form(item, top ? switchesToForm(data, SWITCHES) : entityToForm(data), (value) =>
+        return this._form(item, top ? topToForm(data) : entityToForm(data), (value) =>
           onChange(top ? value : entityFromForm(value, data)),
         );
       }
@@ -519,43 +561,47 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
           return this._form(
             [objectListField('sun_roof', this._objectOptions())],
             { sun_roof: Array.isArray(data.sun_roof) ? data.sun_roof : [] },
-            (value) => onChange({ ...switchesToForm(data, SWITCHES), sun_roof: value.sun_roof?.length ? value.sun_roof : undefined }),
-            'Indoor floors: roof for the sun',
+            (value) => onChange({ ...topToForm(data), sun_roof: value.sun_roof?.length ? value.sun_roof : undefined }),
+            this._t('headings.sun_roof'),
           );
         case 'rooms':
           return html`
-            <div class="heading">Rooms</div>
-            ${this._renderList('rooms', 'Add room', { name: '' })}
+            <div class="heading">${this._t('headings.rooms')}</div>
+            ${this._renderList('rooms', this._t('ui.add_room'), { name: '' })}
           `;
         case 'colorcondition':
           return this._renderColorConditions(list as ListKey, index as number, data);
+        case 'shadow_status':
+          return this._renderShadowStatus();
         default:
-          if (item in HEADINGS) {
+          if (VECTOR_HEADINGS.includes(item)) {
             // A vector inside the options block: block.key
             const [block, key] = item.split('.');
             return this._form(
               [{ name: block, type: 'grid', schema: [vector(key)] }],
               entityToForm(data),
               (value) => onChange(entityFromForm(value, data)),
-              HEADINGS[item],
+              this._t(headingKey(item)),
             );
           }
-          return html`<div class="heading">${item}</div>`;
+          return html`<div class="heading">${this._t('headings.' + item)}</div>`;
       }
     });
   }
 
   private _form(schema: Schema[], data: any, onChange: (data: any) => void, heading?: string): TemplateResult {
     // A vector alone gets its name above it (ha-form shows no label for a grid).
-    const title = heading ?? (schema.length === 1 && HEADINGS[schema[0].name] ? HEADINGS[schema[0].name] : undefined);
+    const vectorAlone = schema.length === 1 && VECTOR_HEADINGS.includes(schema[0].name);
+    const title = heading ?? (vectorAlone ? this._t(headingKey(schema[0].name)) : undefined);
+    const { lookup } = this._tr;
     return html`
       ${title ? html`<div class="heading">${title}</div>` : nothing}
       <ha-form
         .hass=${this.hass}
         .data=${data}
-        .schema=${schema}
-        .computeLabel=${computeLabel}
-        .computeHelper=${computeHelper}
+        .schema=${localizeSchema(schema, lookup)}
+        .computeLabel=${labelFor(lookup)}
+        .computeHelper=${helperFor(lookup)}
         @value-changed=${(ev: CustomEvent) => {
           ev.stopPropagation();
           onChange(ev.detail.value);
@@ -576,47 +622,96 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
     return known.length > 0 && !known.includes(id);
   }
 
+  // The objects of an entity: those of its group, or those its name with * matches.
+  private _entityParts(id: string): string[] {
+    if (!id) return [];
+    const group = /^<(.*)>$/.exec(id);
+    if (group) {
+      const found = this._list('object_groups').find((g) => isObject(g) && g.object_group === group[1]);
+      return found ? (found.objects || []).map((o) => (isObject(o) ? o.object_id : o)).filter((o) => o) : [];
+    }
+    if (objectPattern(id)) return matchObjects(id, Array.from(new Set([...this._modelObjects, ...this._listObjects])));
+    return [id];
+  }
+
   // The object of an entity in its line: a name with * says how many objects it matches.
   private _objectText(id: string): string {
-    if (!id) return 'no object';
-    if (this._missing(id)) return id + ' (not in the model)';
+    if (!id) return this._t('ui.no_object');
+    if (this._missing(id)) return this._t('ui.not_in_model', { id });
     const known = Array.from(new Set([...this._modelObjects, ...this._listObjects]));
     if (!objectPattern(id) || known.length === 0) return id;
     const count = matchObjects(id, known).length;
-    return id + ' (' + count + ' object' + (count === 1 ? '' : 's') + ')';
+    return this._t(count === 1 ? 'ui.matches_one' : 'ui.matches_other', { id, count });
   }
 
-  private _describe(list: ListKey, item: any): { icon: string; primary: string; secondary: string; warning?: boolean } {
+  private _describe(list: ListKey, item: any, index: number): { icon: string; primary: string; secondary: string; warning?: boolean } {
     if (list === 'entities') {
       const entity = isObject(item) ? item : { entity: item };
       const type = TYPES.find(([value]) => value === entity.type3d);
       const state = entity.entity && this.hass?.states[entity.entity];
-      const name = state ? state.attributes.friendly_name || entity.entity : entity.entity || 'No entity';
       const missing = this._missing(entity.object_id);
-      const parts = [type ? type[1] : 'No type', this._objectText(entity.object_id)];
-      if (entity.entity && !state) parts.unshift('Entity not found');
+      const parts = [type ? this._t('types.' + type[0]) : this._t('ui.no_type'), this._objectText(entity.object_id)];
+      if (entity.entity && !state) parts.unshift(this._t('ui.entity_not_found'));
+      const noShadow = this._noShadow(index);
+      if (noShadow) parts.push(this._t('ui.no_shadow'));
       return {
-        icon: type ? type[2] : 'mdi:help-circle-outline',
-        primary: name,
+        icon: type ? type[1] : 'mdi:help-circle-outline',
+        primary: this._entityName(entity),
         secondary: parts.join(' · '),
-        warning: !state || !type || !entity.object_id || missing,
+        warning: !state || !type || !entity.object_id || missing || noShadow,
       };
     }
     if (list === 'object_groups') {
       const count = (item.objects || []).length;
-      return { icon: 'mdi:group', primary: item.object_group || 'No name', secondary: `${count} object${count === 1 ? '' : 's'}`, warning: !item.object_group };
+      return {
+        icon: 'mdi:group',
+        primary: item.object_group || this._t('ui.no_name'),
+        secondary: this._t(count === 1 ? 'ui.objects_one' : 'ui.objects_other', { count }),
+        warning: !item.object_group,
+      };
     }
     if (list === 'zoom_areas') {
-      const kind = item.object_id ? 'Around ' + item.object_id : item.camera_position ? 'Camera position' : 'Not set';
-      return { icon: 'mdi:magnify-expand', primary: item.zoom || 'No name', secondary: kind, warning: !item.zoom };
+      const kind = item.object_id
+        ? this._t('ui.around', { id: item.object_id })
+        : this._t(item.camera_position ? 'ui.camera_position' : 'ui.not_set');
+      return { icon: 'mdi:magnify-expand', primary: item.zoom || this._t('ui.no_name'), secondary: kind, warning: !item.zoom };
     }
     const missing = this._missing(item.object_id);
     return {
       icon: 'mdi:floor-plan',
-      primary: item.name || 'No name',
-      secondary: item.object_id ? item.object_id + (missing ? ' (not in the model)' : '') : 'no object',
+      primary: item.name || this._t('ui.no_name'),
+      secondary: item.object_id ? (missing ? this._t('ui.not_in_model', { id: item.object_id }) : item.object_id) : this._t('ui.no_object'),
       warning: !item.object_id || missing,
     };
+  }
+
+  private _entityName(entity: any): string {
+    const state = entity.entity && this.hass?.states[entity.entity];
+    return state ? state.attributes.friendly_name || entity.entity : entity.entity || this._t('ui.no_entity');
+  }
+
+  // The lights of the entity at this position are drawn without shadow: the GPU of this device draws
+  // no more (see _shadowBudget in floor3d-card.ts).
+  private _noShadow(index: number): boolean {
+    const shadow = this._config.shadow === 'yes' || this._config.shadow === true;
+    return shadow && !!this._shadows && this._shadows.dropped.includes(index);
+  }
+
+  // How many shadows the preview draws, against the limit of the GPU of this device. Past it, the
+  // last lights get none and their light goes through the walls.
+  private _renderShadowStatus(): TemplateResult {
+    const s = this._shadows;
+    if (!s) return html``;
+    const counts = { lights: s.lights, budget: s.budget };
+    if (s.lights <= s.budget) return html`<div class="hint">${this._t('ui.shadows_ok', counts)}</div>`;
+    if (s.extralightmode) return html`<ha-alert alert-type="info">${this._t('ui.shadows_extra', counts)}</ha-alert>`;
+    const entities = this._list('entities');
+    const names = s.dropped.map((i) =>
+      entities[i] !== undefined ? this._entityName(isObject(entities[i]) ? entities[i] : { entity: entities[i] }) : this._t('ui.other_lights'),
+    );
+    // A material of the model with many textures takes units the shadows could have.
+    const material = s.textures && s.textures > 2 ? ' ' + this._t('ui.shadows_material', { material: s.material || '', textures: s.textures }) : '';
+    return html`<ha-alert alert-type="warning">${this._t('ui.shadows_over', { ...counts, names: names.join(', ') }) + material}</ha-alert>`;
   }
 
   private _renderList(list: ListKey, addLabel: string, newItem: any): TemplateResult {
@@ -628,7 +723,7 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
             items,
             (item) => this._key(item),
             (item, index) => {
-              const d = this._describe(list, item);
+              const d = this._describe(list, item, index);
               return html`
                 <div
                   class="row"
@@ -641,8 +736,8 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
                     <span class="primary">${d.primary}</span>
                     <span class="secondary ${d.warning ? 'warning' : ''}">${d.secondary}</span>
                   </div>
-                  <ha-icon-button .label=${'Edit'} .path=${mdiPencil} @click=${() => this._edit(list, index)}></ha-icon-button>
-                  <ha-icon-button .label=${'Remove'} .path=${mdiDelete} @click=${() => this._removeItem(list, index)}></ha-icon-button>
+                  <ha-icon-button .label=${this._t('ui.edit')} .path=${mdiPencil} @click=${() => this._edit(list, index)}></ha-icon-button>
+                  <ha-icon-button .label=${this._t('ui.remove')} .path=${mdiDelete} @click=${() => this._removeItem(list, index)}></ha-icon-button>
                 </div>
               `;
             },
@@ -688,7 +783,6 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
 
   private _renderItemEditor(list: ListKey, index: number): TemplateResult {
     const item = this._list(list)[index];
-    const titles = { entities: 'Entity', object_groups: 'Object group', zoom_areas: 'View', rooms: 'Room' };
     const set = (value: any): void => this._setItem(list, index, value);
     let content: TemplateResult | TemplateResult[];
     if (list === 'entities') content = this._renderEntity(index, isObject(item) ? item : { entity: item }, set);
@@ -697,8 +791,8 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
     else content = this._renderRoom(index, item, set);
     return html`
       <div class="subheader">
-        <ha-icon-button .label=${'Back'} .path=${mdiArrowLeft} @click=${() => this._back()}></ha-icon-button>
-        <span class="title">${titles[list]}</span>
+        <ha-icon-button .label=${this._t('ui.back')} .path=${mdiArrowLeft} @click=${() => this._back()}></ha-icon-button>
+        <span class="title">${this._t('ui.title_' + list)}</span>
         ${this._previewButtons()}
       </div>
       ${content}
@@ -713,12 +807,12 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
         ${this._form(schema, data, onChange)}
         <ha-icon-button
           class=${active ? 'picking' : ''}
-          .label=${'Pick in the preview'}
+          .label=${this._t('ui.pick')}
           .path=${mdiCursorDefaultClickOutline}
           @click=${() => this._startPick({ path })}
         ></ha-icon-button>
       </div>
-      ${active ? html`<div class="hint">Tap an object in the preview</div>` : nothing}
+      ${active ? html`<div class="hint">${this._t('ui.tap_object')}</div>` : nothing}
     `;
   }
 
@@ -733,17 +827,17 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
     const objects = this._objectOptions();
     return [
       this._form(entitySchema(), entityToForm(entity), (value) => onChange(entityFromForm(value, entity))),
-      this._objectRow(['entities', index, 'object_id'], [{ ...objectField('object_id', objects), helper: 'An object, a <group>, or a name with * for all the objects it matches (Lamp_*)' }], entity, (value) =>
+      this._objectRow(['entities', index, 'object_id'], [{ ...objectField('object_id', objects), helper_key: 'object_id_entity' }], entity, (value) =>
         onChange(dropEmpty({ ...entity, object_id: value.object_id })),
       ),
       ...(entity.type3d
         ? [
-            html`<div class="heading">${(TYPES.find(([value]) => value === entity.type3d) || [])[1] || ''} options</div>`,
-            ...this._renderContent(typeSchema(entity.type3d, objects), entity, onChange, false, 'entities', index),
+            html`<div class="heading">${this._t('headings.type_options', { type: this._t('types.' + entity.type3d) })}</div>`,
+            ...this._renderContent(typeSchema(entity.type3d, objects, entity, this._entityParts(entity.object_id)), entity, onChange, false, 'entities', index),
           ]
         : []),
       html`
-        <ha-expansion-panel outlined .header=${'Tap, long press and template'}>
+        <ha-expansion-panel outlined .header=${this._t('ui.actions_panel')}>
           <div class="panel">
             ${this._form(entityActionsSchema(), entity, (value) => onChange(dropEmpty({ ...value })))}
           </div>
@@ -756,7 +850,7 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
     const conditions: any[] = Array.isArray(entity.colorcondition) ? entity.colorcondition : [];
     const set = (next: any[]): void => this._setItem(list, index, { ...entity, colorcondition: next });
     return html`
-      <div class="heading">Colour by state</div>
+      <div class="heading">${this._t('headings.colorcondition')}</div>
       <ha-sortable
         handle-selector=".handle"
         @item-moved=${(ev: CustomEvent) => {
@@ -778,7 +872,7 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
                   set(next);
                 })}
                 <ha-icon-button
-                  .label=${'Remove'}
+                  .label=${this._t('ui.remove')}
                   .path=${mdiDelete}
                   @click=${() => set(conditions.filter((_, j) => j !== i))}
                 ></ha-icon-button>
@@ -788,7 +882,7 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
         </div>
       </ha-sortable>
       <ha-button class="add" @click=${() => set([...conditions, { state: '', color: '' }])}>
-        <ha-svg-icon slot="start" .path=${mdiPlus}></ha-svg-icon>Add colour
+        <ha-svg-icon slot="start" .path=${mdiPlus}></ha-svg-icon>${this._t('ui.add_colour')}
       </ha-button>
     `;
   }
@@ -802,7 +896,7 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
     return [
       this._form(groupSchema(), group, (value) => set(dropEmpty({ ...value }))),
       html`
-        <div class="heading">Objects</div>
+        <div class="heading">${this._t('headings.objects')}</div>
         <ha-sortable
           handle-selector=".handle"
           @item-moved=${(ev: CustomEvent) => {
@@ -818,9 +912,9 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
               (o, i) => html`
                 <div class="row" @mouseenter=${() => this._highlight([idOf(o)])} @mouseleave=${() => this._highlightCurrent()}>
                   <div class="handle"><ha-svg-icon .path=${mdiDragHorizontalVariant}></ha-svg-icon></div>
-                  <div class="info"><span class="primary">${idOf(o) || 'No object'}</span></div>
+                  <div class="info"><span class="primary">${idOf(o) || this._t('ui.no_object_title')}</span></div>
                   <ha-icon-button
-                    .label=${'Remove'}
+                    .label=${this._t('ui.remove')}
                     .path=${mdiDelete}
                     @click=${() => setObjects(objects.filter((_, j) => j !== i))}
                   ></ha-icon-button>
@@ -835,12 +929,12 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
           }, '')}
           <ha-icon-button
             class=${active ? 'picking' : ''}
-            .label=${'Pick in the preview'}
+            .label=${this._t('ui.pick')}
             .path=${mdiCursorDefaultClickOutline}
             @click=${() => this._startPick({ path, add: true })}
           ></ha-icon-button>
         </div>
-        ${active ? html`<div class="hint">Tap objects in the preview to add them, tap again to take them out</div>` : nothing}
+        ${active ? html`<div class="hint">${this._t('ui.tap_objects')}</div>` : nothing}
       `,
     ];
   }
@@ -851,20 +945,20 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
       this._form(zoomSchema(), zoom, onChange),
       html`
         <div class="heading-row">
-          <div class="heading">Camera</div>
+          <div class="heading">${this._t('headings.camera')}</div>
           <ha-button appearance="plain" size="s" @click=${() => this._useCurrentView('zoom_areas', index)}>
-            <ha-svg-icon slot="start" .path=${mdiCameraOutline}></ha-svg-icon>Use the current view
+            <ha-svg-icon slot="start" .path=${mdiCameraOutline}></ha-svg-icon>${this._t('ui.use_current_view')}
           </ha-button>
         </div>
       `,
       this._form([vector('camera_position')], zoom, onChange),
       this._form([vector('camera_target')], zoom, onChange),
       this._form([vector('camera_rotate')], zoom, onChange),
-      html`<div class="heading">Or around an object</div>
-        <div class="hint">With an object, the camera looks at it from the direction and distance below.</div>`,
+      html`<div class="heading">${this._t('headings.around_object')}</div>
+        <div class="hint">${this._t('ui.around_object_hint')}</div>`,
       this._objectRow(['zoom_areas', index, 'object_id'], zoomObjectSchema(this._objectOptions()), zoom, onChange),
-      this._form([vector('direction')], zoom, onChange, 'Direction'),
-      this._form([vector('rotation')], zoom, onChange, 'Rotation'),
+      this._form([vector('direction')], zoom, onChange, this._t('headings.direction')),
+      this._form([vector('rotation')], zoom, onChange, this._t('headings.rotation')),
     ];
   }
 
@@ -933,6 +1027,10 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
       .hint {
         font-size: 12px;
         color: var(--secondary-text-color);
+      }
+      ha-alert {
+        display: block;
+        margin: 8px 0;
       }
       .rows {
         display: flex;

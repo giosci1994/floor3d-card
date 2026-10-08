@@ -28,6 +28,7 @@ const SWITCH_DEFAULTS: { [key: string]: 'yes' | 'no' } = {
 
 // Other top-level options whose value, when missing, is the one written here.
 const VALUE_DEFAULTS: { [key: string]: string | number } = {
+  language: 'auto',
   overlay_width: 33,
   overlay_height: 20,
   overlay_bgcolor: 'transparent',
@@ -38,6 +39,7 @@ const VALUE_DEFAULTS: { [key: string]: string | number } = {
 // value differently from 'no' (light.shadow, for example), so they are never removed.
 const BLOCK_SWITCHES: [string, string][] = [
   ['light', 'shadow'],
+  ['light', 'single'],
   ['image', 'lighting_shadow'],
   ['room', 'label'],
   ['tracker', 'label'],

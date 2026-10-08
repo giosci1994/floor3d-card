@@ -28,6 +28,11 @@ test('overlay size and colours left out when they are the defaults', () => {
   assert.deepEqual(c, { overlay: 'yes', overlay_height: 25, overlay_fgcolor: 'white', entities: [] });
 });
 
+test('language: left out on auto (the language of the user), kept when chosen', () => {
+  assert.ok(!('language' in cleanConfig({ language: 'auto', entities: [] })));
+  assert.equal(cleanConfig({ language: 'de', entities: [] }).language, 'de');
+});
+
 test('object groups: plain ids read and written', () => {
   const n = normalizeConfig({ object_groups: [{ object_group: 'g', objects: ['a', { object_id: 'b' }] }, { object_group: 'h' }] });
   assert.deepEqual(n.object_groups[0].objects, [{ object_id: 'a' }, { object_id: 'b' }]);
@@ -95,6 +100,19 @@ test('light powers: numbers typed as text written as numbers, sensor ids kept', 
   assert.equal(c.sky_power, 'sensor.diffuse_light');
   assert.equal(c.sky_color, '#ffffff');
   assert.equal(cleanConfig({ sun_power: 'sensor.direct_light', sky_power: 0.4, entities: [] }).sun_power, 'sensor.direct_light');
+});
+
+test('one light for a lamp: single read as yes/no and kept, light_object kept', () => {
+  const n = normalizeConfig({ entities: [{ entity: 'light.a', type3d: 'light', object_id: '<spots>', light: { single: true } }] });
+  assert.equal(n.entities[0].light.single, 'yes');
+  const c = cleanConfig({
+    entities: [
+      { entity: 'light.a', type3d: 'light', object_id: '<spots>', light: { single: 'no', lumens: '2500' } },
+      { entity: 'light.b', type3d: 'light', object_id: 'Lamp_*', light: { light_object: 'Lamp_2' } },
+    ],
+  });
+  assert.deepEqual(c.entities[0].light, { single: 'no', lumens: 2500 });
+  assert.deepEqual(c.entities[1].light, { light_object: 'Lamp_2' });
 });
 
 test('rotate: round_per_second and ramp written as numbers', () => {

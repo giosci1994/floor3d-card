@@ -2142,6 +2142,26 @@ export class Floor3dCardClassicEditor extends LitElement implements LovelaceCard
                               <mwc-list-item value="middle">middle</mwc-list-item>
                               <mwc-list-item value="top">top</mwc-list-item>
                             </floor3d-select>
+                            <floor3d-select
+                              label="One light for all the objects (yes/<no>)"
+                              @selected=${this._valueChanged}
+                              .value=${config.light.single ? config.light.single : null}
+                              .configObject=${config.light}
+                              .configAttribute=${'single'}
+                              .ignoreNull=${false}
+                              @closed=${(ev) => ev.stopPropagation()}
+                            >
+                              <mwc-list-item></mwc-list-item>
+                              <mwc-list-item value="yes">yes</mwc-list-item>
+                              <mwc-list-item value="no">no</mwc-list-item>
+                            </floor3d-select>
+                            <floor3d-textfield
+                              label="Light on the object (one light; empty: in the middle)"
+                              .value=${config.light.light_object ? config.light.light_object : ''}
+                              .configObject=${config.light}
+                              .configAttribute=${'light_object'}
+                              @input=${this._valueChanged}
+                            ></floor3d-textfield>
                           `
                         : ''}
                     </div>
