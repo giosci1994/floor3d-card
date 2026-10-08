@@ -16,6 +16,20 @@ import { matchObjects, normalizeConfig, objectPattern } from './config';
 import type { Floor3dCardConfig } from './types';
 import { CARD_VERSION, EDITOR_EVENT, PREVIEW_EVENT } from './const';
 import { previewState } from './preview';
+import {
+  CLIMATE_COLORS,
+  MapScale,
+  PRESET_MAPS,
+  Stops,
+  activeAlarms,
+  climateAction,
+  climateTarget,
+  colorAt,
+  legendGradient,
+  mapScales,
+  roomReading,
+  roomSensors,
+} from './maps';
 import { localize, pickLanguage } from './localize/localize';
 //import three.js libraries for 3D rendering
 import * as TWEEN from '@tweenjs/tween.js';
@@ -120,7 +134,12 @@ const TONE_MAPPINGS: { [name: string]: THREE.ToneMapping } = {
 type ShadowLight = THREE.PointLight | THREE.SpotLight | THREE.DirectionalLight;
 
 // What the rooms can be coloured by (room_colors and the Map menu), besides none.
+// The maps of the rooms that are always in the Map menu; the sensor maps (see maps.ts) are there once a
+// room has a sensor for them, or the configuration defines them.
 const MAP_MODES = ['temperature', 'presence', 'illuminance'];
+// Elements of a dashboard: Home Assistant sets preview on its cards while it is in edit mode.
+const DASHBOARD_TAGS = ['HUI-VIEW', 'HUI-SECTION', 'HUI-MASONRY-VIEW', 'HUI-SECTIONS-VIEW', 'HUI-PANEL-VIEW', 'HUI-SIDEBAR-VIEW'];
+const LABEL_BACKGROUND = 'rgba(0, 0, 0, 0.55)'; // behind the text of a room label, without alarm or thermostat
 
 // Share of daylight for an elevation of the sun, in degrees: night below -3, full light from 8.
 function daylight(elevation: number): number {
@@ -132,11 +151,18 @@ interface RoomView {
   material: THREE.MeshBasicMaterial; // translucent copy of the floor, above it
   overlays: THREE.Mesh[];
   center: THREE.Vector3; // for the label of the map (world coordinates)
+  box: THREE.Box3; // of its floor, for the camera going to an alarm
+  level?: number; // of its floor
   temperature?: string;
   illuminance?: string;
   presence: string[];
+  sensors: { [map: string]: string[] }; // sensors of the sensor maps, by key
+  alarms: string[]; // smoke, gas, water... sensors: the room blinks while one is on
+  climate?: string; // thermostat: target on the temperature map, its temperature without a sensor
+  alarm?: boolean; // an alarm is on
   label?: THREE.Sprite;
   labelText?: string;
+  labelBackground?: string;
 }
 
 interface TrackerView {
@@ -274,6 +300,9 @@ export class Floor3dCard extends LitElement {
   private _mapMode = 'none'; // rooms coloured by: none, temperature, presence, illuminance
   private _colorDeps?: HassEntity[];
   private _alarmPulse = false; // alarm triggered with something open: the openings blink
+  private _roomAlarms = false; // a room or an object of type alarm blinks: an alarm is on
+  private _mapScales: MapScale[] = [];
+  private _legend?: { gradient: string; min: string; max: string };
   private _cardObscured: boolean;
   private _card?: HTMLElement;
   private _content?: HTMLElement;
@@ -286,8 +315,10 @@ export class Floor3dCard extends LitElement {
   @property({ attribute: false }) public layout?: string;
   @property({ attribute: false }) public isPanel?: boolean;
   @property({ attribute: false }) public editMode?: boolean;
-  // Set by Home Assistant on the card shown next to the card editor.
+  // Set by Home Assistant on the card shown next to the card editor, and on every card of a dashboard
+  // in edit mode: see _isEditorPreview.
   @property({ attribute: false }) public preview?: boolean;
+  private _wasEditorPreview?: boolean;
   // Editor of the card (only in the preview): a tap picks an object, and some objects are highlighted.
   private _pickMode = false;
   private _highlightHelpers: THREE.Object3D[] = [];
@@ -332,6 +363,7 @@ export class Floor3dCard extends LitElement {
     this._changeListener = () => {
       this._updateNearPlane();
       this._scheduleRender();
+      this._rememberCamera();
     };
     // The user moved the camera: the views menu no longer shows where the camera is.
     this._controlsStartListener = () => {
@@ -393,6 +425,9 @@ export class Floor3dCard extends LitElement {
     window.clearInterval(this._zIndexInterval);
 
     this._cancelTap();
+    // The preview going away while the editor is paused (Home Assistant replaces it at every change
+    // of the config): the next one shows its last picture, with the camera where it was.
+    if (previewState.paused && this._modelready && this._isEditorPreview()) this._snapshot();
     if (this._modelready) {
       // _to_animate stays as it is: connectedCallback restarts the loop if it is still needed.
       this._lastFrameTime = null;
@@ -568,6 +603,9 @@ export class Floor3dCard extends LitElement {
     // Short forms (true/false, object_id strings in object_groups, missing options block) become
     // the long ones the rest of the card reads.
     this._config = normalizeConfig(config);
+    // A card with only rooms (maps, alarms) may have no entities: the states were never read then,
+    // so the rooms didn't change and the canvas kept its first size.
+    if (!Array.isArray(this._config.entities)) this._config.entities = [];
     this._configArray = createConfigArray(this._config);
     this._object_ids = createObjectGroupConfigArray(this._config);
     this._initialmaterial = [];
@@ -769,7 +807,7 @@ export class Floor3dCard extends LitElement {
       }
 
       if (this._content && !this._renderer) {
-        if (this.preview && previewState.paused) this._showPausedPreview();
+        if (this._isEditorPreview() && previewState.paused) this._showPausedPreview();
         else this.display3dmodel();
       }
 
@@ -993,7 +1031,8 @@ export class Floor3dCard extends LitElement {
       }
 
       this._config.entities.forEach((entity, i) => {
-        if (entity.type3d == 'light' || entity.type3d == 'gesture' || entity.type3d == 'camera') {
+        const details = ['camera', 'climate', 'alarm'].includes(entity.type3d); // the tap opens the entity
+        if (entity.type3d == 'light' || entity.type3d == 'gesture' || details) {
           for (let j = 0; this._object_ids[i] && j < this._object_ids[i].objects.length; j++) {
             if (this._object_ids[i].objects[j].object_id == intersects[0].object.name) {
               if (entity.type3d == 'light') {
@@ -1005,7 +1044,8 @@ export class Floor3dCard extends LitElement {
                 this._hass.callService(entity.gesture.domain, entity.gesture.service, {
                   entity_id: entity.entity,
                 });
-              } else if (entity.type3d == 'camera') {
+              } else if (details) {
+                // A camera shows its picture; a thermostat its temperature, to change it.
                 fireEvent(this, 'hass-more-info', { entityId: entity.entity });
                 //this._hass.states[entity.entity].attributes["entity_picture"]
               }
@@ -1063,25 +1103,40 @@ export class Floor3dCard extends LitElement {
   // --- Editor (only the card in the preview of the card editor listens) ---------------------------
 
   private _toEditor(detail: any): void {
+    if (!this._isEditorPreview()) return;
     window.dispatchEvent(new CustomEvent(PREVIEW_EVENT, { detail }));
   }
 
+  // The card next to the card editor. Home Assistant sets preview on it, but also on every card of
+  // the dashboard in edit mode (hui-view: element.preview = lovelace.editMode): those are inside a
+  // view or a section, and must not answer the editor (they did, and "Use the current view" could
+  // take the camera of the card behind the dialog) nor stay paused (after Save, the dashboard showed
+  // "Preview paused"). Once disconnected, the answer of the last time it was connected.
+  private _isEditorPreview(): boolean {
+    if (!this.preview) return false;
+    if (!this.isConnected) return !!this._wasEditorPreview;
+    let node: any = this.parentNode || (this.getRootNode() as any).host;
+    while (node) {
+      if (DASHBOARD_TAGS.includes(node.nodeName)) {
+        this._wasEditorPreview = false;
+        return false;
+      }
+      node = node.parentNode || node.host;
+    }
+    this._wasEditorPreview = true;
+    return true;
+  }
+
   private _onEditor(detail: any): void {
-    if (!this.preview || !detail) return;
+    if (!detail || !this._isEditorPreview()) return;
     if (detail.request === 'objects' && this._modelready) {
       this._toEditor({ objects: this._modelObjectNames() });
       if (this._shadowStatus) this._toEditor({ shadows: this._shadowStatus });
     }
-    if (detail.request === 'camera' && this._camera && this._controls) {
-      const { position, rotation } = this._camera;
-      const target = this._controls.target;
-      this._toEditor({
-        camera: {
-          camera_position: { x: position.x, y: position.y, z: position.z },
-          camera_target: { x: target.x, y: target.y, z: target.z },
-          camera_rotate: { x: rotation.x, y: rotation.y, z: rotation.z },
-        },
-      });
+    if (detail.request === 'camera') {
+      // A paused preview has no camera: where the camera of the last live preview was.
+      if (this._camera && this._controls) this._toEditor({ camera: this._cameraView() });
+      else if (previewState.camera) this._toEditor({ camera: previewState.camera.view });
     }
     if ('pick' in detail) {
       this._pickMode = !!detail.pick;
@@ -1091,24 +1146,64 @@ export class Floor3dCard extends LitElement {
     if (detail.request === 'snapshot') {
       // The preview is being paused: its picture stays on show in the cards created meanwhile.
       previewState.image = undefined;
-      if (this._renderer && this._modelready) {
-        this._render(); // the drawing buffer can be read only in the task that draws it
-        try {
-          previewState.image = this._renderer.domElement.toDataURL('image/jpeg', 0.85);
-        } catch {
-          previewState.image = undefined;
-        }
-      }
+      if (this._renderer && this._modelready) this._snapshot();
     }
-    if (detail.request === 'reload') {
-      if (this._renderer) {
-        this.rerender();
-      } else if (this._pausedEl) {
-        this._pausedEl.remove();
-        this._pausedEl = undefined;
-        this.display3dmodel();
-      }
+    if (detail.request === 'reload' && this._renderer) {
+      this.rerender();
+    } else if (['reload', 'live', 'resume'].includes(detail.request) && this._pausedEl) {
+      // The model, in place of the picture: to pick an object while the preview stays paused
+      // (live), or because the pause ended (resume, reload).
+      this._pausedEl.remove();
+      this._pausedEl = undefined;
+      this.display3dmodel();
     }
+  }
+
+  // The picture of the preview, kept for the cards created while it is paused.
+  private _snapshot(): void {
+    try {
+      this._render(); // the drawing buffer can be read only in the task that draws it
+      previewState.image = this._renderer.domElement.toDataURL('image/jpeg', 0.85);
+    } catch {
+      previewState.image = undefined;
+    }
+  }
+
+  // Where the camera is, as the initial view and the views write it.
+  private _cameraView(): { camera_position: any; camera_target: any; camera_rotate: any } {
+    const { position, rotation } = this._camera;
+    const target = this._controls.target;
+    return {
+      camera_position: { x: position.x, y: position.y, z: position.z },
+      camera_target: { x: target.x, y: target.y, z: target.z },
+      camera_rotate: { x: rotation.x, y: rotation.y, z: rotation.z },
+    };
+  }
+
+  // The model and the initial view a remembered camera is for (see _rememberCamera).
+  private _cameraKey(): string {
+    const c = this._config;
+    return JSON.stringify([c.path, c.objfile, c.camera_position, c.camera_target, c.camera_rotate]);
+  }
+
+  // The preview remembers where its camera is: Home Assistant creates the preview again at every
+  // change of the configuration, and the new one went back to the initial view, so zoom and camera
+  // had to be set again after each change (or each object picked). See _restoreCamera.
+  private _rememberCamera(): void {
+    if (!this._camera || !this._controls || !this._modelready || !this._isEditorPreview()) return;
+    previewState.camera = { key: this._cameraKey(), view: this._cameraView() };
+  }
+
+  // A new preview goes back to the camera of the previous one, unless the initial view or the model
+  // changed (then it shows the new initial view, as "Use the current view" does).
+  private _restoreCamera(): void {
+    const remembered = previewState.camera;
+    if (!remembered || remembered.key !== this._cameraKey() || !this._isEditorPreview()) return;
+    const { camera_position: p, camera_target: t } = remembered.view;
+    this._camera.position.set(p.x, p.y, p.z);
+    this._controls.target.set(t.x, t.y, t.z);
+    this._controls.update();
+    this._updateNearPlane();
   }
 
   // The preview of the card editor while it is paused (see preview.ts): the last picture of the
@@ -1132,6 +1227,9 @@ export class Floor3dCard extends LitElement {
     box.appendChild(label);
     this._content.appendChild(box);
     this._pausedEl = box;
+    // The editor may be picking objects (those of a group, one tap after the other): it asks then
+    // for the model.
+    this._toEditor({ paused: true });
   }
 
   // Names of the objects of the model (without the level prefix), for the object menus of the editor.
@@ -1936,7 +2034,7 @@ export class Floor3dCard extends LitElement {
 
     if (this._content && this._renderer) {
       this._modelready = true;
-      if (this.preview) this._toEditor({ objects: this._modelObjectNames() });
+      this._toEditor({ objects: this._modelObjectNames() });
       console.log('Show canvas');
       this._levelbar = document.createElement('div');
       this._zoombar = document.createElement('div');
@@ -2001,6 +2099,8 @@ export class Floor3dCard extends LitElement {
 
       this._urlView = undefined; // a new model: the view of the page applies again
       this._applyUrlView(false);
+      this._restoreCamera();
+      this._rememberCamera();
 
       this._resizeCanvas();
 
@@ -3786,7 +3886,7 @@ export class Floor3dCard extends LitElement {
       textures: this._textureUnits.units,
       material: this._textureUnits.material,
     };
-    if (this.preview) this._toEditor({ shadows: this._shadowStatus });
+    this._toEditor({ shadows: this._shadowStatus });
   }
 
   // Something moved (a door, a cover, an object shown or hidden): the shadow maps of the lights
@@ -4402,33 +4502,65 @@ export class Floor3dCard extends LitElement {
     if (this._zoommenu) render(html`${this._getZoomMenu()}${this._getMapMenu()}`, this._zoommenu);
   }
 
+  // The maps of the Map menu: temperature, presence and illuminance, then the sensor maps that a
+  // room has sensors for or that the configuration defines.
+  private _mapModes(): string[] {
+    const configured = (Array.isArray(this._config.maps) ? this._config.maps : []).map((m: any) => m && m.key);
+    const sensorMaps = this._mapScales
+      .filter((scale) => configured.includes(scale.key) || this._roomViews.some((room) => room.sensors[scale.key]))
+      .map((scale) => scale.key);
+    return [...MAP_MODES, ...sensorMaps];
+  }
+
+  // The name a map of the configuration gives, else the text of a ready map, else its key.
+  private _mapName(key: string): string {
+    const scale = this._mapScales.find((s) => s.key === key);
+    if (scale && scale.name) return scale.name;
+    return MAP_MODES.includes(key) || PRESET_MAPS.some((p) => p.key === key) ? this._t('map_' + key) : key;
+  }
+
   private _getMapMenu(): TemplateResult {
     if (this._roomViews.length == 0) return html``;
-    const option = (value: string, key: string) =>
-      html`<option value=${value} ?selected=${this._mapMode == value}>${this._t(key)}</option>`;
+    const option = (value: string, text: string) =>
+      html`<option value=${value} ?selected=${this._mapMode == value}>${text}</option>`;
+    const legend = this._mapMode !== 'none' && this._mapMode !== 'presence' ? this._legend : undefined;
     return html`
-      <select
-        aria-label=${this._t('map')}
-        @change=${(ev: Event) => this._setMapMode((ev.target as HTMLSelectElement).value)}
-        style="font: inherit; font-size: 14px; padding: 6px 10px; border-radius: 8px; color-scheme: dark;
-          background: rgba(0, 0, 0, 0.55); color: white; border: 1px solid rgba(255, 255, 255, 0.6); cursor: pointer;"
-      >
-        ${option('none', 'map_none')} ${option('temperature', 'map_temperature')} ${option('presence', 'map_presence')}
-        ${option('illuminance', 'map_illuminance')}
-      </select>
+      <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 4px;">
+        <select
+          aria-label=${this._t('map')}
+          @change=${(ev: Event) => this._setMapMode((ev.target as HTMLSelectElement).value)}
+          style="font: inherit; font-size: 14px; padding: 6px 10px; border-radius: 8px; color-scheme: dark;
+            background: rgba(0, 0, 0, 0.55); color: white; border: 1px solid rgba(255, 255, 255, 0.6); cursor: pointer;"
+        >
+          ${option('none', this._t('map_none'))} ${this._mapModes().map((mode) => option(mode, this._mapName(mode)))}
+        </select>
+        ${legend
+          ? html`<div
+              class="f3d-legend"
+              style="padding: 5px 8px 3px; border-radius: 8px; background: rgba(0, 0, 0, 0.55); color: white;
+                font-size: 11px; line-height: 14px; width: 140px;"
+            >
+              <div style="height: 8px; border-radius: 4px; background: ${legend.gradient};"></div>
+              <div style="display: flex; justify-content: space-between;"><span>${legend.min}</span><span>${legend.max}</span></div>
+            </div>`
+          : ''}
+      </div>
     `;
   }
 
   private _setMapMode(mode: string): void {
-    this._mapMode = MAP_MODES.includes(mode) ? mode : 'none';
+    this._mapMode = this._mapModes().includes(mode) ? mode : 'none';
     this._updateStateColors(true);
+    this._renderMenus();
   }
 
-  // rooms: [{ name, object_id (floor object or <group>), temperature, illuminance, presence }]: a
-  // translucent copy of each floor, coloured by temperature, illuminance or presence, with the
-  // temperature or the illuminance written on it.
+  // rooms: [{ name, object_id (floor object or <group>), temperature, illuminance, presence, the
+  // sensors of the sensor maps (humidity, co2, power...), alarms, climate }]: a translucent copy of
+  // each floor, coloured by the map chosen, with the value written on it; it blinks while an alarm
+  // of the room is on.
   private _initRooms(): void {
     this._roomViews = [];
+    this._mapScales = mapScales(this._config);
     const rooms = Array.isArray(this._config.rooms) ? this._config.rooms : [];
     rooms.forEach((room: any) => {
       const ids: string[] = [];
@@ -4449,6 +4581,7 @@ export class Floor3dCard extends LitElement {
       });
       const overlays: THREE.Mesh[] = [];
       const box = new THREE.Box3();
+      let level: number | undefined;
       ids.forEach((objectId) => {
         const floor = this._scene.getObjectByName(objectId) as THREE.Mesh;
         if (!floor || !floor.geometry) return;
@@ -4460,25 +4593,36 @@ export class Floor3dCard extends LitElement {
         floor.add(overlay);
         overlays.push(overlay);
         box.expandByObject(floor);
+        if (level === undefined && floor.userData.level !== undefined) level = floor.userData.level;
       });
       if (overlays.length == 0) {
         console.warn('floor3d-card: room ' + room.name + ': floor object not found (' + id + ')');
         return;
       }
       const presence = room.presence ? (Array.isArray(room.presence) ? room.presence : [room.presence]) : [];
+      const sensors: { [map: string]: string[] } = {};
+      this._mapScales.forEach((scale) => {
+        const found = roomSensors(room, scale.key);
+        if (found.length) sensors[scale.key] = found;
+      });
       this._roomViews.push({
         name: room.name || id,
         material,
         overlays,
         // Level with the top of the walls: seen from above it sits inside the outline of the room.
         center: box.getCenter(new THREE.Vector3()).setY(box.max.y + 250),
+        box,
+        level,
         temperature: room.temperature,
         illuminance: room.illuminance,
         presence,
+        sensors,
+        alarms: roomSensors(room, 'alarms'),
+        climate: typeof room.climate === 'string' && room.climate ? room.climate : undefined,
       });
     });
     const initial = this._config.room_colors;
-    this._mapMode = MAP_MODES.includes(initial) ? initial : 'none';
+    this._mapMode = this._mapModes().includes(initial) ? initial : 'none';
   }
 
   // current_position of a cover, null when the cover doesn't report it.
@@ -4493,15 +4637,24 @@ export class Floor3dCard extends LitElement {
     return state == 'on' || state == 'open' || state == 'opening';
   }
 
-  // Doors and windows (state_colors: yes) and room colours: recomputed when one of their
-  // entities, or the alarm, changes.
+  // Doors and windows (state_colors: yes), alarm and climate objects, and room colours: recomputed
+  // when one of their entities, or the alarm, changes. Only the sensors of the map on show count,
+  // so that plugs reporting their power every second don't redraw the card while it shows another map.
   private _updateStateColors(force = false): void {
     if (!this._hass || !this._scene || !this._modelready) return;
     const doors = this._config.state_colors == 'yes' ? this._config.entities.filter((e) => e.type3d == 'door') : [];
-    const ids: string[] = [this._config.alarm_entity, ...doors.map((e) => e.entity)];
-    this._roomViews.forEach((r) => ids.push(r.temperature, r.illuminance, ...r.presence));
+    const marked = this._config.entities.filter((e) => e.type3d == 'alarm' || e.type3d == 'climate');
+    const ids: string[] = [this._config.alarm_entity, ...doors.map((e) => e.entity), ...marked.map((e) => e.entity)];
+    const mode = this._mapMode;
+    this._roomViews.forEach((r) => {
+      ids.push(...r.alarms);
+      if (mode == 'temperature') ids.push(r.temperature, r.climate);
+      else if (mode == 'illuminance') ids.push(r.illuminance);
+      else if (mode == 'presence') ids.push(...r.presence);
+      else if (r.sensors[mode]) ids.push(...r.sensors[mode]);
+    });
     const deps = ids.map((id) => (id ? this._hass.states[id] : undefined));
-    if (!force && this._colorDeps && deps.every((d, k) => d === this._colorDeps[k])) return;
+    if (!force && this._colorDeps && deps.length == this._colorDeps.length && deps.every((d, k) => d === this._colorDeps[k])) return;
     this._colorDeps = deps;
 
     // Openings: amber when open, red with the alarm armed, blinking red when it goes off.
@@ -4522,40 +4675,177 @@ export class Floor3dCard extends LitElement {
       this._startOrStopAnimationLoop();
     }
 
+    // Objects of an alarm (a leak sensor under the dishwasher) blink in the colour of its kind;
+    // heaters and coolers glow while they heat or cool.
+    let alarmObjects = false;
+    this._config.entities.forEach((entity, i) => {
+      const stateObj = this._hass.states[entity.entity];
+      if (entity.type3d == 'alarm') {
+        const on = activeAlarms([stateObj]);
+        alarmObjects = alarmObjects || on.length > 0;
+        const color = on.length ? (entity.alarm && entity.alarm.color) || on[0].color : null;
+        this._tintObjects(i, color ? new THREE.Color(color) : null, 1.2);
+      } else if (entity.type3d == 'climate') {
+        const options = entity.climate || {};
+        const action = climateAction(stateObj, options.mode == 'cool' ? 'cool' : 'heat');
+        const colors = { heat: options.heat_color, cool: options.cool_color, dry: options.dry_color };
+        const color = action ? colors[action] || CLIMATE_COLORS[action] : null;
+        this._tintObjects(i, color ? new THREE.Color(color) : null, this._num(options.glow, 0.8));
+      }
+    });
+
     // Rooms
+    const fmt = (n: number, digits: number): string => n.toLocaleString(this._language(), { maximumFractionDigits: digits });
+    const scale = this._mapScales.find((s) => s.key == mode);
+    let legend: { stops: Stops; unit: string } | undefined;
+    const alarmed: RoomView[] = [];
     this._roomViews.forEach((room) => {
       let color: THREE.Color | null = null;
       let opacity = 0.35;
       let label = '';
-      if (this._mapMode == 'temperature' && room.temperature) {
-        const s = this._hass.states[room.temperature];
-        const t = s ? parseFloat(s.state) : NaN;
+      let background = LABEL_BACKGROUND;
+      if (mode == 'temperature' && (room.temperature || room.climate)) {
+        const s = room.temperature ? this._hass.states[room.temperature] : undefined;
+        const thermostat = room.climate ? this._hass.states[room.climate] : undefined;
+        let t = s ? parseFloat(s.state) : NaN;
+        let unit = (s && s.attributes && s.attributes.unit_of_measurement) || '°';
+        // Without a sensor, the temperature the thermostat measures.
+        if (isNaN(t) && thermostat && thermostat.attributes) {
+          t = parseFloat(thermostat.attributes.current_temperature);
+          unit = (this._hass.config && this._hass.config.unit_system && this._hass.config.unit_system.temperature) || '°';
+        }
         if (!isNaN(t)) {
           color = this._temperatureColor(t);
-          const unit = (s.attributes && s.attributes.unit_of_measurement) || '°';
-          label = t.toLocaleString(this._language(), { maximumFractionDigits: 1 }) + ' ' + unit;
+          label = fmt(t, 1) + ' ' + unit;
+          const target = climateTarget(thermostat, (n) => fmt(n, 1));
+          if (target) label += ' → ' + target + ' ' + unit;
+          const action = climateAction(thermostat);
+          if (action) background = this._labelColor(CLIMATE_COLORS[action]);
         }
-      } else if (this._mapMode == 'illuminance' && room.illuminance) {
+      } else if (mode == 'illuminance' && room.illuminance) {
         const s = this._hass.states[room.illuminance];
         const lux = s ? parseFloat(s.state) : NaN;
         if (!isNaN(lux)) {
           color = this._illuminanceColor(lux);
           const unit = (s.attributes && s.attributes.unit_of_measurement) || 'lx';
-          label = lux.toLocaleString(this._language(), { maximumFractionDigits: 0 }) + ' ' + unit;
+          label = fmt(lux, 0) + ' ' + unit;
         }
-      } else if (this._mapMode == 'presence') {
+      } else if (mode == 'presence') {
         const present = room.presence.some((id) => this._hass.states[id] && this._hass.states[id].state == 'on');
         if (present) {
           color = new THREE.Color(this._config.presence_color || '#34d399');
           opacity = 0.32;
         }
+      } else if (scale && room.sensors[mode]) {
+        const reading = roomReading(
+          scale,
+          room.sensors[mode].map((id) => this._hass.states[id]),
+        );
+        if (reading) {
+          color = new THREE.Color(colorAt(reading.stops, reading.value));
+          label = fmt(reading.value, scale.decimals) + (reading.unit ? ' ' + reading.unit : '');
+          if (!legend) legend = { stops: reading.stops, unit: reading.unit };
+        }
+      }
+      // An alarm of the room shows over any map, blinking (see _pulseAlarms).
+      const alarms = activeAlarms(room.alarms.map((id) => this._hass.states[id]));
+      const wasAlarmed = !!room.alarm;
+      room.alarm = alarms.length > 0;
+      if (room.alarm) {
+        color = new THREE.Color(alarms[0].color);
+        opacity = 0.6;
+        label = Array.from(new Set(alarms.map((a) => this._t('alarm_' + a.key)))).join(', ');
+        background = this._labelColor(alarms[0].color);
+        if (!wasAlarmed) alarmed.push(room);
       }
       if (color) room.material.color.copy(color);
       room.material.opacity = opacity;
       room.overlays.forEach((o) => (o.visible = !!color));
-      this._setRoomLabel(room, label);
+      this._setRoomLabel(room, label, background);
     });
+    const blinking = alarmObjects || this._roomViews.some((r) => r.alarm);
+    if (blinking != this._roomAlarms) {
+      this._roomAlarms = blinking;
+      this._startOrStopAnimationLoop();
+    }
+    // alarm_view: the camera goes to the first room whose alarm goes on.
+    if (alarmed.length && this._config.alarm_view == 'yes' && this._camera && this._controls) this._flyToRoom(alarmed[0]);
+    this._setLegend(mode, scale, legend);
     this._scheduleRender();
+  }
+
+  // The colour of an alarm or of a thermostat behind the text of a room label.
+  private _labelColor(hex: string): string {
+    const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+    return `rgba(${r}, ${g}, ${b}, 0.85)`;
+  }
+
+  // The legend under the Map menu: the colours of the map on show, from its lowest to its highest
+  // value. A sensor map shows the scale of the readings (a VOC index has its own).
+  private _setLegend(mode: string, scale: MapScale | undefined, reading?: { stops: Stops; unit: string }): void {
+    const fmt = (n: number, digits = 0): string => n.toLocaleString(this._language(), { maximumFractionDigits: digits });
+    const sample = (colorOf: (k: number) => THREE.Color): string =>
+      'linear-gradient(to right, ' +
+      Array.from({ length: 9 }, (_, i) => '#' + colorOf(i / 8).getHexString() + ' ' + (i * 12.5).toString() + '%').join(', ') +
+      ')';
+    let legend: { gradient: string; min: string; max: string } | undefined;
+    if (mode == 'temperature') {
+      const min = this._num(this._config.temperature_min, 17);
+      const max = this._num(this._config.temperature_max, 27);
+      legend = { gradient: sample((k) => this._temperatureColor(min + k * (max - min))), min: fmt(min) + '°', max: fmt(max) + '°' };
+    } else if (mode == 'illuminance') {
+      const min = Math.max(this._num(this._config.illuminance_min, 5), 0.1);
+      const max = Math.max(this._num(this._config.illuminance_max, 1000), min * 1.01);
+      legend = { gradient: sample((k) => this._illuminanceColor(min * Math.pow(max / min, k))), min: fmt(min), max: fmt(max) + ' lx' };
+    } else if (scale) {
+      const stops = reading ? reading.stops : scale.stops;
+      const unit = reading ? reading.unit : scale.unit;
+      legend = {
+        gradient: legendGradient(stops),
+        min: fmt(stops[0][0], scale.decimals),
+        max: fmt(stops[stops.length - 1][0], scale.decimals) + (unit ? ' ' + unit : ''),
+      };
+    }
+    if (JSON.stringify(legend) === JSON.stringify(this._legend)) return;
+    this._legend = legend;
+    this._renderMenus();
+  }
+
+  // The camera goes to a room (an alarm went on there), seen from the same side as before, from
+  // high enough to see all of it; the level of the room is shown if it was hidden.
+  private _flyToRoom(room: RoomView): void {
+    const target = room.box.getCenter(new THREE.Vector3());
+    const size = room.box.getSize(new THREE.Vector3());
+    const direction = this._camera.position.clone().sub(this._controls.target);
+    if (direction.lengthSq() < 1e-6) direction.set(0, 1, 1);
+    direction.normalize();
+    if (direction.y < 0.6) {
+      direction.y = 0.6;
+      direction.normalize();
+    }
+    const position = target.clone().add(direction.multiplyScalar(Math.max(size.x, size.z, 300) * 1.8));
+    if (room.level !== undefined && this._displaylevels && this._displaylevels[room.level] === false) this._setVisibleLevel(room.level);
+    this._flyTo(position, target);
+  }
+
+  // Alarms on: the rooms blink between faint and strong, the objects of type alarm glow in step,
+  // about once per second.
+  private _pulseAlarms(now: number): void {
+    const k = 0.5 + 0.5 * Math.sin((now / 1000) * Math.PI * 2);
+    this._roomViews.forEach((room) => {
+      if (room.alarm) room.material.opacity = 0.15 + 0.6 * k;
+    });
+    this._config.entities.forEach((entity, i) => {
+      if (entity.type3d != 'alarm' || !this._object_ids[i]) return;
+      this._object_ids[i].objects.forEach((o) => {
+        const obj: any = this._scene.getObjectByName(o.object_id);
+        const tint = obj && obj.material === obj.userData.tintMaterial ? obj.userData.tintMaterial : null;
+        if (!tint) return;
+        (Array.isArray(tint) ? tint : [tint]).forEach((m) => {
+          if (m.emissive) m.emissiveIntensity = (m.userData.tintIntensity || 1) * (0.25 + 0.75 * k);
+        });
+      });
+    });
   }
 
   // Blue (temperature_min, 17 by default) to red (temperature_max, 27), green in the middle.
@@ -4576,9 +4866,11 @@ export class Floor3dCard extends LitElement {
     return new THREE.Color().setHSL(((230 + k * 180) % 360) / 360, 0.85, 0.3 + 0.3 * k, THREE.SRGBColorSpace);
   }
 
-  private _setRoomLabel(room: RoomView, text: string): void {
-    if (text === (room.labelText || '')) return;
+  // background: the colour behind the text (an alarm, a thermostat heating or cooling).
+  private _setRoomLabel(room: RoomView, text: string, background = LABEL_BACKGROUND): void {
+    if (text === (room.labelText || '') && (!text || background === room.labelBackground)) return;
     room.labelText = text;
+    room.labelBackground = background;
     if (!text) {
       if (room.label) room.label.visible = false;
       return;
@@ -4597,7 +4889,7 @@ export class Floor3dCard extends LitElement {
     canvas.width = width;
     canvas.height = 60;
     ctx.font = font;
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.55)';
+    ctx.fillStyle = background;
     ctx.beginPath();
     ctx.roundRect(0, 0, width, 60, 14);
     ctx.fill();
@@ -4942,7 +5234,8 @@ export class Floor3dCard extends LitElement {
       this._rotating() ||
       TWEEN.getAll().length > 0 ||
       this._trackersNeedAnimation() ||
-      this._alarmPulse
+      this._alarmPulse ||
+      this._roomAlarms
     );
   }
 
@@ -5014,6 +5307,7 @@ export class Floor3dCard extends LitElement {
 
     this._animateTrackers(clockDelta);
     if (this._alarmPulse) this._pulseOpenings(now);
+    if (this._roomAlarms) this._pulseAlarms(now);
 
     // Only moving objects change the shadows (not the shower, the trackers or the camera). Redrawing
     // every shadow map at every frame of a door is dozens of passes over the whole model per frame:
@@ -5029,7 +5323,7 @@ export class Floor3dCard extends LitElement {
     const throttled =
       light &&
       now - this._lastRenderTime < LIGHT_ANIMATION_FRAME_MS &&
-      (showering || this._alarmPulse || this._trackersNeedAnimation());
+      (showering || this._alarmPulse || this._roomAlarms || this._trackersNeedAnimation());
     if (!throttled && (this._isVisible || this._needsAnimationLoop())) {
       this._lastRenderTime = now;
       this._render();

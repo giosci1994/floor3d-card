@@ -36,8 +36,9 @@ const house = (extra = {}) => ({
   shadow: 'yes',
   sun: 'yes',
   sun_roof: ['floor_living', 'floor_bed'],
-  camera_position: { x: 700, y: 1300, z: 1200 },
-  camera_target: { x: 700, y: 0, z: 700 },
+  // The card centres the model: the house is around the origin.
+  camera_position: { x: 0, y: 1000, z: 850 },
+  camera_target: { x: 0, y: 0, z: 0 },
   hideLevelsMenu: 'yes',
   entities: [],
   ...extra,
@@ -276,6 +277,362 @@ test('reload (refresh button of the editor): the model comes back, without error
   const s = await shadowState(page);
   assert.equal(s.status.lights, 12);
   assert.ok((await brightness(page)) > 0.03);
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+// --- Room maps from sensors, alarms, climate ------------------------------------------------------
+
+const roomState = (page) =>
+  page.evaluate(() =>
+    Object.fromEntries(
+      window.__card._roomViews.map((r) => [
+        r.name,
+        {
+          visible: r.overlays[0].visible,
+          color: r.material.color.getHexString(),
+          opacity: r.material.opacity,
+          label: r.labelText || '',
+          background: r.labelBackground || '',
+          alarm: !!r.alarm,
+        },
+      ]),
+    ),
+  );
+const near = (hex, expected) =>
+  [0, 2, 4].every((i) => Math.abs(parseInt(hex.slice(i, i + 2), 16) - parseInt(expected.replace('#', '').slice(i, i + 2), 16)) <= 2);
+
+test('sensor maps: in the menu once a room has the sensor, coloured, labelled, with a legend', { timeout: TIMEOUT }, async () => {
+  const sensor = (state, unit) => ({ state: String(state), attributes: unit ? { unit_of_measurement: unit } : {} });
+  const config = house({
+    sun: 'no',
+    rooms: [
+      {
+        name: 'Living',
+        object_id: 'floor_living',
+        humidity: 'sensor.h_living',
+        co2: 'sensor.co2_living',
+        power: ['sensor.plug_tv', 'sensor.plug_pc', 'sensor.plug_off'],
+        hcho: 'sensor.hcho_living',
+        voc: 'sensor.voc_living',
+      },
+      { name: 'Bed', object_id: 'floor_bed', co2: 'sensor.co2_bed' },
+    ],
+  });
+  const { page, errors } = await open(
+    config,
+    states({
+      'sensor.h_living': sensor(45, '%'),
+      'sensor.co2_living': sensor(1200, 'ppm'),
+      'sensor.co2_bed': sensor(700, 'ppm'),
+      'sensor.plug_tv': sensor(120, 'W'),
+      'sensor.plug_pc': sensor(1.5, 'kW'),
+      'sensor.plug_off': sensor('unavailable', 'W'),
+      'sensor.hcho_living': sensor(0.05, 'mg/m³'),
+      'sensor.voc_living': sensor(180),
+    }),
+  );
+  const options = await page.evaluate(() => [...window.__card._zoommenu.querySelectorAll('select option')].map((o) => o.value));
+  assert.deepEqual(options, ['none', 'temperature', 'presence', 'illuminance', 'humidity', 'co2', 'voc', 'hcho', 'power']);
+  const show = async (mode) => {
+    await page.evaluate((mode) => window.__card._setMapMode(mode), mode);
+    const legend = await page.evaluate(() => {
+      const l = window.__card._zoommenu.querySelector('.f3d-legend');
+      return l ? [...l.querySelectorAll('span')].map((span) => span.textContent.trim()).join(' ') : null;
+    });
+    return { rooms: await roomState(page), legend };
+  };
+  let m = await show('co2');
+  assert.equal(m.rooms.Living.label, '1,200 ppm');
+  // 1200 ppm: 40 % of the way from yellow (#facc15, 1000 ppm) to orange (#f97316, 1500 ppm)
+  assert.ok(near(m.rooms.Living.color, '#faa815'), 'between yellow and orange: ' + m.rooms.Living.color);
+  assert.equal(m.rooms.Bed.label, '700 ppm');
+  assert.equal(m.legend, '600 2,000 ppm');
+  m = await show('power');
+  assert.equal(m.rooms.Living.label, '1,620 W', 'the plugs added up, kW converted');
+  assert.equal(m.rooms.Bed.visible, false, 'no sensor: not coloured');
+  m = await show('hcho');
+  assert.equal(m.rooms.Living.label, '50 µg/m³', 'mg/m³ converted');
+  m = await show('voc');
+  assert.equal(m.rooms.Living.label, '180', 'an index has no unit');
+  assert.equal(m.legend, '100 400', 'and its own scale');
+  m = await show('humidity');
+  assert.equal(m.rooms.Living.label, '45 %');
+  assert.ok(near(m.rooms.Living.color, '#22c55e'), 'good humidity is green');
+  m = await show('none');
+  assert.equal(m.rooms.Living.visible, false);
+  assert.equal(m.legend, null);
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+test('alarms: a room blinks over any map with the kind written on it, an object too; the camera goes there', { timeout: TIMEOUT }, async () => {
+  const off = (deviceClass) => ({ state: 'off', attributes: { device_class: deviceClass } });
+  const config = house({
+    sun: 'no',
+    alarm_view: 'yes',
+    rooms: [
+      { name: 'Living', object_id: 'floor_living', alarms: ['binary_sensor.smoke_living'] },
+      { name: 'Bed', object_id: 'floor_bed', alarms: 'binary_sensor.leak_bed' },
+    ],
+    entities: [{ entity: 'binary_sensor.leak_bed', type3d: 'alarm', object_id: 'wardrobe' }],
+  });
+  const { page, errors } = await open(config, states({ 'binary_sensor.smoke_living': off('smoke'), 'binary_sensor.leak_bed': off('moisture') }));
+  let rooms = await roomState(page);
+  assert.equal(rooms.Living.visible, false);
+  assert.equal(await page.evaluate(() => window.__card._roomAlarms), false);
+
+  await page.evaluate(() => window.__setState('binary_sensor.smoke_living', 'on'));
+  rooms = await roomState(page);
+  assert.equal(rooms.Living.visible, true, 'shown with no map');
+  assert.equal(rooms.Living.label, 'Smoke');
+  assert.ok(near(rooms.Living.color, '#ff3b30'));
+  assert.ok(await page.evaluate(() => window.__card._roomAlarms && window.__card._to_animate), 'blinking');
+  const opacities = [];
+  for (let k = 0; k < 4; k++) {
+    opacities.push((await roomState(page)).Living.opacity);
+    await page.waitForTimeout(170);
+  }
+  assert.ok(Math.max(...opacities) - Math.min(...opacities) > 0.1, 'the opacity changes: ' + opacities);
+  await page.waitForTimeout(900); // the camera flies to the room (700 ms)
+  const target = await page.evaluate(() => {
+    const t = window.__card._controls.target;
+    const c = window.__card._roomViews[0].box.getCenter(t.clone());
+    return t.distanceTo(c);
+  });
+  assert.ok(target < 1, 'the camera looks at the room: ' + target);
+
+  await page.evaluate(() => window.__setState('binary_sensor.leak_bed', 'on'));
+  rooms = await roomState(page);
+  assert.equal(rooms.Bed.label, 'Water leak');
+  assert.ok(near(rooms.Bed.color, '#2f80ff'));
+  const wardrobe = () =>
+    page.evaluate(() => {
+      const o = window.__card._scene.getObjectByName('wardrobe');
+      return { tinted: o.material === o.userData.tintMaterial, emissive: o.material.emissive.getHexString() };
+    });
+  let w = await wardrobe();
+  assert.ok(w.tinted && near(w.emissive, '#2f80ff'), 'the object of the leak sensor glows blue: ' + JSON.stringify(w));
+
+  await page.evaluate(() => {
+    window.__setState('binary_sensor.smoke_living', 'off');
+    window.__setState('binary_sensor.leak_bed', 'off');
+  });
+  rooms = await roomState(page);
+  assert.equal(rooms.Living.visible || rooms.Bed.visible, false);
+  assert.equal(await page.evaluate(() => window.__card._roomAlarms), false);
+  w = await wardrobe();
+  assert.equal(w.tinted, false);
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+test('climate: a heater glows while it heats; a room shows the target and the temperature of its thermostat', { timeout: TIMEOUT }, async () => {
+  const thermostat = (action) => ({ state: 'heat', attributes: { hvac_action: action, current_temperature: 20.5, temperature: 22 } });
+  const config = house({
+    sun: 'no',
+    room_colors: 'temperature',
+    rooms: [{ name: 'Living', object_id: 'floor_living', climate: 'climate.living' }],
+    entities: [
+      { entity: 'climate.living', type3d: 'climate', object_id: 'sofa' },
+      { entity: 'switch.boiler', type3d: 'climate', object_id: 'table' },
+    ],
+  });
+  const { page, errors } = await open(config, states({ 'climate.living': thermostat('heating'), 'switch.boiler': { state: 'off', attributes: {} } }));
+  const glow = (name) =>
+    page.evaluate((name) => {
+      const o = window.__card._scene.getObjectByName(name);
+      return { tinted: o.material === o.userData.tintMaterial, emissive: o.material.emissive.getHexString() };
+    }, name);
+  let g = await glow('sofa');
+  assert.ok(g.tinted && near(g.emissive, '#ff6a00'), 'heating: orange ' + JSON.stringify(g));
+  assert.equal((await glow('table')).tinted, false, 'the boiler is off');
+  let rooms = await roomState(page);
+  assert.equal(rooms.Living.label, '20.5 °C → 22 °C', 'the temperature of the thermostat and its target');
+  assert.ok(rooms.Living.background.includes('255, 106, 0'), 'heating: orange label');
+
+  await page.evaluate(() => window.__setState('climate.living', 'heat', { hvac_action: 'idle' }));
+  assert.equal((await glow('sofa')).tinted, false, 'idle: no glow');
+  rooms = await roomState(page);
+  assert.ok(rooms.Living.background.includes('0, 0, 0'), 'idle: plain label');
+  await page.evaluate(() => window.__setState('switch.boiler', 'on'));
+  g = await glow('table');
+  assert.ok(g.tinted && near(g.emissive, '#ff6a00'), 'a switch on heats');
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+test('a card with only rooms, without the entities list: the rooms follow their sensors, the canvas its card', { timeout: TIMEOUT }, async () => {
+  const config = house({ room_colors: 'co2', rooms: [{ name: 'Living', object_id: 'floor_living', co2: 'sensor.co2' }] });
+  delete config.entities;
+  const { page, errors } = await open(config, states({ 'sensor.co2': { state: '900', attributes: { unit_of_measurement: 'ppm' } } }));
+  assert.equal((await roomState(page)).Living.label, '900 ppm');
+  await page.evaluate(() => window.__setState('sensor.co2', '1600'));
+  assert.equal((await roomState(page)).Living.label, '1,600 ppm', 'updated');
+  const size = await page.evaluate(() => [window.__card._renderer.domElement.width, document.getElementById('wrap').clientWidth]);
+  assert.equal(size[0], size[1], 'the canvas fills the card');
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+test('card editor: a room with the sensors of the maps, its alarms and thermostat; the sensor maps', { timeout: TIMEOUT }, async () => {
+  const config = house({
+    language: 'it',
+    rooms: [{ name: 'Living', object_id: 'floor_living', co2: 'sensor.co2', power: 'sensor.plug', alarms: ['binary_sensor.smoke'] }],
+    maps: [{ key: 'co2', min: 400, max: 1400 }, { key: 'fridge', name: 'Frigo', unit: '°C', min: 2, max: 8 }],
+  });
+  const { page, errors } = await open(config);
+  const result = await page.evaluate(async () => {
+    const card = window.__card;
+    card.preview = true;
+    const ed = await card.constructor.getConfigElement();
+    ed.hass = window.__hass();
+    ed.setConfig(JSON.parse(JSON.stringify(card._config)));
+    document.body.append(ed);
+    await new Promise((r) => setTimeout(r, 200));
+    ed._mode = 'ready';
+    ed._expanded = ['colours'];
+    await ed.updateComplete;
+    const lines = [...ed.shadowRoot.querySelectorAll('.row')].map((r) => r.textContent.replace(/\s+/g, ' ').trim());
+    ed._view = { list: 'rooms', index: 0 };
+    await ed.updateComplete;
+    const headings = [...ed.shadowRoot.querySelectorAll('.heading')].map((h) => h.textContent.trim());
+    const forms = [...ed.shadowRoot.querySelectorAll('ha-form')];
+    const fields = forms.flatMap((f) => {
+      const out = [];
+      const walk = (s) => s.forEach((x) => (x.schema ? walk(x.schema) : out.push([x.name, f.computeLabel(x)])));
+      walk(f.schema);
+      return out;
+    });
+    const data = forms.map((f) => f.data);
+    // A change in the sensors form: the alarms list of one goes back to one id.
+    const sensorsForm = forms.find((f) => JSON.stringify(f.schema).includes('"co2"'));
+    sensorsForm.dispatchEvent(new CustomEvent('value-changed', { detail: { value: { ...sensorsForm.data, humidity: 'sensor.hum', power: ['sensor.plug', 'sensor.plug2'] } } }));
+    const room = ed._config.rooms[0];
+    return { lines, headings, fields, alarmsInForm: data[0].alarms, room };
+  });
+  assert.ok(result.lines.some((l) => l.startsWith('CO₂') && l.includes('Mappa pronta, altri colori') && l.includes('400–1400')), result.lines.join(' | '));
+  assert.ok(result.lines.some((l) => l.startsWith('Frigo') && l.includes('Mappa nuova')));
+  assert.ok(result.headings.includes('Sensori per le mappe') && result.headings.includes('Allarmi e clima'), result.headings.join(' | '));
+  const labels = Object.fromEntries(result.fields);
+  assert.equal(labels.power, 'Consumi (prese smart)');
+  assert.equal(labels.fridge, 'Frigo', 'a new map adds a sensor field to the rooms');
+  assert.equal(labels.alarms, 'Sensori di allarme');
+  assert.deepEqual(result.alarmsInForm, ['binary_sensor.smoke'], 'one alarm id shown as a list in the picker');
+  assert.equal(result.room.humidity, 'sensor.hum');
+  assert.deepEqual(result.room.power, ['sensor.plug', 'sensor.plug2']);
+  assert.equal(result.room.alarms, 'binary_sensor.smoke', 'written back as one id');
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+test('card editor: only its preview answers (not the cards of the dashboard in edit mode); picking and the current view keep the pause; the camera stays', { timeout: TIMEOUT }, async () => {
+  const config = house({ sun: 'no', shadow: 'no', entities: lamps(2) });
+  const { page, errors } = await open(config);
+  const ready = (name) => page.waitForFunction((name) => window[name] && window[name]._modelready, name, { timeout: 120000 });
+  // A card of the dashboard in edit mode (Home Assistant sets preview on it too) and the preview.
+  const add = (name, inView) =>
+    page.evaluate(
+      ({ name, inView }) => {
+        const card = document.createElement('floor3d-card');
+        card.setConfig(JSON.parse(JSON.stringify(window.__card._config)));
+        card.hass = window.__hass();
+        card.preview = true;
+        const box = document.createElement('div');
+        box.style.cssText = 'width: 500px; height: 380px';
+        box.appendChild(card);
+        if (inView) {
+          const view = document.createElement('hui-view');
+          view.appendChild(box);
+          document.body.appendChild(view);
+        } else {
+          document.body.appendChild(box);
+        }
+        window[name] = card;
+      },
+      { name, inView },
+    );
+  await page.evaluate(() => window.__card.remove()); // not part of this test
+  await add('__dashboard', true);
+  await ready('__dashboard');
+  await add('__preview', false);
+  await ready('__preview');
+  const camera = (name) => page.evaluate((name) => window[name]._camera.position.toArray().map((v) => Math.round(v)), name);
+  // The user moves the camera of the preview.
+  await page.evaluate(() => {
+    window.__preview._camera.position.set(300, 700, 500);
+    window.__preview._controls.update();
+  });
+  const moved = await camera('__preview');
+  const editorCamera = () => page.evaluate(() => window.__ed._config.camera_position && [window.__ed._config.camera_position.x, window.__ed._config.camera_position.y, window.__ed._config.camera_position.z].map(Math.round));
+  await page.evaluate(async () => {
+    const ed = await window.__preview.constructor.getConfigElement();
+    ed.hass = window.__hass();
+    ed.setConfig(JSON.parse(JSON.stringify(window.__preview._config)));
+    document.body.append(ed);
+    window.__ed = ed;
+    await new Promise((r) => setTimeout(r, 100));
+    ed._useCurrentView();
+  });
+  assert.deepEqual(await editorCamera(), moved, 'the camera of the preview, not the one of the card behind');
+
+  // Pause, then Home Assistant replaces the preview (a change of the configuration).
+  await page.evaluate(() => {
+    window.__ed._setPaused(true);
+    window.__preview.remove();
+  });
+  await add('__preview2', false);
+  await add('__dashboard2', true);
+  await ready('__dashboard2');
+  let state = await page.evaluate(() => ({
+    placeholder: !!window.__preview2._pausedEl,
+    image: !!(window.__preview2._pausedEl && window.__preview2._pausedEl.querySelector('img')),
+    dashboardLive: !!window.__dashboard2._renderer && !window.__dashboard2._pausedEl,
+  }));
+  assert.deepEqual(state, { placeholder: true, image: true, dashboardLive: true }, 'only the preview shows the picture of the pause');
+
+  // "Use the current view" while paused: the camera of the last live preview, and the pause stays.
+  await page.evaluate(() => {
+    window.__ed._config = { ...window.__ed._config, camera_position: undefined };
+    window.__ed._useCurrentView();
+  });
+  assert.deepEqual(await editorCamera(), moved);
+  assert.equal(await page.evaluate(() => window.__ed._paused), true);
+
+  // "Pick in the preview" while paused: the preview loads the model, where the camera was; the
+  // pause stays, also after the object is picked.
+  await page.evaluate(() => window.__ed._startPick({ path: ['entities', 0, 'object_id'] }));
+  await ready('__preview2');
+  assert.deepEqual(await camera('__preview2'), moved, 'the camera where it was, not the initial view');
+  state = await page.evaluate(() => ({ paused: window.__ed._paused, pick: window.__preview2._pickMode }));
+  assert.deepEqual(state, { paused: true, pick: true });
+  await page.evaluate(() => window.__preview2._toEditor({ picked: 'lamp_7' }));
+  state = await page.evaluate(() => ({ paused: window.__ed._paused, object: window.__ed._config.entities[0].object_id }));
+  assert.deepEqual(state, { paused: true, object: 'lamp_7' });
+
+  // Closing the editor (Save or X) ends the pause: a preview still showing the picture loads.
+  await page.evaluate(() => window.__preview2.remove());
+  await add('__preview3', false);
+  assert.equal(await page.evaluate(() => !!window.__preview3._pausedEl), true);
+  await page.evaluate(() => window.__ed.remove());
+  await ready('__preview3');
+  assert.equal(await page.evaluate(() => !!window.__preview3._pausedEl), false);
+  // A new preview with the same initial view goes back to the camera; with another, to the new one.
+  await add('__preview4', false);
+  await ready('__preview4');
+  assert.deepEqual(await camera('__preview4'), moved);
+  await page.evaluate(() => {
+    const config = JSON.parse(JSON.stringify(window.__card._config));
+    config.camera_position = { x: 0, y: 1500, z: 10 };
+    const card = document.createElement('floor3d-card');
+    card.setConfig(config);
+    card.hass = window.__hass();
+    card.preview = true;
+    document.body.appendChild(card);
+    window.__preview5 = card;
+  });
+  await ready('__preview5');
+  assert.notDeepEqual(await camera('__preview5'), moved, 'another initial view: shown');
   assert.deepEqual(errors, []);
   await page.close();
 });

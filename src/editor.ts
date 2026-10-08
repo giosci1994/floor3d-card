@@ -47,16 +47,21 @@ import {
   localizeSchema,
   objectField,
   objectListField,
+  MAP_KEYS,
+  mapSchema,
+  roomAlarmsSchema,
   roomSchema,
+  roomSensorsSchema,
   typeSchema,
   vector,
   zoomObjectSchema,
   zoomSchema,
 } from './editor-schema';
 import { pickLanguage } from './localize/localize';
+import { ROOM_KEYS } from './maps';
 import { Translator, translator } from './localize/editor';
 
-type ListKey = 'entities' | 'object_groups' | 'zoom_areas' | 'rooms';
+type ListKey = 'entities' | 'object_groups' | 'zoom_areas' | 'rooms' | 'maps';
 type View = { list?: ListKey; index?: number };
 // Where a picked object goes: a field of the config (path of keys), or the objects of a group.
 type PickTarget = { path: (string | number)[]; add?: boolean };
@@ -242,8 +247,10 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
     this.removeEventListener('focusout', this._flushListener);
     window.removeEventListener('pointerdown', this._flushListener, true);
     this._flush();
-    previewState.paused = false; // the next editor starts with a live preview
-    this._toPreview({ pick: false, highlight: [] });
+    // The next editor starts with a live preview; a preview still paused shows the model.
+    const paused = previewState.paused;
+    previewState.paused = false;
+    this._toPreview({ pick: false, highlight: [], ...(paused ? { request: 'resume' } : {}) });
   }
 
   public setConfig(config: any): void {
@@ -357,6 +364,8 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
       this._highlightCurrent();
     }
     if (detail.shadows) this._shadows = detail.shadows;
+    // A new preview showing the picture of the pause, while objects are being picked: the model.
+    if (detail.paused && this._picking) this._toPreview({ request: 'live' });
     if (detail.picked && this._picking) this._onPicked(detail.picked);
     if (detail.camera && this._cameraTarget) {
       const target = this._cameraTarget;
@@ -368,11 +377,7 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
   private _cameraTarget?: { list?: ListKey; index?: number };
 
   private _useCurrentView(list?: ListKey, index?: number): void {
-    // A paused preview has no camera: it is resumed first, to be moved to the view.
-    if (this._paused) {
-      this._setPaused(false);
-      return;
-    }
+    // A paused preview answers with the camera of the last live one: the pause stays.
     this._cameraTarget = { list, index };
     this._toPreview({ request: 'camera' });
   }
@@ -397,9 +402,11 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
   }
 
   private _startPick(target: PickTarget): void {
-    if (this._paused) this._setPaused(false); // objects are picked in the live preview
     const same = this._picking && JSON.stringify(this._picking) === JSON.stringify(target);
     this._picking = same ? undefined : target;
+    // Objects are picked in the model: a paused preview showing its picture loads it, and the
+    // pause stays (before, picking resumed the preview, which went back to the initial view).
+    if (!same && this._paused) this._toPreview({ request: 'live' });
     this._toPreview({ pick: !same });
   }
 
@@ -444,7 +451,7 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
   }
 
   private _itemObjects(list: ListKey, item: any): string[] {
-    if (!isObject(item)) return [];
+    if (!isObject(item) || list === 'maps') return [];
     if (list === 'object_groups') return (item.objects || []).map((o) => (isObject(o) ? o.object_id : o));
     return [item.object_id];
   }
@@ -569,6 +576,12 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
             <div class="heading">${this._t('headings.rooms')}</div>
             ${this._renderList('rooms', this._t('ui.add_room'), { name: '' })}
           `;
+        case 'maps':
+          return html`
+            <div class="heading">${this._t('headings.maps')}</div>
+            <div class="hint">${this._t('ui.maps_hint')}</div>
+            ${this._renderList('maps', this._t('ui.add_map'), { key: '' })}
+          `;
         case 'colorcondition':
           return this._renderColorConditions(list as ListKey, index as number, data);
         case 'shadow_status':
@@ -668,6 +681,16 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
         primary: item.object_group || this._t('ui.no_name'),
         secondary: this._t(count === 1 ? 'ui.objects_one' : 'ui.objects_other', { count }),
         warning: !item.object_group,
+      };
+    }
+    if (list === 'maps') {
+      const preset = MAP_KEYS.includes(item.key);
+      const range = [item.min, item.max].every((v) => v !== undefined && v !== '') ? `${item.min}–${item.max}${item.unit ? ' ' + item.unit : ''}` : '';
+      return {
+        icon: preset ? 'mdi:map-legend' : 'mdi:map-plus',
+        primary: item.name || (preset ? this._t('options.map_key.' + item.key) : item.key) || this._t('ui.no_name'),
+        secondary: [preset ? this._t('ui.map_preset') : this._t('ui.map_custom'), range].filter((p) => p).join(' · '),
+        warning: !item.key,
       };
     }
     if (list === 'zoom_areas') {
@@ -788,6 +811,7 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
     if (list === 'entities') content = this._renderEntity(index, isObject(item) ? item : { entity: item }, set);
     else if (list === 'object_groups') content = this._renderGroup(index, item, set);
     else if (list === 'zoom_areas') content = this._renderZoom(index, item, set);
+    else if (list === 'maps') content = this._renderMap(item, set);
     else content = this._renderRoom(index, item, set);
     return html`
       <div class="subheader">
@@ -963,18 +987,41 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
   }
 
   private _renderRoom(index: number, room: any, set: (value: any) => void): TemplateResult[] {
-    // presence: one entity or a list. The picker of several entities works on a list (given a single
-    // entity, it would change it into a list at once); one entity is written back as it was.
-    const presence = room.presence ? (Array.isArray(room.presence) ? room.presence : [room.presence]) : [];
+    // presence, alarms and power: one entity or a list. The picker of several entities works on a
+    // list (given a single entity, it would change it into a list at once); one entity is written
+    // back as it was.
+    const multiple = ['presence', 'alarms', 'power'];
+    const data = { ...room };
+    multiple.forEach((key) => (data[key] = room[key] ? (Array.isArray(room[key]) ? room[key] : [room[key]]) : []));
+    const onChange = (value: any): void => {
+      const next = dropEmpty({ ...value });
+      multiple.forEach((key) => {
+        if (!Array.isArray(next[key])) return;
+        if (next[key].length === 0) delete next[key];
+        else if (next[key].length === 1) next[key] = next[key][0];
+      });
+      set(next);
+    };
+    // The maps of the configuration that aren't ready ones: a sensor field each.
+    const custom = this._list('maps').filter((m) => isObject(m) && m.key && !MAP_KEYS.includes(m.key) && !ROOM_KEYS.includes(m.key));
     return [
-      this._objectRow(['rooms', index, 'object_id'], roomSchema(this._objectOptions()), { ...room, presence }, (value) => {
+      this._objectRow(['rooms', index, 'object_id'], roomSchema(this._objectOptions()), data, onChange),
+      this._form(roomSensorsSchema(custom), data, onChange, this._t('headings.map_sensors')),
+      this._form(roomAlarmsSchema(), data, onChange, this._t('headings.alarms_climate')),
+    ];
+  }
+
+  private _renderMap(map: any, set: (value: any) => void): TemplateResult[] {
+    return [
+      this._form(mapSchema(), map, (value) => {
         const next = dropEmpty({ ...value });
-        if (Array.isArray(next.presence)) {
-          if (next.presence.length === 0) delete next.presence;
-          else if (next.presence.length === 1) next.presence = next.presence[0];
+        if (Array.isArray(next.colors)) {
+          next.colors = next.colors.filter((c: any) => typeof c === 'string' && c.trim() !== '');
+          if (next.colors.length === 0) delete next.colors;
         }
         set(next);
       }),
+      html`<div class="hint">${this._t('ui.map_hint')}</div>`,
     ];
   }
 

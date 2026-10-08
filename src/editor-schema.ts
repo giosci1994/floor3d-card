@@ -60,6 +60,7 @@ export const SWITCHES: { [key: string]: 'yes' | 'no' } = {
   log_depth: 'no',
   reversed_depth: 'yes',
   state_colors: 'no',
+  alarm_view: 'no',
 };
 // The same inside the options block of a type.
 export const BLOCK_SWITCHES: { [block: string]: { [key: string]: 'yes' | 'no' } } = {
@@ -164,13 +165,15 @@ export const SECTIONS: Section[] = [
         row(text('open_color'), text('alarm_color')),
         entity('alarm_entity', 'alarm_control_panel'),
         row(
-          choice('room_colors', ['none', 'temperature', 'presence', 'illuminance']),
+          choice('room_colors', ['none', 'temperature', 'presence', 'illuminance', ...MAP_KEYS]),
           text('presence_color'),
         ),
         row(num('temperature_min'), num('temperature_max')),
         row(num('illuminance_min', { min: 0 }), num('illuminance_max', { min: 0 })),
+        bool('alarm_view'),
       ],
       'rooms',
+      'maps',
     ],
   },
   {
@@ -199,6 +202,8 @@ export const TYPES: [string, string][] = [
   ['info', 'mdi:information-outline'],
   ['shower', 'mdi:shower-head'],
   ['tracker', 'mdi:account-search-outline'],
+  ['climate', 'mdi:radiator'],
+  ['alarm', 'mdi:alarm-light-outline'],
 ];
 
 const ACTIONS = ['more-info', 'overlay', 'default'];
@@ -416,6 +421,19 @@ export const typeSchema = (type: string, objects: string[], item: any = {}, part
         ],
         'tracker.sensor_position',
       ];
+    case 'climate':
+      return [
+        [
+          {
+            name: 'climate',
+            type: 'grid',
+            column_min_width: '140px',
+            schema: [text('heat_color'), text('cool_color'), num('glow', { min: 0, max: 3, step: 0.1 }), choice('mode', ['heat', 'cool'])],
+          },
+        ],
+      ];
+    case 'alarm':
+      return [[{ name: 'alarm', type: 'grid', column_min_width: '140px', schema: [{ ...text('color'), helper_key: 'alarm_object_color' }] }]];
     default:
       return [];
   }
@@ -433,6 +451,31 @@ export const roomSchema = (objects: string[]): Schema[] => [
   row(entity('temperature', 'sensor'), entity('illuminance', 'sensor')),
   entity('presence', ['binary_sensor', 'person', 'device_tracker'], true),
 ];
+// The sensors of a room for the sensor maps: the ready ones, then those of the maps of the
+// configuration (custom: [{ key, name }]), labelled with their name.
+export const MAP_KEYS = ['humidity', 'co2', 'pm25', 'pm10', 'voc', 'hcho', 'radon', 'noise', 'power'];
+export const roomSensorsSchema = (custom: { key: string; name?: string }[] = []): Schema[] => [
+  row(entity('humidity', 'sensor'), entity('co2', 'sensor')),
+  row(entity('pm25', 'sensor'), entity('pm10', 'sensor')),
+  row(entity('voc', 'sensor'), entity('hcho', 'sensor')),
+  row(entity('radon', 'sensor'), entity('noise', 'sensor')),
+  entity('power', 'sensor', true),
+  ...custom.map((m) => ({ ...entity(m.key, 'sensor'), label_text: m.name || m.key })),
+];
+export const roomAlarmsSchema = (): Schema[] => [
+  entity('alarms', ['binary_sensor'], true),
+  entity('climate', ['climate', 'switch', 'input_boolean', 'binary_sensor']),
+];
+// A map of the configuration: a ready one with other colours, or a map for other sensors.
+export const mapSchema = (): Schema[] => [
+  row(
+    { name: 'key', options_key: 'options.map_key', selector: { select: { mode: 'dropdown', custom_value: true, options: MAP_KEYS.map((v) => ({ value: v, label: v })) } } },
+    text('name'),
+  ),
+  row(text('unit'), choice('aggregate', ['mean', 'sum', 'max'])),
+  row(num('min'), num('max'), num('decimals', { min: 0, max: 3, step: 1 })),
+  { name: 'colors', selector: { text: { multiple: true } } },
+];
 export const zoomSchema = (): Schema[] => [row(text('zoom'), num('level', { step: 1 }))];
 export const zoomObjectSchema = (objects: string[]): Schema[] => [
   row(objectField('object_id', objects), num('distance', { min: 0, unit_of_measurement: 'cm' })),
@@ -445,7 +488,7 @@ export const colorConditionSchema = (): Schema[] => [row(text('state'), text('co
 export const labelFor =
   (lookup: (key: string) => string | undefined) =>
   (schema: Schema): string =>
-    lookup('labels.' + (schema.label_key || schema.name)) ?? schema.name;
+    schema.label_text ?? lookup('labels.' + (schema.label_key || schema.name)) ?? schema.name;
 export const helperFor =
   (lookup: (key: string) => string | undefined) =>
   (schema: Schema): string | undefined =>

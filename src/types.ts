@@ -131,6 +131,10 @@ export interface Floor3dCardConfig {
   presence_color: string;
   rooms: any;
   room_colors: string;
+  maps: any; // sensor maps: changed presets and maps of other sensors (see maps.ts)
+  alarm_view: string; // yes: the camera goes to a room when one of its alarms goes on
+  alarm: any; // options of type3d: alarm
+  climate: any; // options of type3d: climate
   temperature_min: number | string;
   temperature_max: number | string;
   illuminance_min: number | string;

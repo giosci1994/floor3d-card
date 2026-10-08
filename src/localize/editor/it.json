@@ -111,7 +111,7 @@
     "count": "Gocce",
     "sensor_x": "Sensore X",
     "sensor_y": "Sensore Y",
-    "unit": "Unità delle coordinate",
+    "unit": "Unità",
     "scale": "Scala",
     "flip_x": "Specchia X",
     "flip_y": "Specchia Y",
@@ -125,7 +125,29 @@
     "level": "Piano",
     "add": "Aggiungi un oggetto",
     "url_zoom": "Vista dall'indirizzo della pagina",
-    "language": "Lingua"
+    "language": "Lingua",
+    "alarm_view": "Vai alla stanza dell'allarme",
+    "humidity": "Umidità",
+    "co2": "CO₂",
+    "pm25": "PM2.5",
+    "pm10": "PM10",
+    "voc": "VOC",
+    "hcho": "Formaldeide",
+    "radon": "Radon",
+    "noise": "Rumore",
+    "power": "Consumi (prese smart)",
+    "alarms": "Sensori di allarme",
+    "climate": "Termostato o riscaldamento",
+    "heat_color": "Colore quando scalda",
+    "cool_color": "Colore quando raffresca",
+    "glow": "Bagliore",
+    "mode": "Quando è acceso",
+    "key": "Mappa",
+    "aggregate": "Più sensori",
+    "min": "Valore più basso",
+    "max": "Valore più alto",
+    "decimals": "Decimali",
+    "colors": "Colori"
   },
   "helpers": {
     "path": "Per esempio /local/floor3d/",
@@ -162,7 +184,24 @@
     "text": "Un testo o un template",
     "url_zoom": "Il nome di un parametro, per esempio area: ?area=cucina mostra la vista cucina",
     "object_id_entity": "Un oggetto, un <gruppo>, o un nome con * per tutti gli oggetti corrispondenti (Lampada_*)",
-    "language": "Della card e di questo editor"
+    "language": "Della card e di questo editor",
+    "alarm_view": "La telecamera va sulla stanza quando scatta uno dei suoi allarmi",
+    "power": "I consumi si sommano",
+    "voc": "µg/m³, ppb o un indice senza unità",
+    "hcho": "µg/m³, mg/m³ o ppb",
+    "alarms": "Fumo, gas, acqua…: la stanza lampeggia mentre uno è attivo",
+    "climate": "Il suo obiettivo sulla mappa delle temperature, e la sua temperatura se la stanza non ha un sensore",
+    "heat_color": "Predefinito #ff6a00",
+    "cool_color": "Predefinito #38bdf8",
+    "glow": "Predefinito 0.8",
+    "mode": "Per un interruttore o una presa: acceso vuol dire che scalda o raffresca",
+    "alarm_object_color": "Predefinito: il colore del tipo di allarme",
+    "key": "Una mappa pronta, per cambiarne i colori, o un nome nuovo per altri sensori delle stanze",
+    "unit": "Scritta dopo il valore",
+    "min": "Del primo colore",
+    "max": "Dell'ultimo colore",
+    "decimals": "Del valore scritto sulla stanza",
+    "colors": "Dal valore più basso al più alto, #rrggbb"
   },
   "options": {
     "language": {
@@ -182,7 +221,16 @@
       "none": "Nessuna",
       "temperature": "Temperatura",
       "presence": "Presenza",
-      "illuminance": "Illuminamento"
+      "illuminance": "Illuminamento",
+      "humidity": "Umidità",
+      "co2": "CO₂",
+      "pm25": "PM2.5",
+      "pm10": "PM10",
+      "voc": "VOC",
+      "hcho": "Formaldeide",
+      "radon": "Radon",
+      "noise": "Rumore",
+      "power": "Consumi"
     },
     "action": {
       "more-info": "Mostra i dettagli dell'entità",
@@ -215,6 +263,26 @@
     "label_text": {
       "state": "Stato",
       "template": "Template"
+    },
+    "map_key": {
+      "humidity": "Umidità",
+      "co2": "CO₂",
+      "pm25": "PM2.5",
+      "pm10": "PM10",
+      "voc": "VOC",
+      "hcho": "Formaldeide",
+      "radon": "Radon",
+      "noise": "Rumore",
+      "power": "Consumi"
+    },
+    "aggregate": {
+      "mean": "Media",
+      "sum": "Somma",
+      "max": "Il più alto"
+    },
+    "mode": {
+      "heat": "Scalda",
+      "cool": "Raffresca"
     }
   },
   "types": {
@@ -232,7 +300,9 @@
     "image": "Immagine (schermo TV)",
     "info": "Riquadro informazioni",
     "shower": "Doccia",
-    "tracker": "Tracciamento persone"
+    "tracker": "Tracciamento persone",
+    "climate": "Riscaldamento o raffrescamento",
+    "alarm": "Allarme (fumo, acqua…)"
   },
   "headings": {
     "initial_view": "Vista iniziale",
@@ -255,7 +325,10 @@
     "camera_rotate": "Rotazione della telecamera",
     "light_light_direction": "Direzione del faretto",
     "info_position": "Posizione (facoltativa)",
-    "tracker_sensor_position": "Posizione del sensore"
+    "tracker_sensor_position": "Posizione del sensore",
+    "maps": "Mappe dei sensori",
+    "map_sensors": "Sensori per le mappe",
+    "alarms_climate": "Allarmi e clima"
   },
   "ui": {
     "loading": "Caricamento…",
@@ -302,6 +375,12 @@
     "shadows_ok": "Luci con ombre: {lights}, al massimo {budget} su questo dispositivo.",
     "shadows_extra": "{lights} luci con ombre, al massimo {budget} alla volta su questo dispositivo: quando ne sono accese di più, le ultime accese ricevono l'ombra quando altre si spengono.",
     "shadows_over": "{lights} luci con ombre, al massimo {budget} su questo dispositivo (prima il sole, poi le entità nel loro ordine). Queste sono disegnate senza ombra, e la loro luce passa attraverso i muri: {names}. Imposta Ombre su No per le luci la cui ombra non si nota, oppure usa una sola luce per tutti gli oggetti di una lampada.",
-    "shadows_material": "Il materiale {material} del modello usa {textures} texture unit: ognuna oltre le 2 è un'ombra in meno."
+    "shadows_material": "Il materiale {material} del modello usa {textures} texture unit: ognuna oltre le 2 è un'ombra in meno.",
+    "add_map": "Aggiungi mappa",
+    "title_maps": "Mappa dei sensori",
+    "map_preset": "Mappa pronta, altri colori",
+    "map_custom": "Mappa nuova",
+    "maps_hint": "Le mappe pronte (umidità, CO₂, PM2.5, PM10, VOC, formaldeide, radon, rumore, consumi) richiedono solo i sensori nelle stanze. Qui: altri colori per loro, o mappe di altri sensori.",
+    "map_hint": "Valore più basso e più alto spostano i colori di una mappa pronta; Colori ne distribuisce di nuovi tra i due. Una mappa nuova aggiunge un campo sensore alle stanze."
   }
 }
