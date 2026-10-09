@@ -39,6 +39,7 @@
     "setup_error": "en feil under klargjøring av modellen, se nettleserkonsollen",
     "clear_selections": "fjern valg ({count})",
     "enable_selection": "Slå på valg",
-    "disable_selection": "Slå av valg"
+    "disable_selection": "Slå av valg",
+    "weather": "Værmelding"
   }
 }

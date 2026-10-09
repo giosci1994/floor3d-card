@@ -71,10 +71,13 @@ The Validate workflow runs the HACS checks at every push and every night; the Bu
 - **Sensor maps** (2.7): rooms coloured by humidity, CO₂, PM2.5, PM10, VOC, formaldehyde, radon, noise or the power of their smart plugs, with a legend under the Map menu, and maps of any other sensor. See [Sensor maps](#sensor-maps).
 - **Alarms** (2.7): a room blinks in red with a smoke, gas or carbon monoxide sensor on, in blue with a water leak, with the kind of alarm written on it; an object can blink too, and the camera can go to the room. See [Alarms](#alarms).
 - **Heating and cooling** (2.7): a radiator, a split or a heated floor glows orange while it heats and light blue while it cools; on the temperature map a room shows the target of its thermostat. See [Heating and cooling](#heating-and-cooling).
+- **Roller shades and venetian blinds** (2.8): `cover.motion: shrink` shortens a roller shade or a curtain toward its side instead of sliding it, and `cover.slats` turns the slats of a venetian blind with its tilt, also when slats, rails and cords are one object. See [Covers](#covers).
+- **Sky that follows the sun** (2.8, `backgroundColor: sky`): dark blue at night, orange at sunrise and sunset, light blue by day, grey with clouds. See [Sky and weather](#sky-and-weather).
+- **Weather forecast** (2.8, `weather`): a box in a corner with the weather now and the next days or hours. See [Sky and weather](#sky-and-weather).
 - **Languages** (2.6): the card and its editor in English, Italian and German (the card also in Norwegian). Each user sees the language of their Home Assistant profile; the `language` option sets one for the card. See [Languages](#languages).
 - **Shadows in the editor** (2.6): the card editor says how many lights cast a shadow and how many the device can draw, and names the lights left without. See [Shadows](#shadows).
 - **Version label** at the top of the card editor and in the console banner.
-- The sky (`sky`) and the ambient light of the original card are removed on purpose, so that they don't affect the render; the light of the sky of 2.4 (`sky_power`) is there only when it is set. The light that follows the camera (torch) is always on.
+- The sky of the original card (`sky: yes`) and its ambient light are removed on purpose, so that they don't affect the render. Besides drawing a sky around the model, `sky: yes` changed the colours and the lights: no light following the camera, a sand-coloured ground under the model, and a sun fixed where it was when the card opened. The option is still accepted, and ignored. The light of the sky of 2.4 (`sky_power`) is there only when it is set, and since 2.8 `backgroundColor: sky` draws a sky behind the model that follows the sun and changes nothing else (see [Sky and weather](#sky-and-weather)). The light that follows the camera (torch) is always on.
 
 | ![TV screen (type3d: image): the picture of the media player lights the room](docs/images/tv.jpg) | ![Animated shower (type3d: shower)](docs/images/shower.jpg) |
 | :---: | :---: |
@@ -453,6 +456,48 @@ entities:
 
 ![A thermostat heating: the target on the label, the radiator glowing](docs/images/map-thermostat.jpg)
 
+### Covers
+
+A cover of the original card slides: the pane goes up (or down) into its box, and a plane hides what goes past the edge. 2.8 adds:
+
+- `side: left` and `right`, for panels and curtains that open sideways, next to `up` and `down`.
+- `motion: shrink`: the pane gets shorter toward its side instead of sliding, as a roller shade rolls up or a curtain gathers to one side. No plane cuts the model, and the other objects of the cover (the bottom bar of a shade) follow the edge. With `motion: none` the pane stays where it is and only the slats turn.
+- `slats`: the object with the slats of a venetian blind. They turn with `current_tilt_position`, each on its long side. They can be in one object with the rails and the cords, as Sweet Home 3D exports a blind: the card turns the pieces that are long and equal, at least three of them, and leaves the rest as it is. `tilt_closed` and `tilt_open` are the angles in degrees from the model at tilt 0 and at tilt 100: 80 and 0 by default, for slats drawn open. For a blind whose slats are horizontal at 50, `tilt_closed: -80` and `tilt_open: 80`.
+
+```yaml
+- entity: cover.living_room_shade
+  type3d: cover
+  object_id: Shade_*            # the fabric and its bottom bar
+  cover:
+    pane: Shade_fabric
+    side: up
+    motion: shrink
+- entity: cover.office_blind
+  type3d: cover
+  object_id: Blind_office
+  cover:
+    side: up
+    slats: Blind_office         # the same object: slats, rails and cords
+```
+
+![A roller shade that shortens and a venetian blind: open, at 50 % and closed](docs/images/covers.jpg)
+
+### Sky and weather
+
+- `backgroundColor: sky`: the background is a sky that follows the elevation of the sun (`sun.sun`, or `sun_entity`): dark blue at night, orange at the horizon at sunrise and sunset, light blue by day. With a `weather` entity, clouds turn it grey (its `cloud_coverage`, else its condition). The sky is a gradient behind the canvas: it costs nothing to the GPU. Unlike the `sky: yes` of the original card, still ignored, it changes nothing else: lights, colours and ground stay the same.
+- `weather: weather.home`: a box in a corner with the weather now and the next forecasts, in the language of the card. A tap opens the entity. Home Assistant sends the forecast as it changes (the same way as for its weather card), with nothing to set up.
+  - `weather_position`: `bottom-left` (default), `bottom-right`, `top-left`, or `top-right` under the menus;
+  - `weather_forecast`: `daily` (default), `hourly` or `twice_daily`; if the entity doesn't have it, the one it has;
+  - `weather_count`: the forecasts shown, 4 by default; 0 for the weather now only.
+
+```yaml
+backgroundColor: sky
+weather: weather.home
+weather_forecast: hourly
+```
+
+![The sky by day and at sunset, with the forecast box](docs/images/sky-weather.jpg)
+
 ## Fixes
 
 - States out of step when an entity is missing at startup (the arrays followed only the entities that were found).
@@ -483,6 +528,9 @@ entities:
 - 2.6: objects whose material has several textures (a GLB material with normal, metallic-roughness, occlusion or emissive textures) vanished when many lights had shadows: the limit left 2 texture units to the materials, and such a material takes up to 7 or more, so its shader no longer compiled. The limit now leaves the units the richest material of the model takes; the console and the card editor name it. See [Shadows](#shadows).
 - 2.7: Home Assistant sets `preview` not only on the card next to the editor but on every card of the dashboard in edit mode, and those answered the editor too: "Use the current view" could take the camera of the card behind the dialog (it seemed to work only once, without the target and the rotation), the object lists and the shadows could come from it, and after Save while paused the dashboard showed "Preview paused" until pause and play were pressed. Only the card outside the views of the dashboard answers now, and closing the editor ends the pause of any preview left. Reported in [issue #13](https://github.com/giosci1994/floor3d-card/issues/13).
 - 2.7: a card without `entities` (only rooms, for example) never read the states: its rooms didn't change and the canvas kept its first size (300 × 150). The entities list is now empty when it is missing.
+- Original bug (2.8): a cover opening downward (`side: down`) was hidden while closed: the plane that hides the pane past its edge faced the wrong way.
+- Original bug (2.8): the plane of a sliding cover was placed before the model was centred, so with a model whose lowest point isn't at height 0 the covers were cut at the wrong height. It now moves with the model.
+- Original bug (2.8): a cover made of an object with several materials was not cut at all, and a cover whose material other objects share (often in GLB models) cut those objects too. Each sliding cover now has its own materials.
 - 2.7.1: a view without `level` kept the levels hidden by the view chosen before it, and so did the initial view. Now a view without `level` shows all the levels, and the initial view shows `initialLevel` again. Reported in [issue #13](https://github.com/giosci1994/floor3d-card/issues/13).
 - Original bug (2.4): `globalLightPower` as a sensor was read only when the model was loaded, and a state such as `unavailable` gave the torch an invalid intensity; `globalLightPower: 0` left the torch at 0.2. Now the sensor is read at every update, an unavailable one counts as the default (0.2), and 0 turns the torch off.
 
@@ -490,7 +538,7 @@ Some of these were found and fixed first in other forks: [Steven-D-Morgan/hass-3
 
 ## Browser tests
 
-`test/browser/` runs the built card (`dist/`) in headless Chromium with software WebGL (SwiftShader), the same on every computer, on every pull request and push (`.github/workflows/build.yml`, about a minute). The test house is made by `model.mjs` when the tests start (OBJ + MTL, the same with the bedroom on a second level, GLB, and a GLB whose walls have a material with 10 texture units), and `server.mjs` serves it with the test page. The tests check that:
+`test/browser/` runs the built card (`dist/`) in headless Chromium with software WebGL (SwiftShader), the same on every computer, on every pull request and push (`.github/workflows/build.yml`, about a minute). The test house is made by `model.mjs` when the tests start (OBJ + MTL, the same with the bedroom on a second level, the same with covers in the windows, GLB, and a GLB whose walls have a material with 10 texture units), and `server.mjs` serves it with the test page. The tests check that:
 
 - the model is drawn, with 30 lamps, the TV and the sun casting shadows, without errors in the page or in the shaders, in OBJ and GLB, and with the material with many textures; and that the shadow limit is the one of the GPU (see [Shadows](#shadows));
 - one light for a lamp of several objects goes in the middle of them, or on `light_object`;
@@ -504,7 +552,9 @@ Some of these were found and fixed first in other forks: [Steven-D-Morgan/hass-3
 - a card with only rooms, without `entities`, follows its sensors (2.7);
 - the editor shows the sensors, alarms and thermostat of a room, a field for each map of the configuration, and the list of maps (2.7);
 - only the preview answers the editor, not the cards of a dashboard in edit mode; picking an object and using the current view keep the pause; the camera of the preview stays where it was; closing the editor ends the pause (2.7);
-- a view with a level shows only that level, a view without one all of them, and the initial view `initialLevel` again, from the menu and from the buttons (2.7.1).
+- a view with a level shows only that level, a view without one all of them, and the initial view `initialLevel` again, from the menu and from the buttons (2.7.1);
+- the slats of a blind turn with its tilt, also when they are one object with the rails and the cords; a roller shade shortens from its bottom and its bar follows; sliding covers are cut past the edge of their side, also when they open downward or sideways (2.8);
+- the sky follows the sun and turns grey with clouds; the forecast box shows the weather now and the next forecasts in the language of the card, asks for a forecast the entity has, opens the entity on a tap, and stops its subscription when the card goes away (2.8).
 
 To run them locally: `npx playwright install --only-shell chromium` once, then `npm run build` and `npm run test:browser`.
 

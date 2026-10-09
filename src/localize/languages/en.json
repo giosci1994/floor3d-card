@@ -39,6 +39,7 @@
     "setup_error": "an error while setting up the model, see the browser console",
     "clear_selections": "clear selections ({count})",
     "enable_selection": "Enable Selection",
-    "disable_selection": "Disable Selection"
+    "disable_selection": "Disable Selection",
+    "weather": "Weather forecast"
   }
 }

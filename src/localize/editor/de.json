@@ -5,7 +5,8 @@
     "light": "Licht und Schatten",
     "interaction": "Interaktion",
     "colours": "Zustandsfarben und Raumkarten",
-    "rendering": "Darstellung"
+    "rendering": "Darstellung",
+    "weather": "Wetter"
   },
   "labels": {
     "name": "Name",
@@ -147,12 +148,20 @@
     "min": "Niedrigster Wert",
     "max": "Höchster Wert",
     "decimals": "Nachkommastellen",
-    "colors": "Farben"
+    "colors": "Farben",
+    "motion": "Bewegung",
+    "slats": "Lamellenobjekt",
+    "tilt_closed": "Lamellen geschlossen",
+    "tilt_open": "Lamellen offen",
+    "weather": "Wetter-Entität",
+    "weather_position": "Position",
+    "weather_forecast": "Vorhersage",
+    "weather_count": "Angezeigte Vorhersagen"
   },
   "helpers": {
     "path": "Zum Beispiel /local/floor3d/",
     "objectlist": "Optional: eine JSON-Liste der Objektnamen, für die Objektmenüs",
-    "backgroundColor": "Eine Farbe, #rrggbb oder transparent. Standard #aaaaaa",
+    "backgroundColor": "Eine Farbe (#rrggbb), transparent oder sky: folgt der Sonne. Standard #aaaaaa",
     "globalLightPower": "Von 0 bis 1 oder ein numerischer Sensor. Standard 0.2",
     "light_power": "Multipliziert alle Lampen. Standard 1",
     "exposure": "Standard 1",
@@ -203,7 +212,13 @@
     "min": "Der ersten Farbe",
     "max": "Der letzten Farbe",
     "decimals": "Des Werts im Raum",
-    "colors": "Vom niedrigsten bis zum höchsten Wert, #rrggbb"
+    "colors": "Vom niedrigsten bis zum höchsten Wert, #rrggbb",
+    "motion": "Verkürzt sich: Rollos und Vorhänge, ohne das Modell zu schneiden",
+    "slats": "Die Lamellen drehen sich mit der Neigung; sie können mit den Schienen ein Objekt sein",
+    "tilt_closed": "Grad gegenüber dem Modell bei Neigung 0. Standard 80",
+    "tilt_open": "Grad gegenüber dem Modell bei Neigung 100. Standard 0",
+    "weather": "Ein Feld mit dem aktuellen Wetter und den nächsten Vorhersagen; seine Wolken machen auch den Himmel im Hintergrund grau",
+    "weather_count": "Standard 4, 0 nur für das aktuelle Wetter"
   },
   "options": {
     "language": {
@@ -285,6 +300,20 @@
     "mode": {
       "heat": "Heizt",
       "cool": "Kühlt"
+    },
+    "motion": {
+      "slide": "Gleitet in den Kasten",
+      "shrink": "Verkürzt sich",
+      "none": "Bleibt (nur die Lamellen drehen sich)"
+    },
+    "backgroundColor": {
+      "sky": "Himmel, der der Sonne folgt",
+      "transparent": "Transparent"
+    },
+    "weather_forecast": {
+      "daily": "Täglich",
+      "hourly": "Stündlich",
+      "twice_daily": "Zweimal täglich"
     }
   },
   "types": {
@@ -330,7 +359,8 @@
     "tracker_sensor_position": "Sensorposition",
     "maps": "Sensorkarten",
     "map_sensors": "Sensoren der Karten",
-    "alarms_climate": "Alarme und Klima"
+    "alarms_climate": "Alarme und Klima",
+    "slats": "Jalousie"
   },
   "ui": {
     "loading": "Wird geladen…",

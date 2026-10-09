@@ -89,7 +89,17 @@ export const SECTIONS: Section[] = [
     content: () => [
       [row(text('name'), choice('language', ['auto', 'en', 'it', 'de', 'nb'])), bool('header')],
       [text('path'), row(text('objfile'), text('mtlfile')), text('objectlist')],
-      [row(text('backgroundColor'), text('style'))],
+      [
+        row(
+          // A colour, or one of the backgrounds of the menu: the sky that follows the sun, or none.
+          {
+            name: 'backgroundColor',
+            options_key: 'options.backgroundColor',
+            selector: { select: { mode: 'dropdown', custom_value: true, options: ['sky', 'transparent'].map((value) => ({ value, label: value })) } },
+          },
+          text('style'),
+        ),
+      ],
     ],
   },
   {
@@ -133,6 +143,20 @@ export const SECTIONS: Section[] = [
       ...(config.sun === 'yes' || config.sun === true
         ? [[row(entity('sun_entity', 'sun'), text('sun_power')), bool('sun_shadow')], 'sun_roof']
         : []),
+    ],
+  },
+  {
+    key: 'weather',
+    icon: 'mdi:weather-partly-cloudy',
+    content: () => [
+      [
+        entity('weather', 'weather'),
+        row(
+          choice('weather_position', ['top-left', 'top-right', 'bottom-left', 'bottom-right'], 'options.overlay_alignment'),
+          choice('weather_forecast', ['daily', 'hourly', 'twice_daily']),
+          num('weather_count', { min: 0, max: 12, step: 1 }),
+        ),
+      ],
     ],
   },
   {
@@ -282,7 +306,22 @@ export const typeSchema = (type: string, objects: string[], item: any = {}, part
             column_min_width: '140px',
             schema: [
               objectField('pane', objects),
-              choice('side', ['up', 'down']),
+              choice('side', ['up', 'down', 'left', 'right']),
+              choice('motion', ['slide', 'shrink', 'none']),
+            ],
+          },
+        ],
+        // Venetian blinds: the slats turn with the tilt of the cover.
+        'slats',
+        [
+          {
+            name: 'cover',
+            type: 'grid',
+            column_min_width: '140px',
+            schema: [
+              objectField('slats', objects),
+              num('tilt_closed', { min: -180, max: 180, unit_of_measurement: '°' }),
+              num('tilt_open', { min: -180, max: 180, unit_of_measurement: '°' }),
             ],
           },
         ],

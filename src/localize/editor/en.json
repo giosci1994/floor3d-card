@@ -5,7 +5,8 @@
     "light": "Light and shadows",
     "interaction": "Interaction",
     "colours": "State colours and room maps",
-    "rendering": "Rendering"
+    "rendering": "Rendering",
+    "weather": "Weather"
   },
   "labels": {
     "name": "Name",
@@ -150,12 +151,20 @@
     "min": "Lowest value",
     "max": "Highest value",
     "decimals": "Decimals",
-    "colors": "Colours"
+    "colors": "Colours",
+    "motion": "Movement",
+    "slats": "Slats object",
+    "tilt_closed": "Slats closed",
+    "tilt_open": "Slats open",
+    "weather": "Weather entity",
+    "weather_position": "Position",
+    "weather_forecast": "Forecast",
+    "weather_count": "Forecasts shown"
   },
   "helpers": {
     "path": "For example /local/floor3d/",
     "objectlist": "Optional: a JSON list of the object names, for the object menus",
-    "backgroundColor": "A colour, #rrggbb or transparent. Default #aaaaaa",
+    "backgroundColor": "A colour (#rrggbb), transparent, or sky: follows the sun. Default #aaaaaa",
     "globalLightPower": "From 0 to 1, or a numeric sensor. Default 0.2",
     "light_power": "Multiplies all the lamps. Default 1",
     "exposure": "Default 1",
@@ -206,7 +215,13 @@
     "min": "Of the first colour",
     "max": "Of the last colour",
     "decimals": "Of the value written on the room",
-    "colors": "From the lowest value to the highest, #rrggbb"
+    "colors": "From the lowest value to the highest, #rrggbb",
+    "motion": "Shortens: roller shades and curtains, without cutting the model",
+    "slats": "The slats turn with the tilt; they can be in one object with the rails",
+    "tilt_closed": "Degrees from the model at tilt 0. Default 80",
+    "tilt_open": "Degrees from the model at tilt 100. Default 0",
+    "weather": "A box with the weather now and the next forecasts; its clouds also grey the sky background",
+    "weather_count": "Default 4, 0 for the weather now only"
   },
   "options": {
     "language": {
@@ -312,6 +327,20 @@
     "mode": {
       "heat": "Heats",
       "cool": "Cools"
+    },
+    "motion": {
+      "slide": "Slides into its box",
+      "shrink": "Shortens",
+      "none": "Stays (only the slats turn)"
+    },
+    "backgroundColor": {
+      "sky": "Sky that follows the sun",
+      "transparent": "Transparent"
+    },
+    "weather_forecast": {
+      "daily": "Daily",
+      "hourly": "Hourly",
+      "twice_daily": "Twice a day"
     }
   },
   "types": {
@@ -357,7 +386,8 @@
     "tracker_sensor_position": "Sensor position",
     "maps": "Sensor maps",
     "map_sensors": "Sensors of the maps",
-    "alarms_climate": "Alarms and climate"
+    "alarms_climate": "Alarms and climate",
+    "slats": "Venetian blind"
   },
   "ui": {
     "loading": "Loading…",

@@ -1,6 +1,6 @@
 {
   "name": "floor3d-card",
-  "version": "2.7.1",
+  "version": "2.8.0",
   "description": "Your HA Digital Twin aka floor3d-card",
   "keywords": [
     "home-assistant",
@@ -63,7 +63,7 @@
     "start": "rollup -c rollup.config.dev.mjs --watch",
     "build": "rollup -c rollup.config.mjs",
     "lint": "eslint src/*.ts",
-    "test": "node --experimental-strip-types --test test/config.test.mjs test/i18n.test.mjs test/maps.test.mjs",
+    "test": "node --experimental-strip-types --test test/config.test.mjs test/i18n.test.mjs test/maps.test.mjs test/slats.test.mjs test/sky.test.mjs",
     "test:browser": "node --test --test-concurrency=1 test/browser/run.mjs",
     "rollup": "rollup -c rollup.config.mjs"
   }

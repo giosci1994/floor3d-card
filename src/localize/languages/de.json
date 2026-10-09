@@ -39,6 +39,7 @@
     "setup_error": "Fehler beim Vorbereiten des Modells, siehe Browserkonsole",
     "clear_selections": "Auswahl aufheben ({count})",
     "enable_selection": "Auswahl aktivieren",
-    "disable_selection": "Auswahl deaktivieren"
+    "disable_selection": "Auswahl deaktivieren",
+    "weather": "Wettervorhersage"
   }
 }

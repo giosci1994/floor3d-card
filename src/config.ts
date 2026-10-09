@@ -34,6 +34,9 @@ const VALUE_DEFAULTS: { [key: string]: string | number } = {
   overlay_height: 20,
   overlay_bgcolor: 'transparent',
   overlay_fgcolor: 'black',
+  weather_position: 'bottom-left',
+  weather_forecast: 'daily',
+  weather_count: 4,
 };
 
 // Switches inside the options block of an entity. They have no default: the card reads a missing
@@ -51,10 +54,11 @@ const REQUIRED_BLOCKS = ['light', 'door', 'cover', 'rotate', 'room', 'text', 'ge
 
 // Numbers the editor used to save as text ('700'), or typed in a field that also takes the id of a
 // sensor (the light powers): written as numbers. A sensor id stays as it is.
-const TOP_NUMBERS = ['overlay_width', 'overlay_height', 'globalLightPower', 'sun_power', 'sky_power'];
+const TOP_NUMBERS = ['overlay_width', 'overlay_height', 'globalLightPower', 'sun_power', 'sky_power', 'weather_count'];
 const BLOCK_NUMBERS: { [block: string]: string[] } = {
   light: ['lumens', 'decay', 'distance', 'angle'],
   door: ['degrees', 'percentage'],
+  cover: ['tilt_closed', 'tilt_open'],
   room: ['transparency', 'elevation', 'width', 'height'],
   image: ['rotate', 'lumens', 'lighting_lumens'],
   rotate: ['round_per_second', 'ramp'],

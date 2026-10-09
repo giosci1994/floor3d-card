@@ -5,7 +5,8 @@
     "light": "Luci e ombre",
     "interaction": "Interazione",
     "colours": "Colori di stato e mappe delle stanze",
-    "rendering": "Rendering"
+    "rendering": "Rendering",
+    "weather": "Meteo"
   },
   "labels": {
     "name": "Nome",
@@ -147,12 +148,20 @@
     "min": "Valore più basso",
     "max": "Valore più alto",
     "decimals": "Decimali",
-    "colors": "Colori"
+    "colors": "Colori",
+    "motion": "Movimento",
+    "slats": "Oggetto delle lamelle",
+    "tilt_closed": "Lamelle chiuse",
+    "tilt_open": "Lamelle aperte",
+    "weather": "Entità meteo",
+    "weather_position": "Posizione",
+    "weather_forecast": "Previsioni",
+    "weather_count": "Previsioni mostrate"
   },
   "helpers": {
     "path": "Per esempio /local/floor3d/",
     "objectlist": "Facoltativo: un elenco JSON dei nomi degli oggetti, per i menu degli oggetti",
-    "backgroundColor": "Un colore, #rrggbb o transparent. Predefinito #aaaaaa",
+    "backgroundColor": "Un colore (#rrggbb), transparent, oppure sky: segue il sole. Predefinito #aaaaaa",
     "globalLightPower": "Da 0 a 1, o un sensore numerico. Predefinito 0.2",
     "light_power": "Moltiplica tutte le lampade. Predefinito 1",
     "exposure": "Predefinito 1",
@@ -203,7 +212,13 @@
     "min": "Del primo colore",
     "max": "Dell'ultimo colore",
     "decimals": "Del valore scritto sulla stanza",
-    "colors": "Dal valore più basso al più alto, #rrggbb"
+    "colors": "Dal valore più basso al più alto, #rrggbb",
+    "motion": "Si accorcia: tende a rullo e tende, senza tagliare il modello",
+    "slats": "Le lamelle ruotano con l'inclinazione; possono stare in un unico oggetto con i binari",
+    "tilt_closed": "Gradi rispetto al modello con inclinazione 0. Predefinito 80",
+    "tilt_open": "Gradi rispetto al modello con inclinazione 100. Predefinito 0",
+    "weather": "Un riquadro con il meteo attuale e le prossime previsioni; le sue nuvole rendono grigio anche il cielo di sfondo",
+    "weather_count": "Predefinito 4, 0 per il solo meteo attuale"
   },
   "options": {
     "language": {
@@ -285,6 +300,20 @@
     "mode": {
       "heat": "Scalda",
       "cool": "Raffresca"
+    },
+    "motion": {
+      "slide": "Scorre nel cassonetto",
+      "shrink": "Si accorcia",
+      "none": "Resta ferma (ruotano solo le lamelle)"
+    },
+    "backgroundColor": {
+      "sky": "Cielo che segue il sole",
+      "transparent": "Trasparente"
+    },
+    "weather_forecast": {
+      "daily": "Giornaliere",
+      "hourly": "Orarie",
+      "twice_daily": "Due volte al giorno"
     }
   },
   "types": {
@@ -330,7 +359,8 @@
     "tracker_sensor_position": "Posizione del sensore",
     "maps": "Mappe dei sensori",
     "map_sensors": "Sensori per le mappe",
-    "alarms_climate": "Allarmi e clima"
+    "alarms_climate": "Allarmi e clima",
+    "slats": "Veneziana"
   },
   "ui": {
     "loading": "Caricamento…",
