@@ -22,6 +22,8 @@ const entity = (name: string, domain?: string | string[], multiple = false): Sch
   name,
   selector: { entity: { ...(domain ? { filter: { domain } } : {}), ...(multiple ? { multiple: true } : {}) } },
 });
+// The corner of a box, with the texts of the corners of the overlay.
+const corners = (name: string): Schema => choice(name, ['top-left', 'top-right', 'bottom-left', 'bottom-right'], 'options.overlay_alignment');
 // Several fields side by side, their values at the same level as the others.
 const row = (...schema: Schema[]): Schema => ({ type: 'grid', name: '', flatten: true, column_min_width: '140px', schema });
 // { x, y, z } (or the given keys) stored under one name.
@@ -60,6 +62,7 @@ export const SWITCHES: { [key: string]: 'yes' | 'no' } = {
   log_depth: 'no',
   reversed_depth: 'yes',
   state_colors: 'no',
+  status: 'no',
   alarm_view: 'no',
 };
 // The same inside the options block of a type.
@@ -146,17 +149,30 @@ export const SECTIONS: Section[] = [
     ],
   },
   {
-    key: 'weather',
-    icon: 'mdi:weather-partly-cloudy',
+    // Boxes in the corners of the card (boxes.ts and the weather).
+    key: 'boxes',
+    icon: 'mdi:card-text-outline',
     content: () => [
+      'weather',
       [
         entity('weather', 'weather'),
-        row(
-          choice('weather_position', ['top-left', 'top-right', 'bottom-left', 'bottom-right'], 'options.overlay_alignment'),
-          choice('weather_forecast', ['daily', 'hourly', 'twice_daily']),
-          num('weather_count', { min: 0, max: 12, step: 1 }),
-        ),
+        row(corners('weather_position'), choice('weather_forecast', ['daily', 'hourly', 'twice_daily']), num('weather_count', { min: 0, max: 12, step: 1 })),
       ],
+      'status',
+      [row(bool('status'), corners('status_position'))],
+      'energy',
+      [
+        row(entity('energy_power', 'sensor'), entity('energy_solar', 'sensor')),
+        row(entity('energy_grid', 'sensor'), entity('energy_battery', 'sensor')),
+        entity('energy_plugs', 'sensor', true),
+        row(num('energy_top', { min: 0, max: 10, step: 1 }), corners('energy_position')),
+      ],
+      'people',
+      [corners('people_position')],
+      'alarm_panel',
+      [row(entity('alarm_panel', 'alarm_control_panel'), corners('alarm_panel_position'))],
+      'chips',
+      [entity('chips', undefined, true), corners('chips_position')],
     ],
   },
   {
@@ -514,6 +530,11 @@ export const mapSchema = (): Schema[] => [
   row(text('unit'), choice('aggregate', ['mean', 'sum', 'max'])),
   row(num('min'), num('max'), num('decimals', { min: 0, max: 3, step: 1 })),
   { name: 'colors', selector: { text: { multiple: true } } },
+];
+// A person of the people box: the person, and an entity whose state is the room where they are.
+export const personSchema = (): Schema[] => [
+  entity('entity', 'person'),
+  { ...entity('room'), label_key: 'person_room', helper_key: 'person_room' },
 ];
 export const zoomSchema = (): Schema[] => [row(text('zoom'), num('level', { step: 1 }))];
 export const zoomObjectSchema = (objects: string[]): Schema[] => [

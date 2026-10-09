@@ -10,6 +10,7 @@ import {
   entityActionsSchema,
   entitySchema,
   mapSchema,
+  personSchema,
   roomAlarmsSchema,
   roomSchema,
   roomSensorsSchema,
@@ -56,6 +57,15 @@ test('card: every map and every kind of alarm has its name in every language', a
   }
 });
 
+test('card: the boxes have their texts in every language: the kinds of the status box, the states of the alarm panel', async () => {
+  const { STATUS_KINDS, PANEL_STATES } = await import('../src/boxes.ts');
+  for (const lang of ['en', 'it', 'de', 'nb']) {
+    const texts = flat(read('../src/localize/languages/' + lang + '.json'));
+    for (const kind of STATUS_KINDS) assert.ok('common.status_' + kind in texts, lang + ': status_' + kind);
+    for (const state of Object.keys(PANEL_STATES)) assert.ok('common.panel_' + state in texts, lang + ': panel_' + state);
+  }
+});
+
 test('editor: every text the editor asks for is in English', () => {
   const en = flat(read('../src/localize/editor/en.json'));
   const src = fs.readFileSync(new URL('../src/editor.ts', import.meta.url), 'utf8');
@@ -65,7 +75,7 @@ test('editor: every text the editor asks for is in English', () => {
   // Keys built from names: sections, types, list titles, vectors.
   SECTIONS.forEach((s) => assert.ok('sections.' + s.key in en, s.key));
   TYPES.forEach(([type]) => assert.ok('types.' + type in en, type));
-  ['entities', 'object_groups', 'zoom_areas', 'rooms', 'maps'].forEach((list) => assert.ok('ui.title_' + list in en, list));
+  ['entities', 'object_groups', 'zoom_areas', 'rooms', 'maps', 'people'].forEach((list) => assert.ok('ui.title_' + list in en, list));
   VECTOR_HEADINGS.forEach((name) => assert.ok('headings.' + name.replace('.', '_') in en, name));
 });
 
@@ -75,7 +85,7 @@ test('editor: every field, menu entry and heading has its English text', () => {
   const contents = [
     ...SECTIONS.map((s) => s.content(config)),
     ...TYPES.map(([type]) => typeSchema(type, [], { light: { single: 'yes' } })),
-    [entitySchema(), entityActionsSchema(), roomSchema([]), roomSensorsSchema(), roomAlarmsSchema(), mapSchema()],
+    [entitySchema(), entityActionsSchema(), roomSchema([]), roomSensorsSchema(), roomAlarmsSchema(), mapSchema(), personSchema()],
   ].flat();
   const walk = (schema) => {
     if (typeof schema === 'string') {

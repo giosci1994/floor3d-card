@@ -49,6 +49,7 @@ import {
   objectListField,
   MAP_KEYS,
   mapSchema,
+  personSchema,
   roomAlarmsSchema,
   roomSchema,
   roomSensorsSchema,
@@ -61,7 +62,7 @@ import { pickLanguage } from './localize/localize';
 import { ROOM_KEYS } from './maps';
 import { Translator, translator } from './localize/editor';
 
-type ListKey = 'entities' | 'object_groups' | 'zoom_areas' | 'rooms' | 'maps';
+type ListKey = 'entities' | 'object_groups' | 'zoom_areas' | 'rooms' | 'maps' | 'people';
 type View = { list?: ListKey; index?: number };
 // Where a picked object goes: a field of the config (path of keys), or the objects of a group.
 type PickTarget = { path: (string | number)[]; add?: boolean };
@@ -451,7 +452,7 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
   }
 
   private _itemObjects(list: ListKey, item: any): string[] {
-    if (!isObject(item) || list === 'maps') return [];
+    if (!isObject(item) || list === 'maps' || list === 'people') return [];
     if (list === 'object_groups') return (item.objects || []).map((o) => (isObject(o) ? o.object_id : o));
     return [item.object_id];
   }
@@ -582,6 +583,11 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
             <div class="hint">${this._t('ui.maps_hint')}</div>
             ${this._renderList('maps', this._t('ui.add_map'), { key: '' })}
           `;
+        case 'people':
+          return html`
+            <div class="heading">${this._t('headings.people')}</div>
+            ${this._renderList('people', this._t('ui.add_person'), { entity: '' })}
+          `;
         case 'colorcondition':
           return this._renderColorConditions(list as ListKey, index as number, data);
         case 'shadow_status':
@@ -691,6 +697,15 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
         primary: item.name || (preset ? this._t('options.map_key.' + item.key) : item.key) || this._t('ui.no_name'),
         secondary: [preset ? this._t('ui.map_preset') : this._t('ui.map_custom'), range].filter((p) => p).join(' · '),
         warning: !item.key,
+      };
+    }
+    if (list === 'people') {
+      const person = isObject(item) ? item : { entity: item };
+      return {
+        icon: 'mdi:account',
+        primary: this._entityName(person),
+        secondary: person.room ? this._t('ui.person_room', { room: this._entityName({ entity: person.room }) }) : this._t('ui.no_room'),
+        warning: !person.entity || !this.hass?.states[person.entity],
       };
     }
     if (list === 'zoom_areas') {
@@ -812,6 +827,7 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
     else if (list === 'object_groups') content = this._renderGroup(index, item, set);
     else if (list === 'zoom_areas') content = this._renderZoom(index, item, set);
     else if (list === 'maps') content = this._renderMap(item, set);
+    else if (list === 'people') content = this._form(personSchema(), isObject(item) ? item : { entity: item }, (value) => set(dropEmpty({ ...value })));
     else content = this._renderRoom(index, item, set);
     return html`
       <div class="subheader">

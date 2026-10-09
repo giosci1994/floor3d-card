@@ -6,7 +6,7 @@
     "interaction": "Interaction",
     "colours": "State colours and room maps",
     "rendering": "Rendering",
-    "weather": "Weather"
+    "boxes": "Boxes"
   },
   "labels": {
     "name": "Name",
@@ -159,7 +159,22 @@
     "weather": "Weather entity",
     "weather_position": "Position",
     "weather_forecast": "Forecast",
-    "weather_count": "Forecasts shown"
+    "weather_count": "Forecasts shown",
+    "status": "Show what is on or open",
+    "status_position": "Position",
+    "energy_power": "Power of the house",
+    "energy_solar": "Solar power",
+    "energy_grid": "Grid power",
+    "energy_battery": "Battery charge",
+    "energy_plugs": "Plugs to rank",
+    "energy_top": "Plugs shown",
+    "energy_position": "Position",
+    "people_position": "Position",
+    "alarm_panel": "Alarm panel",
+    "alarm_panel_position": "Position",
+    "chips": "Entities",
+    "chips_position": "Position",
+    "person_room": "Room entity"
   },
   "helpers": {
     "path": "For example /local/floor3d/",
@@ -221,7 +236,15 @@
     "tilt_closed": "Degrees from the model at tilt 0. Default 80",
     "tilt_open": "Degrees from the model at tilt 100. Default 0",
     "weather": "A box with the weather now and the next forecasts; its clouds also grey the sky background",
-    "weather_count": "Default 4, 0 for the weather now only"
+    "weather_count": "Default 4, 0 for the weather now only",
+    "status": "Lamps on, doors and windows open, locks open, heaters working: a tap shows them in the model",
+    "energy_grid": "Positive from the grid, negative to it",
+    "energy_battery": "In %",
+    "energy_plugs": "Empty: the power sensors of the rooms. A tap on a plug goes to its room",
+    "energy_top": "Default 3, 0 for none",
+    "alarm_panel": "Its state; a tap opens it to arm or disarm",
+    "chips": "Any entity, with its icon and state; a tap opens it",
+    "person_room": "Optional: an entity whose state is the room, such as the area of Bermuda or ESPresense"
   },
   "options": {
     "language": {
@@ -387,7 +410,13 @@
     "maps": "Sensor maps",
     "map_sensors": "Sensors of the maps",
     "alarms_climate": "Alarms and climate",
-    "slats": "Venetian blind"
+    "slats": "Venetian blind",
+    "weather": "Weather",
+    "status": "What is on or open",
+    "energy": "Energy",
+    "people": "People",
+    "alarm_panel": "Alarm panel",
+    "chips": "Chips"
   },
   "ui": {
     "loading": "Loading…",
@@ -440,6 +469,10 @@
     "map_preset": "Ready map, other colours",
     "map_custom": "New map",
     "maps_hint": "The ready maps (humidity, CO₂, PM2.5, PM10, VOC, formaldehyde, radon, noise, power) only need the sensors in the rooms. Here: other colours for them, or maps of other sensors.",
-    "map_hint": "Lowest and highest value move the colours of a ready map; colours spreads new ones between them. A new map adds a sensor field to the rooms."
+    "map_hint": "Lowest and highest value move the colours of a ready map; colours spreads new ones between them. A new map adds a sensor field to the rooms.",
+    "add_person": "Add a person",
+    "title_people": "Person",
+    "person_room": "Room from {room}",
+    "no_room": "Home or away"
   }
 }

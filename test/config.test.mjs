@@ -209,3 +209,30 @@ test('covers and weather: angles of the slats and forecasts shown written as num
   assert.ok(!('weather_position' in c), 'bottom-left is the default');
   assert.ok(!('weather_count' in cleanConfig({ weather_count: 4, entities: [] })));
 });
+
+test('boxes: people and chips without empty rows, an id alone written as the id, defaults left out', () => {
+  const c = cleanConfig({
+    status: true,
+    status_position: 'top-left',
+    energy_power: 'sensor.house',
+    energy_top: '5',
+    energy_position: 'top-right',
+    energy_plugs: ['sensor.washer', ''],
+    people: ['person.a', { entity: 'person.b', room: 'sensor.b_area' }, { entity: 'person.c', room: '' }, { entity: '' }, ''],
+    chips: [],
+    alarm_panel: 'alarm_control_panel.home',
+    alarm_panel_position: 'top-right',
+    entities: [],
+  });
+  assert.equal(c.status, 'yes');
+  assert.ok(!('status_position' in c), 'top-left is the default');
+  assert.equal(c.energy_top, 5);
+  assert.equal(c.energy_position, 'top-right');
+  assert.deepEqual(c.energy_plugs, ['sensor.washer']);
+  assert.deepEqual(c.people, ['person.a', { entity: 'person.b', room: 'sensor.b_area' }, 'person.c']);
+  assert.ok(!('chips' in c));
+  assert.ok(!('alarm_panel_position' in c), 'top-right is the default');
+  assert.ok(!('status' in cleanConfig({ status: 'no', entities: [] })));
+  const one = normalizeConfig({ people: 'person.a', chips: 'sensor.t', energy_plugs: 'sensor.washer', entities: [] });
+  assert.deepEqual([one.people, one.chips, one.energy_plugs], [['person.a'], ['sensor.t'], ['sensor.washer']], 'one alone: a list');
+});

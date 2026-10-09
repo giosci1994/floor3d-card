@@ -6,7 +6,7 @@
     "interaction": "Interazione",
     "colours": "Colori di stato e mappe delle stanze",
     "rendering": "Rendering",
-    "weather": "Meteo"
+    "boxes": "Riquadri"
   },
   "labels": {
     "name": "Nome",
@@ -156,7 +156,22 @@
     "weather": "Entità meteo",
     "weather_position": "Posizione",
     "weather_forecast": "Previsioni",
-    "weather_count": "Previsioni mostrate"
+    "weather_count": "Previsioni mostrate",
+    "status": "Mostra cosa è acceso o aperto",
+    "status_position": "Posizione",
+    "energy_power": "Consumo della casa",
+    "energy_solar": "Produzione solare",
+    "energy_grid": "Potenza dalla rete",
+    "energy_battery": "Carica della batteria",
+    "energy_plugs": "Prese da classificare",
+    "energy_top": "Prese mostrate",
+    "energy_position": "Posizione",
+    "people_position": "Posizione",
+    "alarm_panel": "Antifurto",
+    "alarm_panel_position": "Posizione",
+    "chips": "Entità",
+    "chips_position": "Posizione",
+    "person_room": "Entità della stanza"
   },
   "helpers": {
     "path": "Per esempio /local/floor3d/",
@@ -218,7 +233,15 @@
     "tilt_closed": "Gradi rispetto al modello con inclinazione 0. Predefinito 80",
     "tilt_open": "Gradi rispetto al modello con inclinazione 100. Predefinito 0",
     "weather": "Un riquadro con il meteo attuale e le prossime previsioni; le sue nuvole rendono grigio anche il cielo di sfondo",
-    "weather_count": "Predefinito 4, 0 per il solo meteo attuale"
+    "weather_count": "Predefinito 4, 0 per il solo meteo attuale",
+    "status": "Luci accese, porte e finestre aperte, serrature aperte, riscaldamento acceso: un tocco li mostra nel modello",
+    "energy_grid": "Positiva dalla rete, negativa verso la rete",
+    "energy_battery": "In %",
+    "energy_plugs": "Vuoto: i sensori di potenza delle stanze. Un tocco su una presa va alla sua stanza",
+    "energy_top": "Predefinito 3, 0 per nessuna",
+    "alarm_panel": "Il suo stato; un tocco lo apre per inserirlo o disinserirlo",
+    "chips": "Qualsiasi entità, con la sua icona e il suo stato; un tocco la apre",
+    "person_room": "Facoltativa: un'entità il cui stato è la stanza, come l'area di Bermuda o ESPresense"
   },
   "options": {
     "language": {
@@ -360,7 +383,13 @@
     "maps": "Mappe dei sensori",
     "map_sensors": "Sensori per le mappe",
     "alarms_climate": "Allarmi e clima",
-    "slats": "Veneziana"
+    "slats": "Veneziana",
+    "weather": "Meteo",
+    "status": "Cosa è acceso o aperto",
+    "energy": "Energia",
+    "people": "Persone",
+    "alarm_panel": "Antifurto",
+    "chips": "Chip"
   },
   "ui": {
     "loading": "Caricamento…",
@@ -413,6 +442,10 @@
     "map_preset": "Mappa pronta, altri colori",
     "map_custom": "Mappa nuova",
     "maps_hint": "Le mappe pronte (umidità, CO₂, PM2.5, PM10, VOC, formaldeide, radon, rumore, consumi) richiedono solo i sensori nelle stanze. Qui: altri colori per loro, o mappe di altri sensori.",
-    "map_hint": "Valore più basso e più alto spostano i colori di una mappa pronta; Colori ne distribuisce di nuovi tra i due. Una mappa nuova aggiunge un campo sensore alle stanze."
+    "map_hint": "Valore più basso e più alto spostano i colori di una mappa pronta; Colori ne distribuisce di nuovi tra i due. Una mappa nuova aggiunge un campo sensore alle stanze.",
+    "add_person": "Aggiungi una persona",
+    "title_people": "Persona",
+    "person_room": "Stanza da {room}",
+    "no_room": "In casa o fuori"
   }
 }

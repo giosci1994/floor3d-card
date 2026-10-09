@@ -24,6 +24,7 @@ const SWITCH_DEFAULTS: { [key: string]: 'yes' | 'no' } = {
   reversed_depth: 'yes',
   state_colors: 'no',
   alarm_view: 'no',
+  status: 'no',
   sky: 'no', // no longer used by the card
 };
 
@@ -37,6 +38,12 @@ const VALUE_DEFAULTS: { [key: string]: string | number } = {
   weather_position: 'bottom-left',
   weather_forecast: 'daily',
   weather_count: 4,
+  status_position: 'top-left',
+  energy_position: 'bottom-left',
+  energy_top: 3,
+  people_position: 'top-left',
+  alarm_panel_position: 'top-right',
+  chips_position: 'bottom-right',
 };
 
 // Switches inside the options block of an entity. They have no default: the card reads a missing
@@ -54,7 +61,7 @@ const REQUIRED_BLOCKS = ['light', 'door', 'cover', 'rotate', 'room', 'text', 'ge
 
 // Numbers the editor used to save as text ('700'), or typed in a field that also takes the id of a
 // sensor (the light powers): written as numbers. A sensor id stays as it is.
-const TOP_NUMBERS = ['overlay_width', 'overlay_height', 'globalLightPower', 'sun_power', 'sky_power', 'weather_count'];
+const TOP_NUMBERS = ['overlay_width', 'overlay_height', 'globalLightPower', 'sun_power', 'sky_power', 'weather_count', 'energy_top'];
 const BLOCK_NUMBERS: { [block: string]: string[] } = {
   light: ['lumens', 'decay', 'distance', 'angle'],
   door: ['degrees', 'percentage'],
@@ -107,6 +114,10 @@ export function normalizeConfig<T>(config: T): T {
       );
     });
   }
+  // One person, chip or plug written alone, without a list.
+  ['people', 'chips', 'energy_plugs'].forEach((key) => {
+    if (typeof c[key] === 'string' && c[key] !== '') c[key] = [c[key]];
+  });
   return c;
 }
 
@@ -204,6 +215,25 @@ export function cleanConfig<T>(config: T): T {
       })
       .filter((map) => map !== undefined);
     if (c.maps.length === 0) delete c.maps;
+  }
+
+  // Boxes (see boxes.ts): people and chips without empty rows, a person or a chip with only its
+  // entity written as the id; lists left empty go away.
+  ['people', 'chips'].forEach((key) => {
+    if (!Array.isArray(c[key])) return;
+    c[key] = c[key]
+      .map((item) => {
+        if (!isObject(item)) return item || undefined;
+        const clean = cleanItem(item, 'entity');
+        if (!isObject(clean) || !clean.entity) return undefined;
+        return Object.keys(clean).length === 1 ? clean.entity : clean;
+      })
+      .filter((item) => item !== undefined);
+    if (c[key].length === 0) delete c[key];
+  });
+  if (Array.isArray(c.energy_plugs)) {
+    c.energy_plugs = c.energy_plugs.filter((p) => typeof p === 'string' && p !== '');
+    if (c.energy_plugs.length === 0) delete c.energy_plugs;
   }
 
   if (isObject(c.url_parameters)) {
