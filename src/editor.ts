@@ -37,6 +37,9 @@ import {
   TYPES,
   Schema,
   VECTOR_HEADINGS,
+  cameraPlaceSchema,
+  cameraPopupSchema,
+  cameraSchema,
   colorConditionSchema,
   entityActionsSchema,
   entitySchema,
@@ -60,12 +63,14 @@ import {
 } from './editor-schema';
 import { pickLanguage } from './localize/localize';
 import { ROOM_KEYS } from './maps';
+import { point } from './cameras';
 import { Translator, translator } from './localize/editor';
 
-type ListKey = 'entities' | 'object_groups' | 'zoom_areas' | 'rooms' | 'maps' | 'people';
+type ListKey = 'entities' | 'object_groups' | 'zoom_areas' | 'rooms' | 'maps' | 'people' | 'cameras';
 type View = { list?: ListKey; index?: number };
-// Where a picked object goes: a field of the config (path of keys), or the objects of a group.
-type PickTarget = { path: (string | number)[]; add?: boolean };
+// Where a picked object goes: a field of the config (path of keys), or the objects of a group. point:
+// the point of the model that was tapped, for the place of a camera (path: its position).
+type PickTarget = { path: (string | number)[]; add?: boolean; point?: boolean };
 
 // Home Assistant builds the preview again, model included, at every config it gets: the config goes
 // to it this long after the last change, and at once when a field is left or something is clicked.
@@ -367,7 +372,7 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
     if (detail.shadows) this._shadows = detail.shadows;
     // A new preview showing the picture of the pause, while objects are being picked: the model.
     if (detail.paused && this._picking) this._toPreview({ request: 'live' });
-    if (detail.picked && this._picking) this._onPicked(detail.picked);
+    if (detail.picked && this._picking) this._onPicked(detail.picked, detail);
     if (detail.camera && this._cameraTarget) {
       const target = this._cameraTarget;
       this._cameraTarget = undefined;
@@ -411,8 +416,20 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
     this._toPreview({ pick: !same });
   }
 
-  private _onPicked(name: string): void {
+  private _onPicked(name: string, detail: any = {}): void {
     const target = this._picking as PickTarget;
+    if (target.point) {
+      // The place of a camera: the point, and its level when the model has more than one.
+      if (!Array.isArray(detail.point)) return;
+      this._picking = undefined;
+      this._toPreview({ pick: false });
+      const [list, index] = target.path as [ListKey, number];
+      const current = this._list(list)[index];
+      const item = { ...(isObject(current) ? current : { entity: current }), position: detail.point };
+      if (detail.level !== undefined) item.level = detail.level;
+      this._setItem(list, index, item);
+      return;
+    }
     if (target.add) {
       // Objects of a group: a tap adds the object, a second tap takes it out.
       const [list, index] = target.path as [ListKey, number];
@@ -452,7 +469,7 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
   }
 
   private _itemObjects(list: ListKey, item: any): string[] {
-    if (!isObject(item) || list === 'maps' || list === 'people') return [];
+    if (!isObject(item) || list === 'maps' || list === 'people' || list === 'cameras') return [];
     if (list === 'object_groups') return (item.objects || []).map((o) => (isObject(o) ? o.object_id : o));
     return [item.object_id];
   }
@@ -585,6 +602,8 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
           `;
         case 'people_list':
           return this._renderList('people', this._t('ui.add_person'), { entity: '' });
+        case 'cameras_list':
+          return this._renderList('cameras', this._t('ui.add_camera'), { entity: '' });
         case 'colorcondition':
           return this._renderColorConditions(list as ListKey, index as number, data);
         case 'shadow_status':
@@ -703,6 +722,19 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
         primary: this._entityName(person),
         secondary: person.room ? this._t('ui.person_room', { room: this._entityName({ entity: person.room }) }) : this._t('ui.no_room'),
         warning: !person.entity || !this.hass?.states[person.entity],
+      };
+    }
+    if (list === 'cameras') {
+      const camera = isObject(item) ? item : { entity: item };
+      const placed = point(camera.position) !== undefined;
+      const sensors = (Array.isArray(camera.popup_on) ? camera.popup_on : camera.popup_on ? [camera.popup_on] : []).filter((id) => id).length;
+      const parts = [this._t(placed ? 'ui.camera_on_map' : 'ui.camera_not_on_map')];
+      if (sensors) parts.push(this._t(sensors === 1 ? 'ui.popup_sensors_one' : 'ui.popup_sensors_other', { count: sensors }));
+      return {
+        icon: camera.icon || 'mdi:cctv',
+        primary: this._entityName(camera),
+        secondary: parts.join(' · '),
+        warning: !camera.entity || !this.hass?.states[camera.entity] || (!placed && !sensors),
       };
     }
     if (list === 'zoom_areas') {
@@ -825,6 +857,7 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
     else if (list === 'zoom_areas') content = this._renderZoom(index, item, set);
     else if (list === 'maps') content = this._renderMap(item, set);
     else if (list === 'people') content = this._form(personSchema(), isObject(item) ? item : { entity: item }, (value) => set(dropEmpty({ ...value })));
+    else if (list === 'cameras') content = this._renderCamera(index, isObject(item) ? item : { entity: item }, set);
     else content = this._renderRoom(index, item, set);
     return html`
       <div class="subheader">
@@ -1024,6 +1057,44 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
     ];
   }
 
+  // A camera: the camera; its place on the map, typed or picked in the preview (the point of the model
+  // tapped, with its level); the sensors that make its picture pop up.
+  private _renderCamera(index: number, camera: any, set: (value: any) => void): TemplateResult[] {
+    const position = camera.position;
+    const data = {
+      ...camera,
+      position: Array.isArray(position) ? { x: position[0], y: position[1], z: position[2] } : position,
+      popup_on: Array.isArray(camera.popup_on) ? camera.popup_on : camera.popup_on ? [camera.popup_on] : [],
+    };
+    const onChange = (value: any): void => {
+      const next = dropEmpty({ ...value });
+      if (isObject(next.position)) {
+        const list = [next.position.x, next.position.y, next.position.z];
+        // Written as [x, y, z] once complete; while being typed it stays { x, y, z }.
+        if (list.every((n) => typeof n === 'number' && isFinite(n))) next.position = list;
+        else if (list.every((n) => n === undefined || n === null)) delete next.position;
+      }
+      if (Array.isArray(next.popup_on) && next.popup_on.length === 0) delete next.popup_on;
+      set(next);
+    };
+    const path = ['cameras', index, 'position'];
+    const active = this._picking && JSON.stringify(this._picking.path) === JSON.stringify(path);
+    return [
+      this._form(cameraSchema(), data, onChange),
+      html`
+        <div class="heading-row">
+          <div class="heading">${this._t('headings.camera_place')}</div>
+          <ha-button appearance="plain" size="s" class=${active ? 'picking' : ''} @click=${() => this._startPick({ path, point: true })}>
+            <ha-svg-icon slot="start" .path=${mdiCursorDefaultClickOutline}></ha-svg-icon>${this._t('ui.pick')}
+          </ha-button>
+        </div>
+        ${active ? html`<div class="hint">${this._t('ui.tap_point')}</div>` : nothing}
+      `,
+      this._form(cameraPlaceSchema(), data, onChange),
+      this._form(cameraPopupSchema(), data, onChange, this._t('headings.camera_popup_on')),
+    ];
+  }
+
   private _renderMap(map: any, set: (value: any) => void): TemplateResult[] {
     return [
       this._form(mapSchema(), map, (value) => {
@@ -1168,6 +1239,10 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
         color: var(--primary-color);
         background: rgba(var(--rgb-primary-color), 0.15);
         border-radius: 50%;
+      }
+      ha-button.picking {
+        background: rgba(var(--rgb-primary-color), 0.15);
+        border-radius: 18px;
       }
     `;
   }

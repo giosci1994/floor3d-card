@@ -7,6 +7,9 @@ import {
   SECTIONS,
   TYPES,
   VECTOR_HEADINGS,
+  cameraPlaceSchema,
+  cameraPopupSchema,
+  cameraSchema,
   entityActionsSchema,
   entitySchema,
   mapSchema,
@@ -75,21 +78,22 @@ test('editor: every text the editor asks for is in English', () => {
   // Keys built from names: sections, types, list titles, vectors.
   SECTIONS.forEach((s) => assert.ok('sections.' + s.key in en, s.key));
   TYPES.forEach(([type]) => assert.ok('types.' + type in en, type));
-  ['entities', 'object_groups', 'zoom_areas', 'rooms', 'maps', 'people'].forEach((list) => assert.ok('ui.title_' + list in en, list));
+  ['entities', 'object_groups', 'zoom_areas', 'rooms', 'maps', 'people', 'cameras'].forEach((list) => assert.ok('ui.title_' + list in en, list));
   VECTOR_HEADINGS.forEach((name) => assert.ok('headings.' + name.replace('.', '_') in en, name));
 });
 
 test('editor: every field, menu entry and heading has its English text', () => {
   const en = flat(read('../src/localize/editor/en.json'));
-  const config = { sun: 'yes', overlay: 'yes', shadow: 'yes', sky_power: 1 };
+  const config = { sun: 'yes', overlay: 'yes', shadow: 'yes', sky_power: 1, backgroundColor: 'sky' };
   const contents = [
     ...SECTIONS.map((s) => s.content(config)),
     ...TYPES.map(([type]) => typeSchema(type, [], { light: { single: 'yes' } })),
     [entitySchema(), entityActionsSchema(), roomSchema([]), roomSensorsSchema(), roomAlarmsSchema(), mapSchema(), personSchema()],
+    [cameraSchema(), cameraPlaceSchema(), cameraPopupSchema()],
   ].flat();
   const walk = (schema) => {
     if (typeof schema === 'string') {
-      if (!['sun_roof', 'rooms', 'maps', 'colorcondition', 'shadow_status', 'people_list'].includes(schema)) {
+      if (!['sun_roof', 'rooms', 'maps', 'colorcondition', 'shadow_status', 'people_list', 'cameras_list'].includes(schema)) {
         assert.ok(('headings.' + schema.replace('.', '_')) in en, 'heading ' + schema);
       }
       return;

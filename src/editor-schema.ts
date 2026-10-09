@@ -71,6 +71,10 @@ export const SWITCHES: { [key: string]: 'yes' | 'no' } = {
   people_show: 'yes',
   alarm_panel_show: 'yes',
   chips_show: 'yes',
+  cameras_show: 'yes',
+  camera_popup_show: 'yes',
+  stars_show: 'yes',
+  moon_show: 'yes',
   alarm_view: 'no',
 };
 // The same inside the options block of a type.
@@ -97,7 +101,7 @@ export const SECTIONS: Section[] = [
   {
     key: 'model',
     icon: 'mdi:cube-outline',
-    content: () => [
+    content: (config) => [
       [row(text('name'), choice('language', ['auto', 'en', 'it', 'de', 'nb'])), bool('header')],
       [text('path'), row(text('objfile'), text('mtlfile')), text('objectlist')],
       [
@@ -110,6 +114,8 @@ export const SECTIONS: Section[] = [
           },
           text('style'),
         ),
+        // The night of the sky background.
+        ...(config.backgroundColor === 'sky' ? [row(bool('stars_show'), bool('moon_show'))] : []),
       ],
     ],
   },
@@ -184,6 +190,20 @@ export const SECTIONS: Section[] = [
       [row(show('alarm_panel_show'), corners('alarm_panel_position')), entity('alarm_panel', 'alarm_control_panel')],
       'chips',
       [row(show('chips_show'), corners('chips_position')), entity('chips', undefined, true)],
+    ],
+  },
+  {
+    // Cameras (cameras.ts): their icons on the map and the picture that pops up.
+    key: 'cameras',
+    icon: 'mdi:cctv',
+    content: () => [
+      [show('cameras_show')],
+      'cameras_list',
+      'camera_popup',
+      [
+        row(show('camera_popup_show'), corners('camera_popup_position')),
+        num('camera_popup_duration', { min: 1, step: 1, unit_of_measurement: 's' }),
+      ],
     ],
   },
   {
@@ -542,6 +562,11 @@ export const mapSchema = (): Schema[] => [
   row(num('min'), num('max'), num('decimals', { min: 0, max: 3, step: 1 })),
   { name: 'colors', selector: { text: { multiple: true } } },
 ];
+// A camera: the camera, its name and icon on the map; where it is (a point of the model, picked in the
+// preview, and its level); the sensors that make its picture pop up.
+export const cameraSchema = (): Schema[] => [entity('entity', 'camera'), row(text('name'), { name: 'icon', selector: { icon: {} } })];
+export const cameraPlaceSchema = (): Schema[] => [vector('position'), { ...num('level', { min: 0, step: 1 }), helper_key: 'camera_level' }];
+export const cameraPopupSchema = (): Schema[] => [entity('popup_on', ['binary_sensor', 'event', 'input_boolean', 'switch'], true)];
 // A person of the people box: the person, and an entity whose state is the room where they are.
 export const personSchema = (): Schema[] => [
   entity('entity', 'person'),

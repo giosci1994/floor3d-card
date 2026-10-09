@@ -6,7 +6,8 @@
     "interaction": "Interazione",
     "colours": "Colori di stato e mappe delle stanze",
     "rendering": "Rendering",
-    "boxes": "Riquadri"
+    "boxes": "Riquadri",
+    "cameras": "Telecamere della casa"
   },
   "labels": {
     "name": "Nome",
@@ -177,7 +178,15 @@
     "people_show": "Mostra le persone",
     "alarm_panel_show": "Mostra l'antifurto",
     "chips_show": "Mostra i chip",
-    "hideMapMenu": "Nascondi il menu Mappa"
+    "hideMapMenu": "Nascondi il menu Mappa",
+    "cameras_show": "Mostra le icone sulla mappa",
+    "camera_popup_show": "Mostra l'immagine",
+    "camera_popup_position": "Posizione",
+    "camera_popup_duration": "Resta per",
+    "stars_show": "Stelle di notte",
+    "moon_show": "Luna di notte",
+    "icon": "Icona",
+    "popup_on": "Sensori"
   },
   "helpers": {
     "path": "Per esempio /local/floor3d/",
@@ -249,7 +258,13 @@
     "person_room": "Facoltativa: un'entità il cui stato è la stanza, come l'area di Bermuda o ESPresense",
     "box_show": "Spento: nascosto, le impostazioni restano",
     "hideMapMenu": "Resta la mappa iniziale delle stanze, senza il menu e la sua legenda",
-    "status_show": "Luci accese, porte e finestre aperte, serrature aperte, riscaldamento acceso: un tocco li mostra nel modello"
+    "status_show": "Luci accese, porte e finestre aperte, serrature aperte, riscaldamento acceso: un tocco li mostra nel modello",
+    "camera_popup_duration": "Secondi in cui l'immagine resta dopo che i sensori si sono spenti, o dopo un evento. Predefinito 20",
+    "popup_on": "Campanello, movimento…: sensori binari o entità evento. Quando uno scatta, l'immagine della telecamera compare nel suo angolo",
+    "camera_level": "L'icona compare solo con questo piano. Scegliendo il punto si imposta da solo",
+    "stars_show": "Le stelle dopo il tramonto, meno con le nuvole",
+    "moon_show": "La luna con la fase di oggi, dal tramonto",
+    "icon": "L'icona sulla mappa. Predefinita mdi:cctv"
   },
   "options": {
     "language": {
@@ -397,7 +412,10 @@
     "energy": "Energia",
     "people": "Persone",
     "alarm_panel": "Antifurto",
-    "chips": "Chip"
+    "chips": "Chip",
+    "camera_popup": "Immagine a comparsa",
+    "camera_place": "Posizione sulla mappa",
+    "camera_popup_on": "Compare quando"
   },
   "ui": {
     "loading": "Caricamento…",
@@ -454,6 +472,13 @@
     "add_person": "Aggiungi una persona",
     "title_people": "Persona",
     "person_room": "Stanza da {room}",
-    "no_room": "In casa o fuori"
+    "no_room": "In casa o fuori",
+    "add_camera": "Aggiungi una telecamera",
+    "title_cameras": "Telecamera",
+    "tap_point": "Tocca nel modello il punto dove si trova la telecamera",
+    "camera_on_map": "Sulla mappa",
+    "camera_not_on_map": "Non sulla mappa",
+    "popup_sensors_one": "compare con 1 sensore",
+    "popup_sensors_other": "compare con {count} sensori"
   }
 }

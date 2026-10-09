@@ -241,3 +241,39 @@ test('boxes: people and chips without empty rows, an id alone written as the id,
   const one = normalizeConfig({ people: 'person.a', chips: 'sensor.t', energy_plugs: 'sensor.washer', entities: [] });
   assert.deepEqual([one.people, one.chips, one.energy_plugs], [['person.a'], ['sensor.t'], ['sensor.washer']], 'one alone: a list');
 });
+
+test('cameras: position as [x, y, z] once complete, sensors as a list, an id alone written as the id, defaults left out', () => {
+  const c = cleanConfig({
+    cameras: [
+      'camera.a',
+      { entity: 'camera.b', position: { x: 10, y: '240', z: -30 }, level: '1', name: '', popup_on: ['binary_sensor.bell', ''] },
+      { entity: 'camera.c', position: { x: 5, y: '' } },
+      { entity: 'camera.d', popup_on: [] },
+      { entity: '', position: [1, 2, 3] },
+      { entity: '' },
+      '',
+    ],
+    cameras_show: true,
+    camera_popup_show: 'yes',
+    camera_popup_position: 'bottom-right',
+    camera_popup_duration: '30',
+    stars_show: false,
+    moon_show: 'yes',
+    entities: [],
+  });
+  assert.deepEqual(c.cameras, [
+    'camera.a',
+    { entity: 'camera.b', position: [10, 240, -30], level: 1, popup_on: ['binary_sensor.bell'] },
+    { entity: 'camera.c', position: { x: 5 } },
+    'camera.d',
+    { entity: '', position: [1, 2, 3] },
+  ]);
+  assert.ok(!('cameras_show' in c) && !('camera_popup_show' in c) && !('camera_popup_position' in c) && !('moon_show' in c), 'defaults');
+  assert.equal(c.camera_popup_duration, 30);
+  assert.equal(c.stars_show, 'no');
+  assert.ok(!('camera_popup_duration' in cleanConfig({ camera_popup_duration: 20, entities: [] })));
+  assert.ok(!('cameras' in cleanConfig({ cameras: [{ entity: '' }, ''], entities: [] })));
+  const one = normalizeConfig({ cameras: 'camera.a', entities: [] });
+  assert.deepEqual(one.cameras, ['camera.a'], 'one alone: a list');
+  assert.deepEqual(normalizeConfig({ cameras: [{ entity: 'camera.a', popup_on: 'event.bell' }], entities: [] }).cameras[0].popup_on, ['event.bell']);
+});

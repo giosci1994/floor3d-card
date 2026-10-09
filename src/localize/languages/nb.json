@@ -67,6 +67,8 @@
     "panel_arming": "Aktiverer",
     "panel_pending": "Venter",
     "panel_disarming": "Deaktiverer",
-    "panel_triggered": "Utløst"
+    "panel_triggered": "Utløst",
+    "camera_popup": "Kamera",
+    "camera_close": "Lukk"
   }
 }

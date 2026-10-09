@@ -67,6 +67,8 @@
     "panel_arming": "Arming",
     "panel_pending": "Pending",
     "panel_disarming": "Disarming",
-    "panel_triggered": "Triggered"
+    "panel_triggered": "Triggered",
+    "camera_popup": "Camera",
+    "camera_close": "Close"
   }
 }

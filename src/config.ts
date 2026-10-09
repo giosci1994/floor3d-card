@@ -31,6 +31,10 @@ const SWITCH_DEFAULTS: { [key: string]: 'yes' | 'no' } = {
   people_show: 'yes',
   alarm_panel_show: 'yes',
   chips_show: 'yes',
+  cameras_show: 'yes',
+  camera_popup_show: 'yes',
+  stars_show: 'yes',
+  moon_show: 'yes',
   sky: 'no', // no longer used by the card
 };
 
@@ -50,6 +54,8 @@ const VALUE_DEFAULTS: { [key: string]: string | number } = {
   people_position: 'top-left',
   alarm_panel_position: 'top-right',
   chips_position: 'bottom-right',
+  camera_popup_position: 'bottom-right',
+  camera_popup_duration: 20,
 };
 
 // Switches inside the options block of an entity. They have no default: the card reads a missing
@@ -67,7 +73,16 @@ const REQUIRED_BLOCKS = ['light', 'door', 'cover', 'rotate', 'room', 'text', 'ge
 
 // Numbers the editor used to save as text ('700'), or typed in a field that also takes the id of a
 // sensor (the light powers): written as numbers. A sensor id stays as it is.
-const TOP_NUMBERS = ['overlay_width', 'overlay_height', 'globalLightPower', 'sun_power', 'sky_power', 'weather_count', 'energy_top'];
+const TOP_NUMBERS = [
+  'overlay_width',
+  'overlay_height',
+  'globalLightPower',
+  'sun_power',
+  'sky_power',
+  'weather_count',
+  'energy_top',
+  'camera_popup_duration',
+];
 const BLOCK_NUMBERS: { [block: string]: string[] } = {
   light: ['lumens', 'decay', 'distance', 'angle'],
   door: ['degrees', 'percentage'],
@@ -125,10 +140,16 @@ export function normalizeConfig<T>(config: T): T {
       );
     });
   }
-  // One person, chip or plug written alone, without a list.
-  ['people', 'chips', 'energy_plugs'].forEach((key) => {
+  // One person, chip, plug or camera written alone, without a list.
+  ['people', 'chips', 'energy_plugs', 'cameras'].forEach((key) => {
     if (typeof c[key] === 'string' && c[key] !== '') c[key] = [c[key]];
   });
+  // The sensors of a camera: one, or a list.
+  if (Array.isArray(c.cameras)) {
+    c.cameras.forEach((camera) => {
+      if (isObject(camera) && typeof camera.popup_on === 'string' && camera.popup_on !== '') camera.popup_on = [camera.popup_on];
+    });
+  }
   return c;
 }
 
@@ -245,6 +266,28 @@ export function cleanConfig<T>(config: T): T {
   if (Array.isArray(c.energy_plugs)) {
     c.energy_plugs = c.energy_plugs.filter((p) => typeof p === 'string' && p !== '');
     if (c.energy_plugs.length === 0) delete c.energy_plugs;
+  }
+
+  // Cameras (see cameras.ts): the position as [x, y, z] once its three numbers are there, the level as
+  // a number; a camera with only its entity written as the id.
+  if (Array.isArray(c.cameras)) {
+    c.cameras = c.cameras
+      .map((item) => {
+        if (!isObject(item)) return item || undefined;
+        const clean = cleanItem(item, 'entity');
+        if (!isObject(clean)) return undefined;
+        const p = clean.position;
+        if (isObject(p)) {
+          const list = [p.x, p.y, p.z].map((n) => (typeof n === 'string' && NUMBER.test(n.trim()) ? Number(n) : n));
+          if (list.every((n) => typeof n === 'number' && isFinite(n))) clean.position = list;
+        } else if (Array.isArray(p)) {
+          clean.position = p.map((n) => (typeof n === 'string' && NUMBER.test(n.trim()) ? Number(n) : n));
+        }
+        toNumber(clean, 'level');
+        return Object.keys(clean).length === 1 && clean.entity ? clean.entity : clean;
+      })
+      .filter((item) => item !== undefined);
+    if (c.cameras.length === 0) delete c.cameras;
   }
 
   if (isObject(c.url_parameters)) {

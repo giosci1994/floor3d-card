@@ -48,6 +48,15 @@ export interface Floor3dCardConfig {
   alarm_panel_position?: string;
   chips?: any; // entity ids, or { entity, name, icon }
   chips_position?: string;
+  // Cameras (cameras.ts): ids, or { entity, position, level, name, icon, popup_on }.
+  cameras?: any;
+  cameras_show?: string | boolean; // their icons on the map
+  camera_popup_show?: string | boolean; // their picture when a sensor goes off
+  camera_popup_position?: string; // bottom-right by default
+  camera_popup_duration?: number | string; // seconds after the sensor is off again, 20 by default
+  // backgroundColor: sky, at night.
+  stars_show?: string | boolean;
+  moon_show?: string | boolean;
   globalLightPower: number | string; // a number or a numeric sensor
   hideLevelsMenu: string;
   initialLevel: number;
