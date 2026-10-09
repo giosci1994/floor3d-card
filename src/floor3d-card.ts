@@ -34,6 +34,24 @@ import { localize, pickLanguage } from './localize/localize';
 import { findSlats, slatAngle, Slat, tiltSlats } from './slats';
 import { skyColors, skyGradient, weatherClouds } from './sky';
 import { forecastLabel, forecastType, ForecastType, formatDegrees, weatherIcon } from './weather';
+import {
+  BOX_KINDS,
+  batteryIcon,
+  chipList,
+  Corner,
+  corner,
+  formatPower,
+  initials,
+  panelLook,
+  peopleList,
+  personPlace,
+  STATUS_COLORS,
+  STATUS_ICONS,
+  StatusKind,
+  statusGroups,
+  topConsumers,
+  watts,
+} from './boxes';
 //import three.js libraries for 3D rendering
 import * as TWEEN from '@tweenjs/tween.js';
 import { mdiAlertCircleOutline, mdiCubeOutline } from '@mdi/js';
@@ -259,13 +277,21 @@ export class Floor3dCard extends LitElement {
   // for the materials, placed again when the model moves.
   private _coverPlanes: { local: THREE.Plane; world: THREE.Plane }[] = [];
   private _skyKey?: string; // the gradient behind the canvas (backgroundColor: sky)
-  // The forecast box (weather): its element, the state it shows, the forecast and its subscription.
-  private _weatherEl?: HTMLElement;
-  private _weatherState?: HassEntity;
+  // The forecast box (weather): the forecast and its subscription.
   private _forecast: any[] | null = null;
   private _forecastType?: ForecastType;
   private _weatherKey?: string;
   private _weatherUnsub?: Promise<unknown>;
+  // Boxes in the corners (boxes.ts): the container of each corner, the element of each box, what
+  // each one showed last (it is drawn again only when that changes), and the kind of the status box
+  // whose objects are outlined in the model, with the timer that ends it.
+  private _corners = new Map<Corner, HTMLElement>();
+  private _boxEls = new Map<string, HTMLElement>();
+  private _boxDeps = new Map<string, unknown[]>();
+  private _shownStatus?: StatusKind;
+  private _shownTimer?: number;
+  private _cornerObserver?: ResizeObserver; // the card changes width (a phone turned): placed again
+  private _boxesChanged = false; // a box was drawn, added or removed: the corners are placed again
   private _objects_to_rotate: THREE.Group[];
   private _pivot: THREE.Vector3[];
   private _degrees: number[];
@@ -440,6 +466,7 @@ export class Floor3dCard extends LitElement {
       // The page may have been navigated to another view while the card was not shown.
       this._applyUrlView(false);
       this._subscribeWeather();
+      if (this._cornerObserver && (this._content || this._card)) this._cornerObserver.observe(this._content || this._card);
     }
   }
 
@@ -457,6 +484,7 @@ export class Floor3dCard extends LitElement {
 
     this._cancelTap();
     this._unsubscribeWeather();
+    if (this._cornerObserver) this._cornerObserver.disconnect();
     // The preview going away while the editor is paused (Home Assistant replaces it at every change
     // of the config): the next one shows its last picture, with the camera where it was.
     if (previewState.paused && this._modelready && this._isEditorPreview()) this._snapshot();
@@ -1306,7 +1334,7 @@ export class Floor3dCard extends LitElement {
   }
 
   // A box around each object (a group <name> stands for its objects), drawn over everything.
-  private _setHighlight(ids: string[]): void {
+  private _setHighlight(ids: string[], color: number | string = 0x03a9f4): void {
     if (!this._scene) return;
     this._highlightHelpers.forEach((helper) => {
       this._scene.remove(helper);
@@ -1317,7 +1345,7 @@ export class Floor3dCard extends LitElement {
     this._objectNamesFor(ids).forEach((name) => {
       const object = this._scene.getObjectByName(name);
       if (!object) return;
-      const helper = new THREE.BoxHelper(object, 0x03a9f4);
+      const helper = new THREE.BoxHelper(object, color);
       const material = helper.material as THREE.LineBasicMaterial;
       material.depthTest = false;
       material.transparent = true;
@@ -1389,6 +1417,7 @@ export class Floor3dCard extends LitElement {
       );
       this._renderer.render(this._scene, this._camera);
     }
+    this._placeCorners();
     console.log('Resize canvas end');
   }
 
@@ -1701,7 +1730,7 @@ export class Floor3dCard extends LitElement {
           this._updateSun();
           this._updateSkyBackground();
           this._subscribeWeather();
-          this._renderWeather();
+          this._renderBoxes();
           this._updateStateColors();
           if (torerender) {
             this._render();
@@ -2144,7 +2173,7 @@ export class Floor3dCard extends LitElement {
       this._restoreCamera();
       this._rememberCamera();
       this._subscribeWeather();
-      this._renderWeather(true);
+      this._renderBoxes(true);
 
       this._resizeCanvas();
 
@@ -4625,7 +4654,6 @@ export class Floor3dCard extends LitElement {
     this._weatherKey = key;
     this._forecastType = type;
     this._forecast = null;
-    this._weatherState = undefined;
     if (!key || Array.isArray(stateObj.attributes.forecast)) return;
     const connection: any = this._hass.connection;
     if (!connection || typeof connection.subscribeMessage !== 'function') return;
@@ -4636,7 +4664,8 @@ export class Floor3dCard extends LitElement {
           (event: any) => {
             if (this._weatherKey !== key) return;
             this._forecast = event && Array.isArray(event.forecast) ? event.forecast : [];
-            this._renderWeather(true);
+            this._renderWeather();
+            this._placeCorners(); // the box grew
           },
           { type: 'weather/subscribe_forecast', forecast_type: type, entity_id: entityId },
         ),
@@ -4654,44 +4683,407 @@ export class Floor3dCard extends LitElement {
     if (unsubscribe) unsubscribe.then((stop) => typeof stop === 'function' && stop()).catch(() => undefined);
   }
 
-  private _renderWeather(force = false): void {
-    if (!this._card) return;
-    const stateObj = this._config.weather && this._hass ? this._hass.states[this._config.weather] : undefined;
-    if (!stateObj) {
-      if (this._weatherEl) this._weatherEl.style.display = 'none';
+  // --- Boxes in the corners ------------------------------------------------------------------------
+
+  // Weather, what is on or open, energy, people, alarm panel and chips (see boxes.ts). Each is drawn
+  // again only when what it shows changes.
+  private _renderBoxes(force = false): void {
+    if (!this._card || !this._hass || !this._modelready) return;
+    this._boxesChanged = false;
+    this._renderAlarmPanel(force);
+    this._renderStatus(force);
+    this._renderPeople(force);
+    this._renderEnergy(force);
+    this._renderWeather(force);
+    this._renderChips(force);
+    // Measuring the boxes makes the browser lay out the page: only when one of them changed.
+    if (force || this._boxesChanged) this._placeCorners();
+  }
+
+  // The element of a box in its corner (null: the box goes away), after the boxes before it in
+  // BOX_KINDS: from the corner, they stack in that order.
+  private _box(kind: string, where: Corner | null): HTMLElement | null {
+    let box = this._boxEls.get(kind);
+    if (!where) {
+      if (box) {
+        box.remove();
+        this._boxesChanged = true;
+      }
+      this._boxEls.delete(kind);
+      this._boxDeps.delete(kind);
+      return null;
+    }
+    if (!box) {
+      box = document.createElement('div');
+      box.className = 'f3d-box f3d-' + kind;
+      this._boxEls.set(kind, box);
+    }
+    const container = this._cornerEl(where);
+    if (box.parentElement !== container) {
+      const order = BOX_KINDS.indexOf(kind);
+      const next = Array.from(container.children).find((child) => BOX_KINDS.indexOf((child as HTMLElement).dataset.kind || '') > order);
+      box.dataset.kind = kind;
+      container.insertBefore(box, next || null);
+      this._boxDeps.delete(kind);
+    }
+    return box;
+  }
+
+  private _cornerEl(where: Corner): HTMLElement {
+    let el = this._corners.get(where);
+    if (!el) {
+      el = document.createElement('div');
+      el.className = 'f3d-corner f3d-corner-' + where;
+      this._card.appendChild(el);
+      this._corners.set(where, el);
+      if (!this._cornerObserver && typeof ResizeObserver !== 'undefined') {
+        // The block of the canvas: the card itself can be an inline element.
+        this._cornerObserver = new ResizeObserver(() => this._placeCorners());
+        this._cornerObserver.observe(this._content || this._card);
+      }
+    }
+    return el;
+  }
+
+  // The corners start after what the card already shows there: the menus at the top right, the
+  // levels at the top left, and the old buttons of the views and of selectionMode at the bottom.
+  private _placeCorners(): void {
+    if (!this._corners.size) return;
+    const height = (el?: HTMLElement): number => {
+      const child = el && (el.firstElementChild as HTMLElement | null);
+      return child ? child.getBoundingClientRect().height : 0;
+    };
+    const taken: { [where in Corner]: number } = {
+      'top-left': height(this._levelbar),
+      'top-right': this._zoommenu ? this._zoommenu.getBoundingClientRect().height : 0,
+      'bottom-left': height(this._zoombar),
+      'bottom-right': height(this._selectionbar),
+    };
+    this._corners.forEach((el, where) => {
+      const offset = taken[where] ? Math.round(taken[where]) + 16 : 10;
+      el.style.top = where.startsWith('top') ? offset + 'px' : '';
+      el.style.bottom = where.startsWith('bottom') ? offset + 'px' : '';
+    });
+    // On a narrow card the two corners of a side meet: at the top, the boxes on the left go under
+    // the menus and the boxes on the right; at the bottom, the boxes on the right go above the ones
+    // on the left.
+    const card = this._card.getBoundingClientRect();
+    const box = (el?: HTMLElement): DOMRect | null => {
+      const r = el && el.childElementCount ? el.getBoundingClientRect() : null;
+      return r && r.height > 0 ? r : null;
+    };
+    const across = (a: DOMRect, b: DOMRect): boolean => a.left < b.right && b.left < a.right;
+    const topLeft = this._corners.get('top-left');
+    const left = box(topLeft);
+    if (left) {
+      const right = [this._zoommenu, this._corners.get('top-right')].map(box).filter((r) => r && across(left, r));
+      if (right.length) topLeft.style.top = Math.round(Math.max(...right.map((r) => r.bottom)) - card.top + 6) + 'px';
+    }
+    const bottomRight = this._corners.get('bottom-right');
+    const below = box(this._corners.get('bottom-left'));
+    const beside = box(bottomRight);
+    if (below && beside && across(below, beside)) bottomRight.style.bottom = Math.round(card.bottom - below.top + 6) + 'px';
+  }
+
+  private _boxChanged(kind: string, deps: unknown[], force: boolean): boolean {
+    const last = this._boxDeps.get(kind);
+    this._boxDeps.set(kind, deps);
+    const changed = force || !last || last.length !== deps.length || deps.some((d, i) => d !== last[i]);
+    if (changed) this._boxesChanged = true;
+    return changed;
+  }
+
+  private _moreInfo(entityId?: string): void {
+    if (entityId) fireEvent(this, 'hass-more-info', { entityId });
+  }
+
+  // A box that opens its entity wherever it is tapped (weather, alarm panel).
+  private _wholeBox(box: HTMLElement, entityId: string, label: string): void {
+    box.setAttribute('role', 'button');
+    box.tabIndex = 0;
+    box.setAttribute('aria-label', label);
+    box.onclick = (ev) => {
+      ev.stopPropagation();
+      this._moreInfo(entityId);
+    };
+    box.onkeydown = (ev) => {
+      if (ev.key === 'Enter' || ev.key === ' ') {
+        ev.preventDefault();
+        this._moreInfo(entityId);
+      }
+    };
+  }
+
+  // A text of the card, or the value itself when the card has no text for it.
+  private _tOr(key: string, fallback: string): string {
+    const text = this._t(key);
+    return text === 'common.' + key ? fallback : text;
+  }
+
+  // status: yes. What is on or open among the entities of the card: lamps on, doors and windows
+  // open, locks open, heaters working. A tap on a kind outlines its objects in the model and frames
+  // them; a second tap, or ten seconds, ends it.
+  private _renderStatus(force: boolean): void {
+    const on = this._config.status === 'yes' || this._config.status === true;
+    const box = this._box('status', on ? corner(this._config.status_position, 'top-left') : null);
+    if (!box) return;
+    const entities: any[] = (this._config.entities || []).map((e: any) => (typeof e === 'string' ? { entity: e } : e));
+    const deps: unknown[] = entities.map((e) => e && this._hass.states[e.entity]);
+    deps.push(this._shownStatus, this._language());
+    if (!this._boxChanged('status', deps, force)) return;
+    const groups = statusGroups(entities, this._hass.states, climateAction);
+    box.setAttribute('aria-label', this._t('status'));
+    render(
+      groups.length
+        ? html`${groups.map(
+            (g) => html`
+              <button
+                class="chip ${this._shownStatus === g.kind ? 'active' : ''}"
+                title=${this._t('status_' + g.kind, { count: g.entities.length })}
+                @click=${(ev: Event) => {
+                  ev.stopPropagation();
+                  this._toggleStatus(g.kind, g.indices);
+                }}
+              >
+                <ha-icon icon=${STATUS_ICONS[g.kind]} style=${'color: ' + STATUS_COLORS[g.kind]}></ha-icon><span>${g.entities.length}</span>
+              </button>
+            `,
+          )}`
+        : html`<span class="chip clear" title=${this._t('status_clear')}><ha-icon icon="mdi:check-circle-outline"></ha-icon><span>${this._t('status_ok')}</span></span>`,
+      box,
+    );
+  }
+
+  private _toggleStatus(kind: StatusKind, indices: number[]): void {
+    if (this._shownStatus === kind) {
+      this._endShown();
       return;
     }
-    if (!force && stateObj === this._weatherState && this._weatherEl && this._weatherEl.style.display !== 'none') return;
-    this._weatherState = stateObj;
-    if (!this._weatherEl) {
-      const box = document.createElement('div');
-      box.className = 'f3d-weather';
-      box.setAttribute('role', 'button');
-      box.tabIndex = 0;
-      const open = (ev: Event) => {
-        ev.stopPropagation();
-        if (this._config.weather) fireEvent(this, 'hass-more-info', { entityId: this._config.weather });
-      };
-      box.addEventListener('click', open);
-      box.addEventListener('keydown', (ev: KeyboardEvent) => {
-        if (ev.key === 'Enter' || ev.key === ' ') open(ev);
-      });
-      // A tap on the box is not a tap on the model.
-      box.addEventListener('pointerdown', (ev) => ev.stopPropagation());
-      this._card.appendChild(box);
-      this._weatherEl = box;
+    const ids = indices.flatMap((i) => ((this._object_ids && this._object_ids[i] && this._object_ids[i].objects) || []).map((o) => o.object_id));
+    this._showObjects(ids, STATUS_COLORS[kind]);
+    this._shownStatus = kind;
+    this._renderStatus(true);
+  }
+
+  // Outlines objects of the model (drawn over everything) and flies the camera to them, for ten
+  // seconds or until the next one.
+  private _showObjects(ids: string[], color: string): void {
+    window.clearTimeout(this._shownTimer);
+    this._setHighlight(ids, color);
+    this._flyToObjects(ids);
+    this._shownTimer = window.setTimeout(() => this._endShown(), 10000);
+  }
+
+  private _endShown(): void {
+    window.clearTimeout(this._shownTimer);
+    this._shownTimer = undefined;
+    this._setHighlight([]);
+    this._render();
+    if (this._shownStatus) {
+      this._shownStatus = undefined;
+      this._renderStatus(true);
     }
-    const box = this._weatherEl;
-    box.style.display = 'flex';
-    box.setAttribute('aria-label', this._t('weather'));
-    const [vertical, horizontal] = String(this._config.weather_position || 'bottom-left').split('-');
-    const top = vertical === 'top';
-    // At the top right it goes under the menus.
-    const below = top && horizontal === 'right' && this._zoommenu ? this._zoommenu.offsetHeight : 0;
-    box.style.top = top ? 10 + (below ? below + 6 : 0) + 'px' : '';
-    box.style.bottom = top ? '' : '10px';
-    box.style.left = horizontal === 'right' ? '' : '10px';
-    box.style.right = horizontal === 'right' ? '10px' : '';
+  }
+
+  private _flyToObjects(ids: string[]): void {
+    const box = new THREE.Box3();
+    const levels = new Set<number>();
+    this._objectNamesFor(ids).forEach((name) => {
+      const object = this._scene.getObjectByName(name);
+      if (!object) return;
+      box.union(new THREE.Box3().setFromObject(object));
+      if (object.userData && object.userData.level !== undefined) levels.add(object.userData.level);
+    });
+    if (!box.isEmpty()) this._flyToBox(box, Array.from(levels));
+  }
+
+  // The room of the card with this name: its floor, to go to it.
+  private _roomView(name: string): RoomView | undefined {
+    return this._roomViews.find((room) => room.name === name);
+  }
+
+  private _showRoom(room: RoomView | undefined, ids: string[]): void {
+    if (!room) return;
+    window.clearTimeout(this._shownTimer);
+    this._setHighlight(ids, '#ffffff');
+    this._flyToRoom(room);
+    this._shownTimer = window.setTimeout(() => this._endShown(), 10000);
+  }
+
+  // energy_power (the house), energy_solar, energy_grid (positive from the grid, negative to it),
+  // energy_battery (%), and the plugs that use the most now (energy_plugs, or the power sensors of
+  // the rooms): a tap on one of them goes to its room.
+  private _renderEnergy(force: boolean): void {
+    const c = this._config;
+    const plugsSet = Array.isArray(c.energy_plugs) ? c.energy_plugs.filter((p: any) => typeof p === 'string' && p) : [];
+    const on = !!(c.energy_power || c.energy_solar || c.energy_grid || c.energy_battery || plugsSet.length);
+    const box = this._box('energy', on ? corner(c.energy_position, 'bottom-left') : null);
+    if (!box) return;
+    const plugs: string[] = plugsSet.length ? plugsSet : this._roomViews.flatMap((room) => room.sensors.power || []);
+    const states = this._hass.states;
+    const ids = [c.energy_power, c.energy_solar, c.energy_grid, c.energy_battery, ...plugs];
+    if (!this._boxChanged('energy', [...ids.map((id) => id && states[id]), this._language()], force)) return;
+    const language = this._language();
+    const top = topConsumers(states, plugs, Math.round(this._num(c.energy_top, 3)));
+    const value = (id: string | undefined, icon: string, text: string, title: string) =>
+      id && states[id]
+        ? html`<button
+            class="value"
+            title=${title}
+            @click=${(ev: Event) => {
+              ev.stopPropagation();
+              this._moreInfo(id);
+            }}
+          >
+            <ha-icon icon=${icon}></ha-icon><span>${text}</span>
+          </button>`
+        : nothing;
+    const grid = watts(c.energy_grid ? states[c.energy_grid] : undefined);
+    const battery = c.energy_battery && states[c.energy_battery] ? Number(states[c.energy_battery].state) : NaN;
+    box.setAttribute('aria-label', this._t('energy'));
+    render(
+      html`
+        <div class="values">
+          ${value(c.energy_power, 'mdi:home-lightning-bolt', formatPower(watts(states[c.energy_power]), language), this._t('energy_power'))}
+          ${value(c.energy_solar, 'mdi:solar-power', formatPower(watts(states[c.energy_solar]), language), this._t('energy_solar'))}
+          ${value(
+            c.energy_grid,
+            grid < 0 ? 'mdi:transmission-tower-export' : 'mdi:transmission-tower-import',
+            formatPower(Math.abs(grid), language),
+            this._t(grid < 0 ? 'energy_export' : 'energy_import'),
+          )}
+          ${value(c.energy_battery, batteryIcon(battery), isNaN(battery) ? '' : Math.round(battery) + '%', this._t('energy_battery'))}
+        </div>
+        ${top.length
+          ? html`<div class="consumers">
+              ${top.map((t) => {
+                const room = this._roomViews.find((r) => (r.sensors.power || []).includes(t.entity));
+                const name = String((states[t.entity] && states[t.entity].attributes.friendly_name) || t.entity);
+                return html`<button
+                  class="consumer"
+                  title=${room ? name + ' · ' + room.name : name}
+                  @click=${(ev: Event) => {
+                    ev.stopPropagation();
+                    if (room) this._showRoom(room, []);
+                    else this._moreInfo(t.entity);
+                  }}
+                >
+                  <span class="name">${name}</span><span>${formatPower(t.watts, language)}</span>
+                </button>`;
+              })}
+            </div>`
+          : nothing}
+      `,
+      box,
+    );
+  }
+
+  // people: the people of the house, with their picture; at home, away, or in a zone. With a room
+  // entity (the area of Bermuda or ESPresense, for example) whose state names a room of the card,
+  // the room: a tap on it goes there.
+  private _renderPeople(force: boolean): void {
+    const people = peopleList(this._config.people);
+    const box = this._box('people', people.length ? corner(this._config.people_position, 'top-left') : null);
+    if (!box) return;
+    const states = this._hass.states;
+    const deps: unknown[] = people.flatMap((p) => [states[p.entity], p.room ? states[p.room] : undefined]);
+    deps.push(this._language());
+    if (!this._boxChanged('people', deps, force)) return;
+    const rooms: any[] = Array.isArray(this._config.rooms) ? this._config.rooms : [];
+    box.setAttribute('aria-label', this._t('people'));
+    render(
+      html`${people.map((p) => {
+        const person = states[p.entity];
+        if (!person) return nothing;
+        const name = String(person.attributes.friendly_name || p.entity);
+        const place = personPlace(person.state, p.room && states[p.room] ? states[p.room].state : undefined, rooms);
+        const picture = person.attributes.entity_picture as string | undefined;
+        const room = place.room >= 0 ? rooms[place.room] : undefined;
+        return html`
+          <div class="person ${place.home ? 'home' : 'away'}">
+            <button
+              class="avatar"
+              title=${name}
+              @click=${(ev: Event) => {
+                ev.stopPropagation();
+                this._moreInfo(p.entity);
+              }}
+            >
+              ${picture ? html`<img src=${picture} alt="" />` : html`<span>${initials(name)}</span>`}
+            </button>
+            <span class="name">${name.split(' ')[0]}</span>
+            ${room
+              ? html`<button
+                  class="place link"
+                  @click=${(ev: Event) => {
+                    ev.stopPropagation();
+                    this._showRoom(this._roomView(room.name), room.object_id ? [room.object_id] : []);
+                  }}
+                >
+                  ${room.name}
+                </button>`
+              : html`<span class="place">${place.home ? this._t('people_home') : place.zone || this._t('people_away')}</span>`}
+          </div>
+        `;
+      })}`,
+      box,
+    );
+  }
+
+  // alarm_panel: the state of an alarm_control_panel, green while armed, orange while it changes,
+  // red and blinking when triggered. A tap opens it, to arm or disarm.
+  private _renderAlarmPanel(force: boolean): void {
+    const entityId = this._config.alarm_panel;
+    const stateObj = entityId ? this._hass.states[entityId] : undefined;
+    const box = this._box('alarm_panel', stateObj ? corner(this._config.alarm_panel_position, 'top-right') : null);
+    if (!box || !this._boxChanged('alarm_panel', [stateObj, this._language()], force)) return;
+    const look = panelLook(stateObj.state);
+    const text = this._tOr('panel_' + stateObj.state, stateObj.state);
+    this._wholeBox(box, entityId, text);
+    box.classList.toggle('pulse', !!look.pulse);
+    box.style.setProperty('--f3d-panel', look.color);
+    render(html`<ha-icon icon=${look.icon}></ha-icon><span>${text}</span>`, box);
+  }
+
+  // chips: any entity as a chip, its icon and its state; a tap opens it.
+  private _renderChips(force: boolean): void {
+    const chips = chipList(this._config.chips);
+    const box = this._box('chips', chips.length ? corner(this._config.chips_position, 'bottom-right') : null);
+    if (!box) return;
+    const states = this._hass.states;
+    if (!this._boxChanged('chips', [...chips.map((c) => states[c.entity]), this._language()], force)) return;
+    const hass: any = this._hass;
+    box.setAttribute('aria-label', this._t('chips'));
+    render(
+      html`${chips.map((c) => {
+        const stateObj = states[c.entity];
+        if (!stateObj) return nothing;
+        const unit = stateObj.attributes.unit_of_measurement;
+        const value = typeof hass.formatEntityState === 'function' ? hass.formatEntityState(stateObj) : stateObj.state + (unit ? ' ' + unit : '');
+        const icon = c.icon || (stateObj.attributes.icon as string | undefined);
+        const name = c.name || String(stateObj.attributes.friendly_name || c.entity);
+        return html`<button
+          class="chip"
+          title=${name}
+          @click=${(ev: Event) => {
+            ev.stopPropagation();
+            this._moreInfo(c.entity);
+          }}
+        >
+          ${icon ? html`<ha-icon icon=${icon}></ha-icon>` : html`<ha-state-icon .hass=${this._hass} .stateObj=${stateObj}></ha-state-icon>`}
+          <span>${c.name ? html`<span class="label">${c.name}</span> ` : nothing}${value}</span>
+        </button>`;
+      })}`,
+      box,
+    );
+  }
+
+  private _renderWeather(force = false): void {
+    const entityId = this._config.weather;
+    const stateObj = entityId ? this._hass.states[entityId] : undefined;
+    const box = this._box('weather', stateObj ? corner(this._config.weather_position, 'bottom-left') : null);
+    if (!box || !this._boxChanged('weather', [stateObj, this._forecast, this._forecastType, this._language()], force)) return;
+    this._wholeBox(box, entityId, this._t('weather'));
     const forecast: any[] = (Array.isArray(stateObj.attributes.forecast) ? stateObj.attributes.forecast : this._forecast) || [];
     const count = Math.min(12, Math.max(0, Math.round(this._num(this._config.weather_count, 4))));
     const type = this._forecastType || 'daily';
@@ -4787,6 +5179,7 @@ export class Floor3dCard extends LitElement {
   // Menus at the top right: views and, with rooms configured, the room colours.
   private _renderMenus(): void {
     if (this._zoommenu) render(html`${this._getZoomMenu()}${this._getMapMenu()}`, this._zoommenu);
+    this._placeCorners();
   }
 
   // The maps of the Map menu: temperature, presence and illuminance, then the sensor maps that a
@@ -5101,8 +5494,14 @@ export class Floor3dCard extends LitElement {
   // The camera goes to a room (an alarm went on there), seen from the same side as before, from
   // high enough to see all of it; the level of the room is shown if it was hidden.
   private _flyToRoom(room: RoomView): void {
-    const target = room.box.getCenter(new THREE.Vector3());
-    const size = room.box.getSize(new THREE.Vector3());
+    this._flyToBox(room.box, room.level !== undefined ? [room.level] : []);
+  }
+
+  // The camera above a box, from the side it was looking from, high enough to see all of it; the
+  // levels of the box are shown if they were hidden.
+  private _flyToBox(box: THREE.Box3, levels: number[]): void {
+    const target = box.getCenter(new THREE.Vector3());
+    const size = box.getSize(new THREE.Vector3());
     const direction = this._camera.position.clone().sub(this._controls.target);
     if (direction.lengthSq() < 1e-6) direction.set(0, 1, 1);
     direction.normalize();
@@ -5111,7 +5510,7 @@ export class Floor3dCard extends LitElement {
       direction.normalize();
     }
     const position = target.clone().add(direction.multiplyScalar(Math.max(size.x, size.z, 300) * 1.8));
-    if (room.level !== undefined && this._displaylevels && this._displaylevels[room.level] === false) this._setVisibleLevel(room.level);
+    if (this._displaylevels && levels.some((level) => this._displaylevels[level] === false)) this._setVisibleLevel(levels.length === 1 ? levels[0] : -1);
     this._flyTo(position, target);
   }
 
@@ -5670,13 +6069,39 @@ export class Floor3dCard extends LitElement {
   // https://lit-element.polymer-project.org/guide/styles
   static get styles(): CSSResultGroup {
     return css`
-      .f3d-weather {
+      .f3d-corner {
         position: absolute;
         z-index: 1000;
         display: flex;
-        align-items: center;
-        gap: 10px;
+        gap: 6px;
         max-width: calc(100% - 20px);
+        pointer-events: none;
+      }
+      .f3d-corner-top-left,
+      .f3d-corner-top-right {
+        flex-direction: column;
+      }
+      .f3d-corner-bottom-left,
+      .f3d-corner-bottom-right {
+        flex-direction: column-reverse;
+      }
+      .f3d-corner-top-left,
+      .f3d-corner-bottom-left {
+        left: 10px;
+        align-items: flex-start;
+      }
+      .f3d-corner-top-right,
+      .f3d-corner-bottom-right {
+        right: 10px;
+        align-items: flex-end;
+      }
+      .f3d-box {
+        pointer-events: auto;
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 8px;
+        max-width: 100%;
         overflow: hidden;
         padding: 6px 10px;
         box-sizing: border-box;
@@ -5686,8 +6111,128 @@ export class Floor3dCard extends LitElement {
         border: 1px solid rgba(255, 255, 255, 0.6);
         font-size: 13px;
         line-height: 1.2;
-        cursor: pointer;
         --mdc-icon-size: 22px;
+      }
+      .f3d-box button {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        margin: 0;
+        padding: 0;
+        border: 0;
+        background: none;
+        color: inherit;
+        font: inherit;
+        cursor: pointer;
+      }
+      .f3d-weather {
+        flex-wrap: nowrap;
+        gap: 10px;
+        cursor: pointer;
+      }
+      .f3d-status .chip,
+      .f3d-chips .chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 2px 6px;
+        border-radius: 12px;
+        font-size: 14px;
+      }
+      .f3d-status .chip.active {
+        background: rgba(255, 255, 255, 0.25);
+      }
+      .f3d-chips {
+        gap: 4px;
+      }
+      .f3d-chips .label {
+        opacity: 0.8;
+      }
+      .f3d-energy {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 4px;
+      }
+      .f3d-energy .values {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+      }
+      .f3d-energy .consumers {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        font-size: 12px;
+        opacity: 0.9;
+      }
+      .f3d-energy .consumer {
+        justify-content: space-between;
+        gap: 10px;
+        width: 100%;
+      }
+      .f3d-energy .consumer .name,
+      .f3d-people .place {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .f3d-energy .consumer .name {
+        max-width: 140px;
+      }
+      .f3d-people {
+        align-items: flex-start;
+        gap: 10px;
+      }
+      .f3d-people .person {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 2px;
+        min-width: 44px;
+      }
+      .f3d-people .avatar {
+        justify-content: center;
+        width: 34px;
+        height: 34px;
+        border-radius: 50%;
+        overflow: hidden;
+        background: #546e7a;
+        font-weight: 600;
+      }
+      .f3d-people .avatar img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+      }
+      .f3d-people .away .avatar {
+        filter: grayscale(1);
+        opacity: 0.55;
+      }
+      .f3d-people .name {
+        font-size: 12px;
+      }
+      .f3d-people .place {
+        max-width: 80px;
+        font-size: 11px;
+        opacity: 0.8;
+      }
+      .f3d-people .place.link {
+        text-decoration: underline dotted;
+      }
+      .f3d-alarm_panel {
+        border-left: 4px solid var(--f3d-panel, #9e9e9e);
+        cursor: pointer;
+      }
+      .f3d-alarm_panel ha-icon {
+        color: var(--f3d-panel, #9e9e9e);
+      }
+      .f3d-alarm_panel.pulse {
+        animation: f3d-pulse 1s ease-in-out infinite;
+      }
+      @keyframes f3d-pulse {
+        50% {
+          background: rgba(229, 57, 53, 0.7);
+        }
       }
       .f3d-weather .now {
         display: flex;

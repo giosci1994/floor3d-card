@@ -25,6 +25,22 @@ export interface Floor3dCardConfig {
   weather_position?: string; // top-left, top-right, bottom-left (default) or bottom-right
   weather_forecast?: string; // daily (default), hourly or twice_daily
   weather_count?: number | string; // forecasts shown, 4 by default
+  // Boxes in the corners (boxes.ts), each with its *_position.
+  status?: string | boolean; // what is on or open
+  status_position?: string;
+  energy_power?: string; // power of the house
+  energy_solar?: string;
+  energy_grid?: string; // positive from the grid, negative to it
+  energy_battery?: string; // charge in %
+  energy_plugs?: string[]; // the plugs ranked; the power sensors of the rooms without it
+  energy_top?: number | string; // plugs shown, 3 by default
+  energy_position?: string;
+  people?: any; // person ids, or { entity, room }
+  people_position?: string;
+  alarm_panel?: string; // an alarm_control_panel
+  alarm_panel_position?: string;
+  chips?: any; // entity ids, or { entity, name, icon }
+  chips_position?: string;
   globalLightPower: number | string; // a number or a numeric sensor
   hideLevelsMenu: string;
   initialLevel: number;

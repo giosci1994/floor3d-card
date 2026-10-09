@@ -6,7 +6,7 @@
     "interaction": "Interaktion",
     "colours": "Zustandsfarben und Raumkarten",
     "rendering": "Darstellung",
-    "weather": "Wetter"
+    "boxes": "Infoboxen"
   },
   "labels": {
     "name": "Name",
@@ -156,7 +156,22 @@
     "weather": "Wetter-Entität",
     "weather_position": "Position",
     "weather_forecast": "Vorhersage",
-    "weather_count": "Angezeigte Vorhersagen"
+    "weather_count": "Angezeigte Vorhersagen",
+    "status": "Zeigen, was an oder offen ist",
+    "status_position": "Position",
+    "energy_power": "Verbrauch des Hauses",
+    "energy_solar": "Solarleistung",
+    "energy_grid": "Netzleistung",
+    "energy_battery": "Batterieladung",
+    "energy_plugs": "Zu ordnende Steckdosen",
+    "energy_top": "Angezeigte Steckdosen",
+    "energy_position": "Position",
+    "people_position": "Position",
+    "alarm_panel": "Alarmanlage",
+    "alarm_panel_position": "Position",
+    "chips": "Entitäten",
+    "chips_position": "Position",
+    "person_room": "Raum-Entität"
   },
   "helpers": {
     "path": "Zum Beispiel /local/floor3d/",
@@ -218,7 +233,15 @@
     "tilt_closed": "Grad gegenüber dem Modell bei Neigung 0. Standard 80",
     "tilt_open": "Grad gegenüber dem Modell bei Neigung 100. Standard 0",
     "weather": "Ein Feld mit dem aktuellen Wetter und den nächsten Vorhersagen; seine Wolken machen auch den Himmel im Hintergrund grau",
-    "weather_count": "Standard 4, 0 nur für das aktuelle Wetter"
+    "weather_count": "Standard 4, 0 nur für das aktuelle Wetter",
+    "status": "Lichter an, Türen und Fenster offen, Schlösser offen, Heizungen an: ein Tippen zeigt sie im Modell",
+    "energy_grid": "Positiv aus dem Netz, negativ ins Netz",
+    "energy_battery": "In %",
+    "energy_plugs": "Leer: die Leistungssensoren der Räume. Ein Tippen auf eine Steckdose geht zu ihrem Raum",
+    "energy_top": "Standard 3, 0 für keine",
+    "alarm_panel": "Ihr Zustand; ein Tippen öffnet sie zum Scharf- oder Unscharfschalten",
+    "chips": "Jede Entität, mit Symbol und Zustand; ein Tippen öffnet sie",
+    "person_room": "Optional: eine Entität, deren Zustand der Raum ist, wie der Bereich von Bermuda oder ESPresense"
   },
   "options": {
     "language": {
@@ -360,7 +383,13 @@
     "maps": "Sensorkarten",
     "map_sensors": "Sensoren der Karten",
     "alarms_climate": "Alarme und Klima",
-    "slats": "Jalousie"
+    "slats": "Jalousie",
+    "weather": "Wetter",
+    "status": "Was an oder offen ist",
+    "energy": "Energie",
+    "people": "Personen",
+    "alarm_panel": "Alarmanlage",
+    "chips": "Chips"
   },
   "ui": {
     "loading": "Wird geladen…",
@@ -413,6 +442,10 @@
     "map_preset": "Fertige Karte, andere Farben",
     "map_custom": "Neue Karte",
     "maps_hint": "Die fertigen Karten (Luftfeuchtigkeit, CO₂, PM2.5, PM10, VOC, Formaldehyd, Radon, Lärm, Stromverbrauch) brauchen nur die Sensoren in den Räumen. Hier: andere Farben für sie oder Karten anderer Sensoren.",
-    "map_hint": "Niedrigster und höchster Wert verschieben die Farben einer fertigen Karte; Farben verteilt neue dazwischen. Eine neue Karte fügt den Räumen ein Sensorfeld hinzu."
+    "map_hint": "Niedrigster und höchster Wert verschieben die Farben einer fertigen Karte; Farben verteilt neue dazwischen. Eine neue Karte fügt den Räumen ein Sensorfeld hinzu.",
+    "add_person": "Person hinzufügen",
+    "title_people": "Person",
+    "person_room": "Raum aus {room}",
+    "no_room": "Zuhause oder unterwegs"
   }
 }

@@ -263,7 +263,7 @@ test('card editor: objects and shadows from the preview, texts in the language o
   assert.deepEqual(editor.objects, objectNames.slice().sort());
   assert.equal(editor.shadows.lights, 32);
   assert.equal(editor.panels[0], '3D-Modell');
-  assert.ok(editor.panels.includes('Wetter'), 'the weather section: ' + editor.panels.join(', '));
+  assert.ok(editor.panels.includes('Infoboxen'), 'the section of the boxes: ' + editor.panels.join(', '));
   assert.ok(editor.panels.includes('Entitäten (31)'), editor.panels.join(', '));
   assert.equal(editor.noShadow, editor.shadows.dropped.length, 'the lines of the lights left without shadow say so');
   assert.deepEqual(errors, []);
@@ -847,8 +847,8 @@ test('weather box: the weather now and the next forecasts in the language of the
     page.evaluate(() => {
       const el = window.__card.shadowRoot.querySelector('.f3d-weather');
       return {
-        shown: el && el.style.display !== 'none',
-        corner: [el.style.bottom, el.style.left],
+        shown: !!el && el.isConnected,
+        corner: el.parentElement.className,
         label: el.getAttribute('aria-label'),
         now: [el.querySelector('.now ha-icon').getAttribute('icon'), el.querySelector('.now span').textContent],
         items: [...el.querySelectorAll('.item')].map((i) => [
@@ -861,7 +861,7 @@ test('weather box: the weather now and the next forecasts in the language of the
     });
   assert.deepEqual(await box(), {
     shown: true,
-    corner: ['10px', '10px'],
+    corner: 'f3d-corner f3d-corner-bottom-left',
     label: 'Previsioni meteo',
     now: ['mdi:weather-rainy', '13°'],
     items: [
@@ -893,6 +893,183 @@ test('weather box: the weather now and the next forecasts in the language of the
   await page.evaluate(() => window.__card.remove());
   await page.waitForTimeout(50);
   assert.deepEqual((await subscriptions()).map((s) => s.active), [false, false]);
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+// --- Boxes in the corners ----------------------------------------------------------------------
+
+// A picture of a person (a pixel), without a file to serve.
+const PICTURE = 'data:image/gif;base64,R0lGODlhAQABAIAAAP///wAAACwAAAAAAQABAAACAkQBADs=';
+
+// What a box shows: its corner, the texts and icons of its parts.
+const boxOf = (page, kind) =>
+  page.evaluate((kind) => {
+    const el = window.__card.shadowRoot.querySelector('.f3d-' + kind);
+    if (!el) return null;
+    const r = el.getBoundingClientRect();
+    return {
+      corner: el.parentElement.className.replace('f3d-corner f3d-corner-', ''),
+      rect: [r.left, r.top, r.right, r.bottom].map(Math.round),
+      text: el.textContent.replace(/\s+/g, ' ').trim(),
+      icons: [...el.querySelectorAll('ha-icon')].map((i) => i.getAttribute('icon')),
+      classes: el.className,
+    };
+  }, kind);
+const cameraTarget = (page) => page.evaluate(() => window.__card._controls.target.toArray().map(Math.round));
+const helpers = (page) => page.evaluate(() => window.__card._highlightHelpers.map((h) => '#' + h.material.color.getHexString()));
+const moreInfo = (page) =>
+  page.evaluate(() => {
+    window.__moreInfo = [];
+    window.__card.addEventListener('hass-more-info', (e) => window.__moreInfo.push(e.detail.entityId));
+  });
+
+test('status box: what is on or open; a tap outlines those objects and frames them, a second tap ends it', { timeout: TIMEOUT }, async () => {
+  const entities = [
+    ...lamps(3),
+    { entity: 'binary_sensor.window', type3d: 'color', object_id: 'wardrobe', colorcondition: [{ state: 'on', color: '#ff0000' }] },
+    { entity: 'lock.front', type3d: 'color', object_id: 'table', colorcondition: [{ state: 'unlocked', color: '#ff0000' }] },
+  ];
+  const boxStates = states({
+    'light.lamp_1': { state: 'on', attributes: { brightness: 200 } },
+    'light.lamp_2': { state: 'on', attributes: { brightness: 200 } },
+    'light.lamp_3': { state: 'off', attributes: {} },
+    'binary_sensor.window': { state: 'on', attributes: { device_class: 'window' } },
+    'lock.front': { state: 'unlocked', attributes: {} },
+  });
+  const { page, errors } = await open(house({ status: 'yes', entities }), boxStates);
+  let box = await boxOf(page, 'status');
+  assert.equal(box.corner, 'top-left');
+  assert.deepEqual(box.icons, ['mdi:lightbulb-on', 'mdi:door-open', 'mdi:lock-open-variant']);
+  assert.equal(box.text, '2 1 1');
+  const before = await cameraTarget(page);
+  await page.evaluate(() => window.__card.shadowRoot.querySelector('.f3d-status .chip').click());
+  await page.waitForTimeout(900);
+  assert.deepEqual(await helpers(page), ['#ffd54f', '#ffd54f'], 'the two lamps on, outlined in yellow');
+  assert.notDeepEqual(await cameraTarget(page), before, 'the camera goes to them');
+  assert.match((await boxOf(page, 'status')).classes, /f3d-status/);
+  assert.equal(await page.evaluate(() => window.__card.shadowRoot.querySelectorAll('.f3d-status .chip.active').length), 1);
+  await page.evaluate(() => window.__card.shadowRoot.querySelector('.f3d-status .chip').click());
+  assert.deepEqual(await helpers(page), [], 'a second tap ends it');
+  // Everything off and closed.
+  await page.evaluate(() => {
+    ['light.lamp_1', 'light.lamp_2'].forEach((id) => window.__setState(id, 'off'));
+    window.__setState('binary_sensor.window', 'off');
+    window.__setState('lock.front', 'locked');
+  });
+  box = await boxOf(page, 'status');
+  assert.deepEqual(box.icons, ['mdi:check-circle-outline']);
+  assert.equal(box.text, 'All off');
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+test('boxes: energy, people, alarm panel and chips, each in its corner, stacked without covering each other or the menus', { timeout: TIMEOUT }, async () => {
+  const rooms = [
+    { name: 'Living room', object_id: 'floor_living', power: ['sensor.washer', 'sensor.tv'] },
+    { name: 'Bedroom', object_id: 'floor_bed', power: 'sensor.heater' },
+  ];
+  const config = house({
+    rooms,
+    zoom_areas: [{ zoom: 'Living', camera_position: { x: -200, y: 500, z: 300 }, camera_target: { x: -200, y: 0, z: 0 } }],
+    status: 'yes',
+    weather: 'weather.home',
+    energy_power: 'sensor.house_power',
+    energy_solar: 'sensor.solar_power',
+    energy_grid: 'sensor.grid_power',
+    energy_battery: 'sensor.battery',
+    energy_top: 2,
+    people: [{ entity: 'person.anna', room: 'sensor.anna_area' }, 'person.marco', 'person.lucia'],
+    alarm_panel: 'alarm_control_panel.home',
+    chips: ['sensor.outdoor', { entity: 'binary_sensor.front_door', name: 'Door' }],
+  });
+  const boxStates = states({
+    'weather.home': { state: 'sunny', attributes: { temperature: 20, supported_features: 1 } },
+    'sensor.house_power': { state: '1234', attributes: { unit_of_measurement: 'W' } },
+    'sensor.solar_power': { state: '3.4', attributes: { unit_of_measurement: 'kW' } },
+    'sensor.grid_power': { state: '-500', attributes: { unit_of_measurement: 'W' } },
+    'sensor.battery': { state: '80', attributes: { unit_of_measurement: '%' } },
+    'sensor.washer': { state: '1900', attributes: { unit_of_measurement: 'W', friendly_name: 'Washer' } },
+    'sensor.tv': { state: '120', attributes: { unit_of_measurement: 'W', friendly_name: 'TV' } },
+    'sensor.heater': { state: '800', attributes: { unit_of_measurement: 'W', friendly_name: 'Heater' } },
+    'person.anna': { state: 'home', attributes: { friendly_name: 'Anna Rossi', entity_picture: PICTURE } },
+    'sensor.anna_area': { state: 'Bedroom', attributes: {} },
+    'person.marco': { state: 'not_home', attributes: { friendly_name: 'Marco' } },
+    'person.lucia': { state: 'Work', attributes: { friendly_name: 'Lucia' } },
+    'alarm_control_panel.home': { state: 'armed_away', attributes: {} },
+    'sensor.outdoor': { state: '12.5', attributes: { unit_of_measurement: '°C', friendly_name: 'Outdoor' } },
+    'binary_sensor.front_door': { state: 'off', attributes: { device_class: 'door' } },
+  });
+  const { page, errors } = await open(config, boxStates);
+  await moreInfo(page);
+
+  // Corners: the defaults, stacked from the corner, under the menus at the top right.
+  const kinds = ['status', 'people', 'alarm_panel', 'energy', 'weather', 'chips'];
+  const boxes = Object.fromEntries(await Promise.all(kinds.map(async (k) => [k, await boxOf(page, k)])));
+  assert.deepEqual(
+    kinds.map((k) => boxes[k].corner),
+    ['top-left', 'top-left', 'top-right', 'bottom-left', 'bottom-left', 'bottom-right'],
+  );
+  const overlap = (a, b) => a[0] < b[2] && b[0] < a[2] && a[1] < b[3] && b[1] < a[3];
+  kinds.forEach((a, i) => kinds.slice(i + 1).forEach((b) => assert.ok(!overlap(boxes[a].rect, boxes[b].rect), a + ' covers ' + b)));
+  const menus = await page.evaluate(() => window.__card._zoommenu.getBoundingClientRect().bottom);
+  assert.ok(boxes.alarm_panel.rect[1] > menus, 'the alarm panel under the menus');
+  assert.ok(boxes.people.rect[1] > boxes.status.rect[3], 'people under the status, from the top');
+  assert.ok(boxes.weather.rect[3] < boxes.energy.rect[1], 'energy at the bottom, the weather above it');
+
+  // Energy: values, the export to the grid, the two plugs that use the most.
+  assert.deepEqual(boxes.energy.icons, ['mdi:home-lightning-bolt', 'mdi:solar-power', 'mdi:transmission-tower-export', 'mdi:battery-80']);
+  assert.equal(boxes.energy.text, '1.2 kW 3.4 kW 500 W 80% Washer1.9 kW Heater800 W');
+  const living = await page.evaluate(() => window.__card._roomViews.find((r) => r.name === 'Living room').box.getCenter(window.__card._controls.target.clone()).toArray().map(Math.round));
+  await page.evaluate(() => window.__card.shadowRoot.querySelector('.f3d-energy .consumer').click());
+  await page.waitForTimeout(900);
+  assert.deepEqual(await cameraTarget(page), living, 'the washer: to its room');
+  await page.evaluate(() => window.__card.shadowRoot.querySelector('.f3d-energy .value').click());
+
+  // People: the room of Anna from her area sensor, Marco away, Lucia in a zone.
+  assert.equal(boxes.people.text, 'Anna Bedroom M Marco Away L Lucia Work');
+  assert.equal(await page.evaluate(() => window.__card.shadowRoot.querySelector('.f3d-people img').getAttribute('src')), PICTURE);
+  assert.equal(await page.evaluate(() => window.__card.shadowRoot.querySelectorAll('.f3d-people .away').length), 2);
+  const bedroom = await page.evaluate(() => window.__card._roomViews.find((r) => r.name === 'Bedroom').box.getCenter(window.__card._controls.target.clone()).toArray().map(Math.round));
+  await page.evaluate(() => window.__card.shadowRoot.querySelector('.f3d-people .place.link').click());
+  await page.waitForTimeout(900);
+  assert.deepEqual(await cameraTarget(page), bedroom, 'her room');
+  assert.deepEqual(await helpers(page), ['#ffffff'], 'its floor outlined');
+
+  // Alarm panel: its state; red and blinking when triggered; a tap opens it.
+  assert.deepEqual([boxes.alarm_panel.icons, boxes.alarm_panel.text], [['mdi:shield-lock'], 'Armed away']);
+  await page.evaluate(() => window.__setState('alarm_control_panel.home', 'triggered'));
+  const triggered = await boxOf(page, 'alarm_panel');
+  assert.deepEqual([triggered.icons, triggered.text], [['mdi:bell-ring'], 'Triggered']);
+  assert.match(triggered.classes, /pulse/);
+  await page.evaluate(() => window.__card.shadowRoot.querySelector('.f3d-alarm_panel').click());
+
+  // Chips: the state with its unit; a name when given; a tap opens the entity.
+  assert.equal(boxes.chips.text, '12.5 °C Door off');
+  await page.evaluate(() => window.__card.shadowRoot.querySelector('.f3d-chips .chip').click());
+
+  assert.deepEqual(await page.evaluate(() => window.__moreInfo), ['sensor.house_power', 'alarm_control_panel.home', 'sensor.outdoor']);
+  // On a narrow card (a phone) the corners of a side don't cover each other or the menus.
+  await page.addStyleTag({ content: '#wrap { width: 380px !important; }' });
+  await page.waitForTimeout(300);
+  const narrow = Object.fromEntries(await Promise.all(kinds.map(async (k) => [k, (await boxOf(page, k)).rect])));
+  narrow.menus = await page.evaluate(() => {
+    const r = window.__card._zoommenu.getBoundingClientRect();
+    return [r.left, r.top, r.right, r.bottom].map(Math.round);
+  });
+  Object.keys(narrow).forEach((a, i) =>
+    Object.keys(narrow)
+      .slice(i + 1)
+      .forEach((b) => assert.ok(!overlap(narrow[a], narrow[b]), 'narrow: ' + a + ' covers ' + b + ' ' + narrow[a] + ' / ' + narrow[b])),
+  );
+
+  // A box left out of the configuration goes away.
+  await page.evaluate(() => {
+    const card = window.__card;
+    card._config = { ...card._config, chips: undefined };
+    card._renderBoxes(true);
+  });
+  assert.equal(await boxOf(page, 'chips'), null);
   assert.deepEqual(errors, []);
   await page.close();
 });
