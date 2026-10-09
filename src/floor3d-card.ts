@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/ban-types */
-import { LitElement, html, TemplateResult, css, PropertyValues, CSSResultGroup, render } from 'lit';
+import { LitElement, html, nothing, TemplateResult, css, PropertyValues, CSSResultGroup, render } from 'lit';
 import { property, customElement, state } from 'lit/decorators.js';
 import {
   HomeAssistant,
@@ -31,6 +31,9 @@ import {
   roomSensors,
 } from './maps';
 import { localize, pickLanguage } from './localize/localize';
+import { findSlats, slatAngle, Slat, tiltSlats } from './slats';
+import { skyColors, skyGradient, weatherClouds } from './sky';
+import { forecastLabel, forecastType, ForecastType, formatDegrees, weatherIcon } from './weather';
 //import three.js libraries for 3D rendering
 import * as TWEEN from '@tweenjs/tween.js';
 import { mdiAlertCircleOutline, mdiCubeOutline } from '@mdi/js';
@@ -146,6 +149,15 @@ function daylight(elevation: number): number {
   return THREE.MathUtils.smoothstep(elevation, -3, 8);
 }
 
+// A mesh with slats (cover.slats): its own geometry, its slats, and its positions and normals as
+// in the model.
+interface SlatSet {
+  geometry: THREE.BufferGeometry;
+  slats: Slat[];
+  positions: Float32Array;
+  normals?: Float32Array;
+}
+
 interface RoomView {
   name: string;
   material: THREE.MeshBasicMaterial; // translucent copy of the floor, above it
@@ -236,6 +248,24 @@ export class Floor3dCard extends LitElement {
   private _spritetext?: string[];
   private _objposition: number[][];
   private _slidingdoorposition: THREE.Vector3[][];
+  // Covers: the size of each pane before it moves (motion: shrink), the meshes with slats
+  // (cover.slats), the angle they show, their tilt and their running tween, by entity.
+  private _paneSizes = new Map<number, THREE.Vector3>();
+  private _slatSets = new Map<number, SlatSet[]>();
+  private _slatAngles = new Map<number, number>();
+  private _slatTweens = new Map<number, TWEEN.Tween<{ angle: number }>>();
+  private _tilts = new Map<number, number | null>();
+  // Clipping planes of the sliding covers: in the space of the model, and in the space of the scene
+  // for the materials, placed again when the model moves.
+  private _coverPlanes: { local: THREE.Plane; world: THREE.Plane }[] = [];
+  private _skyKey?: string; // the gradient behind the canvas (backgroundColor: sky)
+  // The forecast box (weather): its element, the state it shows, the forecast and its subscription.
+  private _weatherEl?: HTMLElement;
+  private _weatherState?: HassEntity;
+  private _forecast: any[] | null = null;
+  private _forecastType?: ForecastType;
+  private _weatherKey?: string;
+  private _weatherUnsub?: Promise<unknown>;
   private _objects_to_rotate: THREE.Group[];
   private _pivot: THREE.Vector3[];
   private _degrees: number[];
@@ -409,6 +439,7 @@ export class Floor3dCard extends LitElement {
       }
       // The page may have been navigated to another view while the card was not shown.
       this._applyUrlView(false);
+      this._subscribeWeather();
     }
   }
 
@@ -425,6 +456,7 @@ export class Floor3dCard extends LitElement {
     window.clearInterval(this._zIndexInterval);
 
     this._cancelTap();
+    this._unsubscribeWeather();
     // The preview going away while the editor is paused (Home Assistant replaces it at every change
     // of the config): the next one shows its last picture, with the camera where it was.
     if (previewState.paused && this._modelready && this._isEditorPreview()) this._snapshot();
@@ -1211,7 +1243,7 @@ export class Floor3dCard extends LitElement {
   private _showPausedPreview(): void {
     const box = document.createElement('div');
     box.style.cssText = 'position: relative; width: 100%; min-height: 200px;';
-    box.style.background = this._config.backgroundColor || '#aaaaaa';
+    box.style.background = this._config.backgroundColor == 'sky' ? this._skyBackground() : this._config.backgroundColor || '#aaaaaa';
     if (previewState.image) {
       const img = document.createElement('img');
       img.src = previewState.image;
@@ -1257,6 +1289,22 @@ export class Floor3dCard extends LitElement {
     return Array.from(names);
   }
 
+  // The objects of the model that ids name: plain names, names with * and groups <name>.
+  private _objectNamesFor(ids: string[]): string[] {
+    const names = new Set<string>();
+    const modelNames = this._modelObjectNames();
+    const add = (id: string) => matchObjects(String(id), modelNames).forEach((name) => names.add(name));
+    ids.forEach((id) => {
+      const group = /^<(.*)>$/.exec(String(id));
+      if (!group) add(id);
+      else {
+        const found = (this._config.object_groups || []).find((g) => g.object_group === group[1]);
+        ((found && found.objects) || []).forEach((o) => add(o.object_id));
+      }
+    });
+    return Array.from(names);
+  }
+
   // A box around each object (a group <name> stands for its objects), drawn over everything.
   private _setHighlight(ids: string[]): void {
     if (!this._scene) return;
@@ -1266,18 +1314,7 @@ export class Floor3dCard extends LitElement {
       ((helper as THREE.BoxHelper).material as THREE.Material).dispose();
     });
     this._highlightHelpers = [];
-    const names = new Set<string>();
-    const modelNames = this._modelObjectNames();
-    const add = (id: string) => matchObjects(id, modelNames).forEach((name) => names.add(name));
-    ids.forEach((id) => {
-      const group = /^<(.*)>$/.exec(id);
-      if (!group) add(id);
-      else {
-        const found = (this._config.object_groups || []).find((g) => g.object_group === group[1]);
-        ((found && found.objects) || []).forEach((o) => add(o.object_id));
-      }
-    });
-    names.forEach((name) => {
+    this._objectNamesFor(ids).forEach((name) => {
       const object = this._scene.getObjectByName(name);
       if (!object) return;
       const helper = new THREE.BoxHelper(object, 0x03a9f4);
@@ -1516,6 +1553,10 @@ export class Floor3dCard extends LitElement {
                   this._updatecover(entity, state, i);
                   torerender = true;
                 }
+                if (this._slatSets.has(i) && this._coverTilt(hass.states[entity.entity]) !== this._tilts.get(i)) {
+                  this._updateSlats(entity, i);
+                  torerender = true;
+                }
               }
               if (entity.type3d == 'light') {
                 let toupdate = false;
@@ -1658,6 +1699,9 @@ export class Floor3dCard extends LitElement {
           this._updateTorch();
           this._updateSky();
           this._updateSun();
+          this._updateSkyBackground();
+          this._subscribeWeather();
+          this._renderWeather();
           this._updateStateColors();
           if (torerender) {
             this._render();
@@ -1774,14 +1818,13 @@ export class Floor3dCard extends LitElement {
     this._renderer.domElement.style.display = 'block';
     this._renderer.domElement.addEventListener('webglcontextrestored', this._contextRestoredListener);
 
-    if (this._config.backgroundColor) {
-      if (this._config.backgroundColor == 'transparent') {
-        this._renderer.setClearColor(0x000000, 0);
-      } else {
-        this._scene.background = new THREE.Color(this._config.backgroundColor);
-      }
+    // transparent: the card shows through; sky: a gradient behind the canvas that follows the sun.
+    if (this._config.backgroundColor == 'transparent' || this._config.backgroundColor == 'sky') {
+      this._renderer.setClearColor(0x000000, 0);
+      this._skyKey = undefined;
+      this._updateSkyBackground();
     } else {
-      this._scene.background = new THREE.Color('#aaaaaa');
+      this._scene.background = new THREE.Color(this._config.backgroundColor || '#aaaaaa');
     }
 
     // Colours in sRGB with light computed in linear space (three.js default since 0.152); the tone
@@ -2100,6 +2143,8 @@ export class Floor3dCard extends LitElement {
       this._applyUrlView(false);
       this._restoreCamera();
       this._rememberCamera();
+      this._subscribeWeather();
+      this._renderWeather(true);
 
       this._resizeCanvas();
 
@@ -2650,6 +2695,7 @@ export class Floor3dCard extends LitElement {
     this._modelX = this._bboxmodel.position.x = -(box.max.x - box.min.x) / 2;
     this._modelY = this._bboxmodel.position.y = -box.min.y;
     this._modelZ = this._bboxmodel.position.z = -(box.max.z - box.min.z) / 2;
+    this._placeCoverPlanes();
 
     if (this._config.camera_position) {
       this._camera.position.set(
@@ -2771,6 +2817,13 @@ export class Floor3dCard extends LitElement {
         this._slidingdoor = [];
         this._objposition = [];
         this._slidingdoorposition = [];
+        this._coverPlanes = [];
+        this._slatTweens.forEach((tween) => tween.stop());
+        this._slatTweens.clear();
+        this._slatSets.clear();
+        this._slatAngles.clear();
+        this._tilts.clear();
+        this._paneSizes.clear();
         this._to_animate = false;
         this._zoom = [];
 
@@ -2956,64 +3009,39 @@ export class Floor3dCard extends LitElement {
                     );
                   });
 
-                  let boxpane: THREE.Box3 = new THREE.Box3().setFromObject(pane);
+                  const boxpane: THREE.Box3 = new THREE.Box3().setFromObject(pane);
+                  this._paneSizes.set(i, boxpane.getSize(new THREE.Vector3()));
 
-                  let panevertices: THREE.Vector3[] = [];
-
-                  switch (entity.cover.side) {
-                    case 'up':
-                      panevertices = [
-                        new THREE.Vector3(boxpane.min.x, boxpane.max.y, boxpane.min.z), // 000
-                        new THREE.Vector3(boxpane.min.x, boxpane.max.y, boxpane.max.z), // 001
-                        new THREE.Vector3(boxpane.max.x, boxpane.max.y, boxpane.min.z), // 010
-                        new THREE.Vector3(boxpane.max.x, boxpane.max.y, boxpane.max.z), // 011
-                      ];
-                      break;
-                    case 'down':
-                      panevertices = [
-                        new THREE.Vector3(boxpane.min.x, boxpane.min.y, boxpane.min.z), // 000
-                        new THREE.Vector3(boxpane.min.x, boxpane.min.y, boxpane.max.z), // 001
-                        new THREE.Vector3(boxpane.max.x, boxpane.min.y, boxpane.min.z), // 010
-                        new THREE.Vector3(boxpane.max.x, boxpane.min.y, boxpane.max.z), // 011
-                      ];
-                      break;
+                  // motion: slide (the pane slides into its box, hidden past the edge of the side it
+                  // goes to), shrink (it gets shorter toward that side) or none (only the slats turn).
+                  if ((entity.cover.motion || 'slide') == 'slide') {
+                    // The plane is kept in the space of the model too: the model is centred after
+                    // this, and the plane moves with it (_placeCoverPlanes).
+                    const coverplane = this._coverPlane(boxpane, entity.cover.side);
+                    const clipPlanes = coverplane ? [coverplane] : [];
+                    if (coverplane) {
+                      this._bboxmodel.updateMatrixWorld(true);
+                      const local = coverplane.clone().applyMatrix4(this._bboxmodel.matrixWorld.clone().invert());
+                      this._coverPlanes.push({ local, world: coverplane });
+                    }
+                    // The materials of a cover are its own: a GLB model can share them with other
+                    // objects, which the plane would cut too. The shadows are cut the same way.
+                    this._object_ids[i].objects.forEach((element) => {
+                      const _obj = this._scene.getObjectByName(element.object_id) as THREE.Mesh;
+                      if (!_obj || !_obj.material) return;
+                      const own = (m: THREE.Material) => {
+                        const copy = m.clone();
+                        copy.clippingPlanes = clipPlanes;
+                        copy.clipShadows = this._config.shadow == 'yes';
+                        return copy;
+                      };
+                      _obj.material = Array.isArray(_obj.material) ? _obj.material.map(own) : own(_obj.material);
+                    });
                   }
 
-                  panevertices.sort((firstel, secondel) => {
-                    if (firstel.x < secondel.x) {
-                      return -1;
-                    }
-                    if (firstel.x > secondel.x) {
-                      return 1;
-                    }
-                    return 0;
-                  });
-
-                  const coverplane = new THREE.Plane();
-
-                  coverplane.setFromCoplanarPoints(panevertices[2], panevertices[1], panevertices[0]);
-
-                  const clipPlanes = [coverplane];
-
-                  this._object_ids[i].objects.forEach((element) => {
-                    let _obj: any = this._scene.getObjectByName(element.object_id);
-                    (_obj.material as THREE.Material).clippingPlanes = clipPlanes;
-                  });
-
-                  //(pane.material as THREE.Material).clippingPlanes = clipPlanes;
-
-                  if (this._config.shadow) {
-                    if (this._config.shadow == 'yes') {
-                      (pane.material as THREE.Material).clipShadows = true;
-                    } else {
-                      (pane.material as THREE.Material).clipShadows = false;
-                    }
-                  }
-
-                  //const planehelper = new THREE.PlaneHelper(coverplane, 200);
-                  //this._scene.add(planehelper);
-
+                  this._initSlats(entity, i);
                   this._updatecover(entity, this._states[i], i);
+                  this._updateSlats(entity, i, false);
                 }
               }
               if (entity.type3d == 'light') {
@@ -3515,8 +3543,176 @@ export class Floor3dCard extends LitElement {
     // A cover that reports current_position is drawn there, also while it is opening or closing
     // (0 is closed); the others are fully open or fully closed.
     const percentage = this._position[i] != null ? this._position[i] : this._isOpen(state) ? 100 : 0;
-    this._translatedoor(pane, percentage, item.cover.side, i, percentage > 0 ? 'open' : 'closed');
+    const motion = item.cover.motion || 'slide';
+    if (motion == 'none') return;
+    if (motion == 'shrink') this._shrinkcover(pane, percentage, item.cover.side, i);
+    else this._translatedoor(pane, percentage, item.cover.side, i, percentage > 0 ? 'open' : 'closed');
     // Shadows follow the tween in the animation loop.
+  }
+
+  // The model moved (it is centred once loaded): the planes of the sliding covers go with it.
+  // Before, they stayed where the model was before, which cut the covers in the wrong place.
+  private _placeCoverPlanes(): void {
+    if (!this._bboxmodel || !this._coverPlanes.length) return;
+    this._bboxmodel.updateMatrixWorld(true);
+    this._coverPlanes.forEach(({ local, world }) => world.copy(local).applyMatrix4(this._bboxmodel.matrixWorld));
+  }
+
+  // The plane that hides a sliding cover past the edge of its side: what is beyond is cut.
+  private _coverPlane(box: THREE.Box3, side: string): THREE.Plane | null {
+    const alongX = box.max.x - box.min.x > box.max.z - box.min.z;
+    switch (side) {
+      case 'up':
+        return new THREE.Plane(new THREE.Vector3(0, -1, 0), box.max.y);
+      case 'down':
+        return new THREE.Plane(new THREE.Vector3(0, 1, 0), -box.min.y);
+      case 'left':
+        return alongX ? new THREE.Plane(new THREE.Vector3(1, 0, 0), -box.min.x) : new THREE.Plane(new THREE.Vector3(0, 0, 1), -box.min.z);
+      case 'right':
+        return alongX ? new THREE.Plane(new THREE.Vector3(-1, 0, 0), box.max.x) : new THREE.Plane(new THREE.Vector3(0, 0, -1), box.max.z);
+    }
+    return null;
+  }
+
+  // motion: shrink. The pane gets shorter toward its side (a roller shade toward its roller, a
+  // curtain toward its side), without sliding: no plane cuts it. The other objects of the cover
+  // (a bottom bar, for example) follow its edge.
+  private _shrinkcover(pane: THREE.Object3D, percentage: number, side: string, index: number): void {
+    const size = this._paneSizes.get(index);
+    const objects = this._object_ids[index].objects;
+    const paneIndex = objects.findIndex((o) => o.object_id === pane.name);
+    if (!size || paneIndex < 0) {
+      this._translatedoor(pane, percentage, side, index, percentage > 0 ? 'open' : 'closed');
+      return;
+    }
+    const share = Math.min(100, Math.max(0, percentage)) / 100;
+    const scale = Math.max(1 - share, 0.001);
+    const axis: 'x' | 'y' | 'z' = side == 'up' || side == 'down' ? 'y' : size.x > size.z ? 'x' : 'z';
+    const sign = side == 'up' || side == 'right' ? 1 : -1;
+    const shift = sign * size[axis] * share; // where the free edge goes
+    objects.forEach((element, k) => {
+      const object = this._scene.getObjectByName(element.object_id);
+      const original = this._slidingdoorposition[index][k];
+      if (!object || !original) return;
+      const position = original.clone();
+      if (k === paneIndex) {
+        // Scaled from the edge on its side: the far one for up and right, its origin otherwise.
+        if (sign > 0) position[axis] += size[axis] * (1 - scale);
+        const targetScale = { x: 1, y: 1, z: 1 };
+        targetScale[axis] = scale;
+        new TWEEN.Tween(object.scale)
+          .to(targetScale, 1200)
+          .easing(TWEEN.Easing.Cubic.InOut)
+          .onComplete(() => this._startOrStopAnimationLoop())
+          .start();
+      } else position[axis] += shift;
+      if (position.equals(object.position)) return;
+      new TWEEN.Tween(object.position)
+        .to({ x: position.x, y: position.y, z: position.z }, 1200)
+        .easing(TWEEN.Easing.Cubic.InOut)
+        .onComplete(() => this._startOrStopAnimationLoop())
+        .start();
+    });
+    this._startOrStopAnimationLoop();
+  }
+
+  // cover.slats: the slats of the objects named there (a blind exported as one object included,
+  // see slats.ts), each mesh with a geometry of its own and its first positions.
+  private _initSlats(item: Floor3dCardConfig, i: number): void {
+    const ids = item.cover && item.cover.slats;
+    if (!ids) return;
+    const sets: SlatSet[] = [];
+    this._objectNamesFor(Array.isArray(ids) ? ids : [ids]).forEach((name) => {
+      const object = this._scene.getObjectByName(name);
+      if (!object) return;
+      object.traverse((child) => {
+        const mesh = child as THREE.Mesh;
+        if (!mesh.isMesh) return;
+        const source = mesh.geometry as THREE.BufferGeometry;
+        const position = source.getAttribute('position');
+        if (!position || position.count > 500000) return;
+        // Plain float copies (a GLB can interleave or quantize them, and share them with other objects).
+        const plain = (attribute: THREE.BufferAttribute | THREE.InterleavedBufferAttribute): Float32Array => {
+          const array = new Float32Array(attribute.count * 3);
+          for (let v = 0; v < attribute.count; v++) {
+            array[3 * v] = attribute.getX(v);
+            array[3 * v + 1] = attribute.getY(v);
+            array[3 * v + 2] = attribute.getZ(v);
+          }
+          return array;
+        };
+        const positions = plain(position);
+        const slats = findSlats(positions, source.index ? source.index.array : null);
+        if (!slats.length) return;
+        const geometry = source.clone();
+        geometry.setAttribute('position', new THREE.BufferAttribute(positions.slice(), 3));
+        const normal = source.getAttribute('normal');
+        const normals = normal ? plain(normal) : undefined;
+        if (normals) geometry.setAttribute('normal', new THREE.BufferAttribute(normals.slice(), 3));
+        mesh.geometry = geometry;
+        sets.push({ geometry, slats, positions, normals });
+      });
+    });
+    if (sets.length) this._slatSets.set(i, sets);
+    else console.warn('floor3d-card: no slats found in <' + ids + '> (' + item.entity + '): each slat must be a separate piece');
+  }
+
+  // The slats turn with current_tilt_position: tilt_closed degrees at 0, tilt_open at 100 (from
+  // the model, 80 and 0 by default). Without the attribute they stay as in the model.
+  private _updateSlats(item: Floor3dCardConfig, i: number, animate = true): void {
+    const sets = this._slatSets.get(i);
+    const stateObj = this._hass && this._hass.states[item.entity];
+    if (!sets || !stateObj) return;
+    const tilt = this._coverTilt(stateObj);
+    this._tilts.set(i, tilt);
+    if (tilt === null) return;
+    const target = slatAngle(tilt, this._num(item.cover.tilt_closed, 80), this._num(item.cover.tilt_open, 0));
+    const from = this._slatAngles.get(i) || 0;
+    const running = this._slatTweens.get(i);
+    if (running) running.stop();
+    this._slatTweens.delete(i);
+    if (target === from) return;
+    const apply = (degrees: number) => {
+      this._slatAngles.set(i, degrees);
+      const angle = THREE.MathUtils.degToRad(degrees);
+      sets.forEach(({ geometry, slats, positions, normals }) => {
+        const position = geometry.getAttribute('position') as THREE.BufferAttribute;
+        tiltSlats(slats, angle, positions, position.array as Float32Array);
+        position.needsUpdate = true;
+        const normal = geometry.getAttribute('normal') as THREE.BufferAttribute;
+        if (normals && normal) {
+          tiltSlats(slats, angle, normals, normal.array as Float32Array, true);
+          normal.needsUpdate = true;
+        }
+        geometry.computeBoundingSphere();
+        geometry.boundingBox = null;
+      });
+    };
+    if (!animate) {
+      apply(target);
+      this._invalidateShadows();
+      return;
+    }
+    const value = { angle: from };
+    const tween = new TWEEN.Tween(value)
+      .to({ angle: target }, 1200)
+      .easing(TWEEN.Easing.Cubic.InOut)
+      .onUpdate(() => apply(value.angle))
+      .onComplete(() => {
+        this._slatTweens.delete(i);
+        this._startOrStopAnimationLoop();
+      })
+      .start();
+    this._slatTweens.set(i, tween);
+    this._startOrStopAnimationLoop();
+  }
+
+  // current_tilt_position of a cover, null when the cover doesn't report it.
+  private _coverTilt(stateObj: HassEntity): number | null {
+    const tilt = stateObj.attributes['current_tilt_position'];
+    if (tilt === undefined || tilt === null || tilt === '') return null;
+    const n = Number(tilt);
+    return isNaN(n) ? null : n;
   }
 
   private _createTextCanvas(entity: Floor3dCardConfig, text: string, uom: string): HTMLCanvasElement {
@@ -4414,6 +4610,130 @@ export class Floor3dCard extends LitElement {
         camera,
       );
     };
+  }
+
+  // weather: a box in a corner with the weather now and the next forecasts. Home Assistant sends the
+  // forecast to who asks for it (weather/subscribe_forecast); versions before 2024.3 also had it in
+  // the forecast attribute.
+  private _subscribeWeather(): void {
+    const entityId = this._config.weather;
+    const stateObj = entityId && this._hass ? this._hass.states[entityId] : undefined;
+    const type = stateObj ? forecastType(this._config.weather_forecast, stateObj.attributes.supported_features) : undefined;
+    const key = stateObj && this.isConnected ? entityId + '|' + type : undefined;
+    if (key === this._weatherKey) return;
+    this._unsubscribeWeather();
+    this._weatherKey = key;
+    this._forecastType = type;
+    this._forecast = null;
+    this._weatherState = undefined;
+    if (!key || Array.isArray(stateObj.attributes.forecast)) return;
+    const connection: any = this._hass.connection;
+    if (!connection || typeof connection.subscribeMessage !== 'function') return;
+    const failed = (e: any) => console.warn('floor3d-card: no forecast from ' + entityId + ': ' + ((e && e.message) || e));
+    try {
+      this._weatherUnsub = Promise.resolve(
+        connection.subscribeMessage(
+          (event: any) => {
+            if (this._weatherKey !== key) return;
+            this._forecast = event && Array.isArray(event.forecast) ? event.forecast : [];
+            this._renderWeather(true);
+          },
+          { type: 'weather/subscribe_forecast', forecast_type: type, entity_id: entityId },
+        ),
+      );
+      this._weatherUnsub.catch(failed);
+    } catch (e) {
+      failed(e);
+    }
+  }
+
+  private _unsubscribeWeather(): void {
+    const unsubscribe = this._weatherUnsub;
+    this._weatherUnsub = undefined;
+    this._weatherKey = undefined;
+    if (unsubscribe) unsubscribe.then((stop) => typeof stop === 'function' && stop()).catch(() => undefined);
+  }
+
+  private _renderWeather(force = false): void {
+    if (!this._card) return;
+    const stateObj = this._config.weather && this._hass ? this._hass.states[this._config.weather] : undefined;
+    if (!stateObj) {
+      if (this._weatherEl) this._weatherEl.style.display = 'none';
+      return;
+    }
+    if (!force && stateObj === this._weatherState && this._weatherEl && this._weatherEl.style.display !== 'none') return;
+    this._weatherState = stateObj;
+    if (!this._weatherEl) {
+      const box = document.createElement('div');
+      box.className = 'f3d-weather';
+      box.setAttribute('role', 'button');
+      box.tabIndex = 0;
+      const open = (ev: Event) => {
+        ev.stopPropagation();
+        if (this._config.weather) fireEvent(this, 'hass-more-info', { entityId: this._config.weather });
+      };
+      box.addEventListener('click', open);
+      box.addEventListener('keydown', (ev: KeyboardEvent) => {
+        if (ev.key === 'Enter' || ev.key === ' ') open(ev);
+      });
+      // A tap on the box is not a tap on the model.
+      box.addEventListener('pointerdown', (ev) => ev.stopPropagation());
+      this._card.appendChild(box);
+      this._weatherEl = box;
+    }
+    const box = this._weatherEl;
+    box.style.display = 'flex';
+    box.setAttribute('aria-label', this._t('weather'));
+    const [vertical, horizontal] = String(this._config.weather_position || 'bottom-left').split('-');
+    const top = vertical === 'top';
+    // At the top right it goes under the menus.
+    const below = top && horizontal === 'right' && this._zoommenu ? this._zoommenu.offsetHeight : 0;
+    box.style.top = top ? 10 + (below ? below + 6 : 0) + 'px' : '';
+    box.style.bottom = top ? '' : '10px';
+    box.style.left = horizontal === 'right' ? '' : '10px';
+    box.style.right = horizontal === 'right' ? '10px' : '';
+    const forecast: any[] = (Array.isArray(stateObj.attributes.forecast) ? stateObj.attributes.forecast : this._forecast) || [];
+    const count = Math.min(12, Math.max(0, Math.round(this._num(this._config.weather_count, 4))));
+    const type = this._forecastType || 'daily';
+    const language = this._language();
+    const locale: any = this._hass.locale;
+    const timeZone = locale && locale.time_zone === 'server' ? (this._hass.config as any).time_zone : undefined;
+    render(
+      html`
+        <div class="now">
+          <ha-icon icon=${weatherIcon(stateObj.state)}></ha-icon>
+          <span>${formatDegrees(stateObj.attributes.temperature)}</span>
+        </div>
+        ${forecast.slice(0, count).map(
+          (f) => html`
+            <div class="item">
+              <span class="when">${forecastLabel(f.datetime, type, language, timeZone)}</span>
+              <ha-icon icon=${weatherIcon(f.condition, f.is_daytime)}></ha-icon>
+              <span class="temp"
+                >${formatDegrees(f.temperature)}${f.templow != null ? html` <span class="low">${formatDegrees(f.templow)}</span>` : nothing}</span
+              >
+              ${Number(f.precipitation_probability) >= 10 ? html`<span class="rain">${Math.round(Number(f.precipitation_probability))}%</span>` : nothing}
+            </div>
+          `,
+        )}
+      `,
+      box,
+    );
+  }
+
+  // backgroundColor: sky. The colours of the sky for the elevation of the sun entity (the one of the
+  // day without it), greyer with the clouds of the weather entity of the forecast, if any.
+  private _skyBackground(): string {
+    const weather = this._config.weather && this._hass ? this._hass.states[this._config.weather] : undefined;
+    return skyGradient(skyColors(this._sunAngles()[1], weatherClouds(weather)));
+  }
+
+  private _updateSkyBackground(): void {
+    if (this._config.backgroundColor != 'sky' || !this._renderer) return;
+    const background = this._skyBackground();
+    if (background === this._skyKey) return;
+    this._skyKey = background;
+    this._renderer.domElement.style.background = background;
   }
 
   // Azimuth and elevation of the sun entity, in degrees: NaN without it.
@@ -5350,6 +5670,49 @@ export class Floor3dCard extends LitElement {
   // https://lit-element.polymer-project.org/guide/styles
   static get styles(): CSSResultGroup {
     return css`
+      .f3d-weather {
+        position: absolute;
+        z-index: 1000;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        max-width: calc(100% - 20px);
+        overflow: hidden;
+        padding: 6px 10px;
+        box-sizing: border-box;
+        border-radius: 8px;
+        background: rgba(0, 0, 0, 0.55);
+        color: white;
+        border: 1px solid rgba(255, 255, 255, 0.6);
+        font-size: 13px;
+        line-height: 1.2;
+        cursor: pointer;
+        --mdc-icon-size: 22px;
+      }
+      .f3d-weather .now {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+        font-size: 18px;
+        --mdc-icon-size: 28px;
+      }
+      .f3d-weather .item {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        min-width: 34px;
+      }
+      .f3d-weather .when {
+        font-size: 11px;
+        opacity: 0.85;
+      }
+      .f3d-weather .low {
+        opacity: 0.7;
+      }
+      .f3d-weather .rain {
+        font-size: 11px;
+        color: #8ec5ff;
+      }
       .f3d-loading {
         display: flex;
         flex-direction: column;

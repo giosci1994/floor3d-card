@@ -39,6 +39,7 @@
     "setup_error": "errore durante la preparazione del modello, vedi la console del browser",
     "clear_selections": "annulla selezione ({count})",
     "enable_selection": "Attiva selezione",
-    "disable_selection": "Disattiva selezione"
+    "disable_selection": "Disattiva selezione",
+    "weather": "Previsioni meteo"
   }
 }

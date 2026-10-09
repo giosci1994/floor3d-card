@@ -191,3 +191,21 @@ test('sensor maps and rooms: empty maps left out, numbers written as numbers, se
   assert.deepEqual(c.rooms[0], { name: 'Kitchen', object_id: 'floor_kitchen', co2: 'sensor.co2', power: ['sensor.a', 'sensor.b'], alarms: 'binary_sensor.smoke' });
   assert.ok(!('alarm_view' in cleanConfig({ alarm_view: 'no', entities: [] })));
 });
+
+test('covers and weather: angles of the slats and forecasts shown written as numbers, defaults left out', () => {
+  const c = cleanConfig({
+    backgroundColor: 'sky',
+    weather: 'weather.home',
+    weather_position: 'bottom-left',
+    weather_forecast: 'hourly',
+    weather_count: '6',
+    entities: [{ entity: 'cover.blind', type3d: 'cover', object_id: 'blind', cover: { slats: 'blind', motion: 'none', tilt_closed: '-60', tilt_open: '30' } }],
+  });
+  assert.deepEqual(c.entities[0].cover, { slats: 'blind', motion: 'none', tilt_closed: -60, tilt_open: 30 });
+  assert.equal(c.backgroundColor, 'sky');
+  assert.equal(c.weather, 'weather.home');
+  assert.equal(c.weather_forecast, 'hourly');
+  assert.equal(c.weather_count, 6);
+  assert.ok(!('weather_position' in c), 'bottom-left is the default');
+  assert.ok(!('weather_count' in cleanConfig({ weather_count: 4, entities: [] })));
+});

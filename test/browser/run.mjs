@@ -263,7 +263,8 @@ test('card editor: objects and shadows from the preview, texts in the language o
   assert.deepEqual(editor.objects, objectNames.slice().sort());
   assert.equal(editor.shadows.lights, 32);
   assert.equal(editor.panels[0], '3D-Modell');
-  assert.equal(editor.panels[6], 'Entitäten (31)');
+  assert.ok(editor.panels.includes('Wetter'), 'the weather section: ' + editor.panels.join(', '));
+  assert.ok(editor.panels.includes('Entitäten (31)'), editor.panels.join(', '));
   assert.equal(editor.noShadow, editor.shadows.dropped.length, 'the lines of the lights left without shadow say so');
   assert.deepEqual(errors, []);
   await page.close();
@@ -676,6 +677,222 @@ test('views: one with a level shows only that level, one without shows them all,
   await press(-1);
   assert.deepEqual(await levels(page), [false, true], 'initialLevel again');
   assert.deepEqual(await camera(page), start);
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+// --- Covers ------------------------------------------------------------------------------------
+
+// The box of an object in the scene: [min, max] in centimetres, rounded.
+const worldBox = (page, name) =>
+  page.evaluate((name) => {
+    const o = window.__card._scene.getObjectByName(name);
+    const min = [Infinity, Infinity, Infinity];
+    const max = [-Infinity, -Infinity, -Infinity];
+    o.updateWorldMatrix(true, true);
+    o.traverse((m) => {
+      if (!m.geometry) return;
+      m.geometry.computeBoundingBox();
+      const b = m.geometry.boundingBox.clone().applyMatrix4(m.matrixWorld);
+      ['x', 'y', 'z'].forEach((k, i) => {
+        min[i] = Math.min(min[i], b.min[k]);
+        max[i] = Math.max(max[i], b.max[k]);
+      });
+    });
+    return [min.map((v) => Math.round(v * 10) / 10), max.map((v) => Math.round(v * 10) / 10)];
+  }, name);
+
+// For a sliding cover: is the middle of the object (where it is now) on the side its plane keeps?
+const keeps = (page, name) =>
+  page.evaluate((name) => {
+    const o = window.__card._scene.getObjectByName(name);
+    const material = [].concat(o.material)[0];
+    o.updateWorldMatrix(true, true);
+    o.geometry.computeBoundingBox();
+    const center = o.geometry.boundingBox.getCenter(o.position.clone()).applyMatrix4(o.matrixWorld);
+    return material.clippingPlanes[0].distanceToPoint(center) > 0;
+  }, name);
+
+test('covers: the slats of a blind turn with its tilt, a roller shade shortens, a shutter that opens downward is cut on the right side', { timeout: TIMEOUT }, async () => {
+  const entities = [
+    { entity: 'cover.blind', type3d: 'cover', object_id: 'blind', cover: { side: 'up', motion: 'none', slats: 'blind' } },
+    { entity: 'cover.shade', type3d: 'cover', object_id: 'shade*', cover: { pane: 'shade', side: 'up', motion: 'shrink' } },
+    { entity: 'cover.shutter', type3d: 'cover', object_id: 'shutter', cover: { side: 'down' } },
+  ];
+  const coverStates = states({
+    'cover.blind': { state: 'open', attributes: { current_tilt_position: 100 } },
+    'cover.shade': { state: 'open', attributes: { current_position: 50 } },
+    'cover.shutter': { state: 'closed', attributes: { current_position: 0 } },
+  });
+  const { page, errors } = await open(house({ objfile: 'covers.obj', entities }), coverStates);
+  const slats = () =>
+    page.evaluate(() => {
+      const card = window.__card;
+      const i = card._config.entities.findIndex((e) => e.entity === 'cover.blind');
+      const set = card._slatSets.get(i)[0];
+      const lowest = set.slats.reduce((a, b) => (a.center[1] < b.center[1] ? a : b));
+      const position = set.geometry.getAttribute('position');
+      const ys = lowest.vertices.map((v) => position.getY(v));
+      return { count: set.slats.length, height: Math.round((Math.max(...ys) - Math.min(...ys)) * 100) / 100 };
+    });
+  const blindBefore = await worldBox(page, 'blind');
+  assert.deepEqual(await slats(), { count: 12, height: 0.4 }, 'open: as in the model');
+  await page.evaluate(() => window.__setState('cover.blind', 'closed', { current_tilt_position: 0 }));
+  await page.waitForTimeout(1600);
+  assert.equal((await slats()).height, 9.92, 'closed: turned by 80°');
+  await page.evaluate(() => window.__setState('cover.blind', 'open', { current_tilt_position: 50 }));
+  await page.waitForTimeout(1600);
+  assert.equal((await slats()).height, 6.73, 'half: 40°');
+  assert.deepEqual((await worldBox(page, 'blind'))[1][1], blindBefore[1][1], 'motion none: the head rail stays');
+
+  // Roller shade at 50 %: half as long, from its top; the bar follows the bottom edge.
+  const shade = await worldBox(page, 'shade');
+  const bar = await worldBox(page, 'shade_bar');
+  const height = 218 - 93;
+  assert.ok(Math.abs(shade[1][1] - shade[0][1] - height / 2) < 0.2, 'half the fabric: ' + shade);
+  assert.ok(Math.abs(bar[1][1] - bar[0][1] - 3) < 0.2, 'the bar keeps its size');
+  assert.ok(Math.abs(bar[1][1] - shade[0][1]) < 0.2, 'the bar at the bottom edge of the fabric');
+  const material = await page.evaluate(() => [].concat(window.__card._scene.getObjectByName('shade').material)[0].clippingPlanes);
+  assert.ok(!material || material.length === 0, 'no plane cuts a shade that shortens');
+  await page.evaluate(() => window.__setState('cover.shade', 'closed', { current_position: 0 }));
+  await page.waitForTimeout(1600);
+  const closed = await worldBox(page, 'shade');
+  assert.ok(Math.abs(closed[1][1] - closed[0][1] - height) < 0.2, 'closed: full length');
+  assert.ok(Math.abs(closed[1][1] - shade[1][1]) < 0.2, 'the top stays');
+
+  // Shutter opening downward: shown while closed, hidden once open.
+  assert.equal(await keeps(page, 'shutter'), true, 'closed: shown');
+  await page.evaluate(() => window.__setState('cover.shutter', 'open', { current_position: 100 }));
+  await page.waitForTimeout(1600);
+  assert.equal(await keeps(page, 'shutter'), false, 'open: under the edge, cut');
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+test('covers: sliding up and to the left are cut past their edge; tilt_open and tilt_closed', { timeout: TIMEOUT }, async () => {
+  const entities = [
+    { entity: 'cover.shade', type3d: 'cover', object_id: 'shade', cover: { side: 'up' } },
+    { entity: 'cover.blind', type3d: 'cover', object_id: 'blind', cover: { side: 'left', slats: 'blind', tilt_closed: -60, tilt_open: 30 } },
+  ];
+  const coverStates = states({
+    'cover.shade': { state: 'closed', attributes: { current_position: 0 } },
+    'cover.blind': { state: 'closed', attributes: { current_position: 0, current_tilt_position: 0 } },
+  });
+  const { page, errors } = await open(house({ objfile: 'covers.obj', entities }), coverStates);
+  assert.equal(await keeps(page, 'shade'), true);
+  assert.equal(await keeps(page, 'blind'), true);
+  const angle = () => page.evaluate(() => Math.round(window.__card._slatAngles.get(1)));
+  assert.equal(await angle(), -60, 'tilt 0: tilt_closed');
+  await page.evaluate(() => {
+    window.__setState('cover.shade', 'open', { current_position: 100 });
+    window.__setState('cover.blind', 'open', { current_position: 100, current_tilt_position: 100 });
+  });
+  await page.waitForTimeout(1600);
+  assert.equal(await keeps(page, 'shade'), false, 'up: past the top, cut');
+  assert.equal(await keeps(page, 'blind'), false, 'left: past the left edge, cut');
+  assert.equal(await angle(), 30, 'tilt 100: tilt_open');
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+// --- Sky and weather ---------------------------------------------------------------------------
+
+// The two colours of a CSS gradient, as [r, g, b] lists.
+const gradientColors = (css) => [...css.matchAll(/rgb\((\d+), (\d+), (\d+)\)/g)].map((m) => m.slice(1, 4).map(Number));
+const lightness = ([r, g, b]) => (r + g + b) / 3;
+const colorfulness = ([r, g, b]) => Math.max(r, g, b) - Math.min(r, g, b);
+
+test('sky background: follows the elevation of the sun, greyer with the clouds of the weather entity', { timeout: TIMEOUT }, async () => {
+  const skyStates = states({ 'weather.home': { state: 'sunny', attributes: { temperature: 21.4, supported_features: 1 } } });
+  const { page, errors } = await open(house({ backgroundColor: 'sky', weather: 'weather.home', weather_count: 0 }), skyStates);
+  const background = () =>
+    page.evaluate(() => ({ css: window.__card._renderer.domElement.style.background, alpha: window.__card._renderer.getClearAlpha() }));
+  let b = await background();
+  assert.equal(b.alpha, 0, 'the canvas lets the sky through');
+  const [dayTop, dayHorizon] = gradientColors(b.css);
+  assert.ok(dayTop[2] > dayTop[0] && lightness(dayHorizon) > lightness(dayTop), 'day, at 35°: blue, lighter at the horizon: ' + b.css);
+  await page.evaluate(() => window.__setState('sun.sun', 'below_horizon', { azimuth: 300, elevation: 0 }));
+  const [, sunsetHorizon] = gradientColors((await background()).css);
+  assert.ok(sunsetHorizon[0] > sunsetHorizon[1] && sunsetHorizon[1] > sunsetHorizon[2], 'sunset: orange at the horizon');
+  await page.evaluate(() => window.__setState('sun.sun', 'below_horizon', { azimuth: 340, elevation: -25 }));
+  const [nightTop] = gradientColors((await background()).css);
+  assert.ok(lightness(nightTop) < 50, 'night: dark');
+  await page.evaluate(() => {
+    window.__setState('sun.sun', 'above_horizon', { azimuth: 200, elevation: 35 });
+    window.__setState('weather.home', 'cloudy', { cloud_coverage: 100 });
+  });
+  const [cloudyTop] = gradientColors((await background()).css);
+  assert.ok(colorfulness(cloudyTop) < colorfulness(dayTop) / 2, 'clouds: grey');
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+test('weather box: the weather now and the next forecasts in the language of the card; a tap opens the entity', { timeout: TIMEOUT }, async () => {
+  const weatherStates = states({ 'weather.home': { state: 'rainy', attributes: { temperature: 12.6, supported_features: 3, friendly_name: 'Home' } } });
+  const { page, errors } = await open(house({ weather: 'weather.home', weather_count: 3, language: 'it' }), weatherStates);
+  const subscriptions = () => page.evaluate(() => window.__subscriptions.map((s) => ({ ...s.message, active: s.active })));
+  assert.deepEqual(await subscriptions(), [{ type: 'weather/subscribe_forecast', forecast_type: 'daily', entity_id: 'weather.home', active: true }]);
+  const day = (d, condition, temperature, templow, rain) => ({
+    datetime: `2026-10-${d}T12:00:00+00:00`,
+    condition,
+    temperature,
+    templow,
+    precipitation_probability: rain,
+  });
+  await page.evaluate(
+    (forecast) => window.__forecast('weather.home', forecast),
+    [day(12, 'sunny', 18.2, 9.6, 0), day(13, 'rainy', 15, 10, 60), day(14, 'cloudy', 16, 11, 5), day(15, 'snowy', 2, -3, 80)],
+  );
+  const box = () =>
+    page.evaluate(() => {
+      const el = window.__card.shadowRoot.querySelector('.f3d-weather');
+      return {
+        shown: el && el.style.display !== 'none',
+        corner: [el.style.bottom, el.style.left],
+        label: el.getAttribute('aria-label'),
+        now: [el.querySelector('.now ha-icon').getAttribute('icon'), el.querySelector('.now span').textContent],
+        items: [...el.querySelectorAll('.item')].map((i) => [
+          i.querySelector('.when').textContent,
+          i.querySelector('ha-icon').getAttribute('icon'),
+          i.querySelector('.temp').textContent.replace(/\s+/g, ' ').trim(),
+          i.querySelector('.rain') ? i.querySelector('.rain').textContent : '',
+        ]),
+      };
+    });
+  assert.deepEqual(await box(), {
+    shown: true,
+    corner: ['10px', '10px'],
+    label: 'Previsioni meteo',
+    now: ['mdi:weather-rainy', '13°'],
+    items: [
+      ['lun', 'mdi:weather-sunny', '18° 10°', ''],
+      ['mar', 'mdi:weather-rainy', '15° 10°', '60%'],
+      ['mer', 'mdi:weather-cloudy', '16° 11°', ''],
+    ],
+  });
+  // The weather now changes; then the entity only has hourly forecasts: the box asks for those.
+  await page.evaluate(() => window.__setState('weather.home', 'sunny', { temperature: 14 }));
+  assert.deepEqual((await box()).now, ['mdi:weather-sunny', '14°']);
+  await page.evaluate(() => window.__setState('weather.home', 'sunny', { supported_features: 2 }));
+  assert.deepEqual(
+    (await subscriptions()).map((s) => [s.forecast_type, s.active]),
+    [
+      ['daily', false],
+      ['hourly', true],
+    ],
+  );
+  // A tap opens the weather entity, not an object of the model.
+  const opened = await page.evaluate(() => {
+    const seen = [];
+    window.__card.addEventListener('hass-more-info', (e) => seen.push(e.detail.entityId));
+    window.__card.shadowRoot.querySelector('.f3d-weather').click();
+    return seen;
+  });
+  assert.deepEqual(opened, ['weather.home']);
+  // Removed from the page: no more forecasts.
+  await page.evaluate(() => window.__card.remove());
+  await page.waitForTimeout(50);
+  assert.deepEqual((await subscriptions()).map((s) => s.active), [false, false]);
   assert.deepEqual(errors, []);
   await page.close();
 });

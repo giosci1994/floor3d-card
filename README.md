@@ -454,10 +454,12 @@ entities:
     object_id: <object_id or group of the moving parts of the cover, the blades and base of a roller shutter>
     cover:
       pane: <object_id represents the moving parts that have to fully disappear when the cover is fully opened>
-      side: <up or down, direction of opening
+      side: <up, down, left or right, direction of opening>
+      motion: <slide (default), shrink for roller shades and curtains, none>
+      slats: <object_id of the slats of a venetian blind, turned by current_tilt_position>
 ```
 
-It is an experimental implementation of cover entities.
+It is an experimental implementation of cover entities. This fork adds roller shades, curtains and venetian blinds: see [FORK.md](FORK.md#covers).
 
 | ![Closed (current_position: 0)](docs/images/cover-closed.jpg) | ![Open at 45% (current_position: 45)](docs/images/cover-half.jpg) |
 | :---: | :---: |

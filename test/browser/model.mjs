@@ -1,7 +1,8 @@
 // The test house, made when the tests start: ground, two rooms with floors, walls with windows and
 // doors, furniture, 30 small lamps under the ceiling and a TV. Sizes in cm, y up.
-// objFile()/mtlFile(): OBJ + MTL (MeshPhongMaterial in three.js), with objFile(level1) the objects
-// named in level1 on level 1 and the others on level 0; glbFile(rich): the same as a GLB
+// objFile()/mtlFile(): OBJ + MTL (MeshPhongMaterial in three.js); with level1, the objects named
+// there on level 1 and the others on level 0; with covers, a roller shade, a venetian blind and a
+// shutter in the windows. glbFile(rich): the same house as a GLB
 // (MeshStandardMaterial), with rich the walls get every texture glTF has plus a clearcoat
 // (MeshPhysicalMaterial, 10 texture units with the lighting lookup table).
 import zlib from 'node:zlib';
@@ -52,7 +53,22 @@ for (let k = 0; k < 30; k++) {
 box('tv_body', 'plastic', 410, 630, 85, 215, 420, 428);
 box('tv_screen', 'screen', 420, 620, 95, 205, 428, 429);
 
-export const objectNames = boxes.map((b) => b[0]);
+export const objectNames = [...new Set(boxes.map((b) => b[0]))];
+
+// Covers (objFile({ covers: true })), inside the windows of the south wall and outside the one of
+// the west wall. The blind is one object, as Sweet Home 3D exports it: head rail, 12 slats, bottom
+// rail and two cords.
+const coverBoxes = [
+  ['shade', 'fabric', 400, 620, 93, 218, 976, 977],
+  ['shade_bar', 'wood', 400, 620, 90, 93, 975.5, 977.5],
+  ['blind', 'wood', 818, 982, 214, 220, 966, 979],
+  ...Array.from({ length: 12 }, (_, k) => ['blind', 'wood', 822, 978, 96 + 9.5 * k, 96.4 + 9.5 * k, 968, 978]),
+  ['blind', 'wood', 822, 978, 92, 94, 968, 978],
+  ['blind', 'fabric', 850, 850.3, 94, 214, 972.9, 973.1],
+  ['blind', 'fabric', 950, 950.3, 94, 214, 972.9, 973.1],
+  ['shutter', 'wood', 296, 298, 90, 220, 600, 800],
+];
+export const coverNames = [...new Set(coverBoxes.map((b) => b[0]))];
 
 const COLORS = {
   grass: [0.3, 0.42, 0.25],
@@ -71,14 +87,18 @@ export function mtlFile() {
 }
 
 // Names with lvl000 or lvl001 in front, as the ExportToHASS plugin of Sweet Home 3D writes the levels.
-export function objFile(level1 = []) {
+// Boxes one after the other with the same name are one object.
+export function objFile({ level1 = [], covers = false } = {}) {
   const level = (name) => (level1.length ? (level1.includes(name) ? 'lvl001' : 'lvl000') : '') + name;
   const lines = ['mtllib home.mtl'];
   [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]].forEach((n) => lines.push('vn ' + n.join(' ')));
   [[0, 0], [1, 0], [1, 1], [0, 1]].forEach((t) => lines.push('vt ' + t.join(' ')));
   let vi = 0;
-  for (const [name, mat, x0, x1, y0, y1, z0, z1] of boxes) {
-    lines.push(`o ${level(name)}`, `usemtl ${mat}`);
+  let previous = null;
+  for (const [name, mat, x0, x1, y0, y1, z0, z1] of covers ? [...boxes, ...coverBoxes] : boxes) {
+    if (name !== previous) lines.push(`o ${level(name)}`);
+    lines.push(`usemtl ${mat}`);
+    previous = name;
     [[x0, y0, z0], [x1, y0, z0], [x1, y1, z0], [x0, y1, z0], [x0, y0, z1], [x1, y0, z1], [x1, y1, z1], [x0, y1, z1]].forEach((p) =>
       lines.push('v ' + p.join(' ')),
     );

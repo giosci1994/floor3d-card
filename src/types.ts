@@ -21,6 +21,10 @@ export interface Floor3dCardConfig {
   style: string;
   header: string;
   backgroundColor: string;
+  weather?: string; // weather entity of the forecast box
+  weather_position?: string; // top-left, top-right, bottom-left (default) or bottom-right
+  weather_forecast?: string; // daily (default), hourly or twice_daily
+  weather_count?: number | string; // forecasts shown, 4 by default
   globalLightPower: number | string; // a number or a numeric sensor
   hideLevelsMenu: string;
   initialLevel: number;

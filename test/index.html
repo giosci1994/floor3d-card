@@ -76,10 +76,24 @@ const config = await (await fetch('./' + (new URLSearchParams(location.search).g
 Object.assign(config, JSON.parse(new URLSearchParams(location.search).get('ov') || '{}'));
 const states = await (await fetch('./' + (new URLSearchParams(location.search).get('st') || 'states.json'))).json();
 window.__calls = [];
+// The connection to Home Assistant: subscriptions are kept, and __forecast sends a forecast to those
+// of an entity, as weather/subscribe_forecast does.
+window.__subscriptions = [];
+const connection = {
+  subscribeMessage: (callback, message) => {
+    const sub = { callback, message, active: true };
+    window.__subscriptions.push(sub);
+    return Promise.resolve(() => { sub.active = false; });
+  },
+  subscribeEvents: () => () => {},
+};
+window.__forecast = (entityId, forecast) => window.__subscriptions
+  .filter((s) => s.active && s.message.entity_id === entityId)
+  .forEach((s) => s.callback({ type: s.message.forecast_type, forecast }));
 const mkHass = (st) => ({ states: st, callService: (d, s, data) => { window.__calls.push([d, s, data]); return Promise.resolve(); },
   language: 'en', locale: { language: 'en', number_format: 'language', time_format: '24' }, themes: { darkMode: true, themes: {} },
   selectedTheme: null, user: { is_admin: true, name: 'test' }, config: { unit_system: { temperature: '°C' } },
-  localize: (k) => k, connection: { subscribeMessage: () => () => {}, subscribeEvents: () => () => {} } });
+  localize: (k) => k, connection });
 let hass = mkHass(states);
 window.__hass = () => hass;
 const card = document.createElement('floor3d-card');
