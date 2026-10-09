@@ -160,7 +160,6 @@
     "weather_position": "Position",
     "weather_forecast": "Forecast",
     "weather_count": "Forecasts shown",
-    "status": "Show what is on or open",
     "status_position": "Position",
     "energy_power": "Power of the house",
     "energy_solar": "Solar power",
@@ -174,7 +173,14 @@
     "alarm_panel_position": "Position",
     "chips": "Entities",
     "chips_position": "Position",
-    "person_room": "Room entity"
+    "person_room": "Room entity",
+    "weather_show": "Show the weather",
+    "status_show": "Show what is on or open",
+    "energy_show": "Show the energy",
+    "people_show": "Show the people",
+    "alarm_panel_show": "Show the alarm panel",
+    "chips_show": "Show the chips",
+    "hideMapMenu": "Hide the Map menu"
   },
   "helpers": {
     "path": "For example /local/floor3d/",
@@ -237,14 +243,16 @@
     "tilt_open": "Degrees from the model at tilt 100. Default 0",
     "weather": "A box with the weather now and the next forecasts; its clouds also grey the sky background",
     "weather_count": "Default 4, 0 for the weather now only",
-    "status": "Lamps on, doors and windows open, locks open, heaters working: a tap shows them in the model",
     "energy_grid": "Positive from the grid, negative to it",
     "energy_battery": "In %",
     "energy_plugs": "Empty: the power sensors of the rooms. A tap on a plug goes to its room",
     "energy_top": "Default 3, 0 for none",
     "alarm_panel": "Its state; a tap opens it to arm or disarm",
     "chips": "Any entity, with its icon and state; a tap opens it",
-    "person_room": "Optional: an entity whose state is the room, such as the area of Bermuda or ESPresense"
+    "person_room": "Optional: an entity whose state is the room, such as the area of Bermuda or ESPresense",
+    "box_show": "Off: hidden, its settings stay",
+    "hideMapMenu": "The initial room map stays, without the menu and its legend",
+    "status_show": "Lamps on, doors and windows open, locks open, heaters working: a tap shows them in the model"
   },
   "options": {
     "language": {

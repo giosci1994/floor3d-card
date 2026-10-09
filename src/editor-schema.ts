@@ -22,6 +22,8 @@ const entity = (name: string, domain?: string | string[], multiple = false): Sch
   name,
   selector: { entity: { ...(domain ? { filter: { domain } } : {}), ...(multiple ? { multiple: true } : {}) } },
 });
+// Show a box: off hides it and keeps its settings (one help text for all).
+const show = (name: string): Schema => ({ ...bool(name), helper_key: 'box_show' });
 // The corner of a box, with the texts of the corners of the overlay.
 const corners = (name: string): Schema => choice(name, ['top-left', 'top-right', 'bottom-left', 'bottom-right'], 'options.overlay_alignment');
 // Several fields side by side, their values at the same level as the others.
@@ -62,7 +64,13 @@ export const SWITCHES: { [key: string]: 'yes' | 'no' } = {
   log_depth: 'no',
   reversed_depth: 'yes',
   state_colors: 'no',
-  status: 'no',
+  hideMapMenu: 'no',
+  weather_show: 'yes',
+  status_show: 'no',
+  energy_show: 'yes',
+  people_show: 'yes',
+  alarm_panel_show: 'yes',
+  chips_show: 'yes',
   alarm_view: 'no',
 };
 // The same inside the options block of a type.
@@ -113,7 +121,7 @@ export const SECTIONS: Section[] = [
       [vector('camera_position')],
       [vector('camera_target')],
       [vector('camera_rotate')],
-      [row(bool('lock_camera'), bool('hideZoomMenu')), row(bool('hideLevelsMenu'), num('initialLevel', { step: 1 }))],
+      [row(bool('lock_camera'), bool('hideZoomMenu')), row(bool('hideLevelsMenu'), bool('hideMapMenu')), num('initialLevel', { step: 1 })],
       [
         {
           name: 'url_parameters',
@@ -155,24 +163,27 @@ export const SECTIONS: Section[] = [
     content: () => [
       'weather',
       [
+        row(show('weather_show'), corners('weather_position')),
         entity('weather', 'weather'),
-        row(corners('weather_position'), choice('weather_forecast', ['daily', 'hourly', 'twice_daily']), num('weather_count', { min: 0, max: 12, step: 1 })),
+        row(choice('weather_forecast', ['daily', 'hourly', 'twice_daily']), num('weather_count', { min: 0, max: 12, step: 1 })),
       ],
       'status',
-      [row(bool('status'), corners('status_position'))],
+      [row(bool('status_show'), corners('status_position'))],
       'energy',
       [
+        row(show('energy_show'), corners('energy_position')),
         row(entity('energy_power', 'sensor'), entity('energy_solar', 'sensor')),
         row(entity('energy_grid', 'sensor'), entity('energy_battery', 'sensor')),
         entity('energy_plugs', 'sensor', true),
-        row(num('energy_top', { min: 0, max: 10, step: 1 }), corners('energy_position')),
+        num('energy_top', { min: 0, max: 10, step: 1 }),
       ],
       'people',
-      [corners('people_position')],
+      [row(show('people_show'), corners('people_position'))],
+      'people_list',
       'alarm_panel',
-      [row(entity('alarm_panel', 'alarm_control_panel'), corners('alarm_panel_position'))],
+      [row(show('alarm_panel_show'), corners('alarm_panel_position')), entity('alarm_panel', 'alarm_control_panel')],
       'chips',
-      [entity('chips', undefined, true), corners('chips_position')],
+      [row(show('chips_show'), corners('chips_position')), entity('chips', undefined, true)],
     ],
   },
   {

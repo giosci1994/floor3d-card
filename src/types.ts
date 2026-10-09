@@ -26,7 +26,14 @@ export interface Floor3dCardConfig {
   weather_forecast?: string; // daily (default), hourly or twice_daily
   weather_count?: number | string; // forecasts shown, 4 by default
   // Boxes in the corners (boxes.ts), each with its *_position.
-  status?: string | boolean; // what is on or open
+  // *_show: no hides a box and keeps its settings; status_show: yes shows what is on or open.
+  weather_show?: string | boolean;
+  status_show?: string | boolean;
+  energy_show?: string | boolean;
+  people_show?: string | boolean;
+  alarm_panel_show?: string | boolean;
+  chips_show?: string | boolean;
+  hideMapMenu?: string | boolean;
   status_position?: string;
   energy_power?: string; // power of the house
   energy_solar?: string;

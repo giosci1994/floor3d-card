@@ -157,7 +157,6 @@
     "weather_position": "Posizione",
     "weather_forecast": "Previsioni",
     "weather_count": "Previsioni mostrate",
-    "status": "Mostra cosa è acceso o aperto",
     "status_position": "Posizione",
     "energy_power": "Consumo della casa",
     "energy_solar": "Produzione solare",
@@ -171,7 +170,14 @@
     "alarm_panel_position": "Posizione",
     "chips": "Entità",
     "chips_position": "Posizione",
-    "person_room": "Entità della stanza"
+    "person_room": "Entità della stanza",
+    "weather_show": "Mostra il meteo",
+    "status_show": "Mostra cosa è acceso o aperto",
+    "energy_show": "Mostra l'energia",
+    "people_show": "Mostra le persone",
+    "alarm_panel_show": "Mostra l'antifurto",
+    "chips_show": "Mostra i chip",
+    "hideMapMenu": "Nascondi il menu Mappa"
   },
   "helpers": {
     "path": "Per esempio /local/floor3d/",
@@ -234,14 +240,16 @@
     "tilt_open": "Gradi rispetto al modello con inclinazione 100. Predefinito 0",
     "weather": "Un riquadro con il meteo attuale e le prossime previsioni; le sue nuvole rendono grigio anche il cielo di sfondo",
     "weather_count": "Predefinito 4, 0 per il solo meteo attuale",
-    "status": "Luci accese, porte e finestre aperte, serrature aperte, riscaldamento acceso: un tocco li mostra nel modello",
     "energy_grid": "Positiva dalla rete, negativa verso la rete",
     "energy_battery": "In %",
     "energy_plugs": "Vuoto: i sensori di potenza delle stanze. Un tocco su una presa va alla sua stanza",
     "energy_top": "Predefinito 3, 0 per nessuna",
     "alarm_panel": "Il suo stato; un tocco lo apre per inserirlo o disinserirlo",
     "chips": "Qualsiasi entità, con la sua icona e il suo stato; un tocco la apre",
-    "person_room": "Facoltativa: un'entità il cui stato è la stanza, come l'area di Bermuda o ESPresense"
+    "person_room": "Facoltativa: un'entità il cui stato è la stanza, come l'area di Bermuda o ESPresense",
+    "box_show": "Spento: nascosto, le impostazioni restano",
+    "hideMapMenu": "Resta la mappa iniziale delle stanze, senza il menu e la sua legenda",
+    "status_show": "Luci accese, porte e finestre aperte, serrature aperte, riscaldamento acceso: un tocco li mostra nel modello"
   },
   "options": {
     "language": {

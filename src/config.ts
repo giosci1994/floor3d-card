@@ -24,7 +24,13 @@ const SWITCH_DEFAULTS: { [key: string]: 'yes' | 'no' } = {
   reversed_depth: 'yes',
   state_colors: 'no',
   alarm_view: 'no',
-  status: 'no',
+  hideMapMenu: 'no',
+  weather_show: 'yes',
+  status_show: 'no',
+  energy_show: 'yes',
+  people_show: 'yes',
+  alarm_panel_show: 'yes',
+  chips_show: 'yes',
   sky: 'no', // no longer used by the card
 };
 
@@ -93,6 +99,11 @@ function toNumber(object: any, key: string): void {
 
 export function normalizeConfig<T>(config: T): T {
   const c: any = copy(config);
+  // The status box was status: yes before it had its show switch, like the other boxes.
+  if (c.status !== undefined) {
+    if (c.status_show === undefined) c.status_show = c.status;
+    delete c.status;
+  }
   Object.keys(SWITCH_DEFAULTS).forEach((key) => yesNo(c, key));
   if (Array.isArray(c.entities)) {
     c.entities.forEach((entity) => {
