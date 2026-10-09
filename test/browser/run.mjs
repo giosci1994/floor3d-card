@@ -937,7 +937,7 @@ test('status box: what is on or open; a tap outlines those objects and frames th
     'binary_sensor.window': { state: 'on', attributes: { device_class: 'window' } },
     'lock.front': { state: 'unlocked', attributes: {} },
   });
-  const { page, errors } = await open(house({ status: 'yes', entities }), boxStates);
+  const { page, errors } = await open(house({ status_show: 'yes', entities }), boxStates);
   let box = await boxOf(page, 'status');
   assert.equal(box.corner, 'top-left');
   assert.deepEqual(box.icons, ['mdi:lightbulb-on', 'mdi:door-open', 'mdi:lock-open-variant']);
@@ -972,7 +972,7 @@ test('boxes: energy, people, alarm panel and chips, each in its corner, stacked 
   const config = house({
     rooms,
     zoom_areas: [{ zoom: 'Living', camera_position: { x: -200, y: 500, z: 300 }, camera_target: { x: -200, y: 0, z: 0 } }],
-    status: 'yes',
+    status_show: 'yes',
     weather: 'weather.home',
     energy_power: 'sensor.house_power',
     energy_solar: 'sensor.solar_power',
@@ -1063,13 +1063,25 @@ test('boxes: energy, people, alarm panel and chips, each in its corner, stacked 
       .forEach((b) => assert.ok(!overlap(narrow[a], narrow[b]), 'narrow: ' + a + ' covers ' + b + ' ' + narrow[a] + ' / ' + narrow[b])),
   );
 
-  // A box left out of the configuration goes away.
+  // A box left out of the configuration goes away; so does a box switched off, with its settings
+  // kept (the weather stops asking for the forecast); hideMapMenu hides the Map menu.
   await page.evaluate(() => {
     const card = window.__card;
-    card._config = { ...card._config, chips: undefined };
+    card._config = { ...card._config, chips: undefined, energy_show: 'no', weather_show: false, hideMapMenu: 'yes' };
     card._renderBoxes(true);
+    card._subscribeWeather();
+    card._renderMenus();
   });
   assert.equal(await boxOf(page, 'chips'), null);
+  assert.equal(await boxOf(page, 'energy'), null);
+  assert.equal(await boxOf(page, 'weather'), null);
+  assert.deepEqual(await page.evaluate(() => window.__subscriptions.map((s) => s.active)), [false]);
+  assert.deepEqual(
+    await page.evaluate(() => [...window.__card._zoommenu.querySelectorAll('select')].map((s) => s.getAttribute('aria-label'))),
+    ['Views'],
+    'only the Views menu',
+  );
+  assert.ok(await boxOf(page, 'people'), 'the other boxes stay');
   assert.deepEqual(errors, []);
   await page.close();
 });

@@ -89,7 +89,7 @@ test('editor: every field, menu entry and heading has its English text', () => {
   ].flat();
   const walk = (schema) => {
     if (typeof schema === 'string') {
-      if (!['sun_roof', 'rooms', 'maps', 'colorcondition', 'shadow_status'].includes(schema)) {
+      if (!['sun_roof', 'rooms', 'maps', 'colorcondition', 'shadow_status', 'people_list'].includes(schema)) {
         assert.ok(('headings.' + schema.replace('.', '_')) in en, 'heading ' + schema);
       }
       return;

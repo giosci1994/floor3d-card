@@ -212,7 +212,7 @@ test('covers and weather: angles of the slats and forecasts shown written as num
 
 test('boxes: people and chips without empty rows, an id alone written as the id, defaults left out', () => {
   const c = cleanConfig({
-    status: true,
+    status_show: true,
     status_position: 'top-left',
     energy_power: 'sensor.house',
     energy_top: '5',
@@ -224,7 +224,7 @@ test('boxes: people and chips without empty rows, an id alone written as the id,
     alarm_panel_position: 'top-right',
     entities: [],
   });
-  assert.equal(c.status, 'yes');
+  assert.equal(c.status_show, 'yes');
   assert.ok(!('status_position' in c), 'top-left is the default');
   assert.equal(c.energy_top, 5);
   assert.equal(c.energy_position, 'top-right');
@@ -232,7 +232,10 @@ test('boxes: people and chips without empty rows, an id alone written as the id,
   assert.deepEqual(c.people, ['person.a', { entity: 'person.b', room: 'sensor.b_area' }, 'person.c']);
   assert.ok(!('chips' in c));
   assert.ok(!('alarm_panel_position' in c), 'top-right is the default');
-  assert.ok(!('status' in cleanConfig({ status: 'no', entities: [] })));
+  assert.ok(!('status_show' in cleanConfig({ status_show: 'no', entities: [] })));
+  // A box hidden keeps its settings; shown is the default and goes away.
+  const hidden = cleanConfig({ weather: 'weather.home', weather_show: false, chips: ['sensor.t'], chips_show: 'yes', hideMapMenu: true, entities: [] });
+  assert.deepEqual([hidden.weather, hidden.weather_show, hidden.chips, 'chips_show' in hidden, hidden.hideMapMenu], ['weather.home', 'no', ['sensor.t'], false, 'yes']);
   const one = normalizeConfig({ people: 'person.a', chips: 'sensor.t', energy_plugs: 'sensor.washer', entities: [] });
   assert.deepEqual([one.people, one.chips, one.energy_plugs], [['person.a'], ['sensor.t'], ['sensor.washer']], 'one alone: a list');
 });

@@ -24,7 +24,13 @@ const SWITCH_DEFAULTS: { [key: string]: 'yes' | 'no' } = {
   reversed_depth: 'yes',
   state_colors: 'no',
   alarm_view: 'no',
-  status: 'no',
+  hideMapMenu: 'no',
+  weather_show: 'yes',
+  status_show: 'no',
+  energy_show: 'yes',
+  people_show: 'yes',
+  alarm_panel_show: 'yes',
+  chips_show: 'yes',
   sky: 'no', // no longer used by the card
 };
 

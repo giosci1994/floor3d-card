@@ -583,11 +583,8 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
             <div class="hint">${this._t('ui.maps_hint')}</div>
             ${this._renderList('maps', this._t('ui.add_map'), { key: '' })}
           `;
-        case 'people':
-          return html`
-            <div class="heading">${this._t('headings.people')}</div>
-            ${this._renderList('people', this._t('ui.add_person'), { entity: '' })}
-          `;
+        case 'people_list':
+          return this._renderList('people', this._t('ui.add_person'), { entity: '' });
         case 'colorcondition':
           return this._renderColorConditions(list as ListKey, index as number, data);
         case 'shadow_status':

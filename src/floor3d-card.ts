@@ -4648,7 +4648,7 @@ export class Floor3dCard extends LitElement {
     const entityId = this._config.weather;
     const stateObj = entityId && this._hass ? this._hass.states[entityId] : undefined;
     const type = stateObj ? forecastType(this._config.weather_forecast, stateObj.attributes.supported_features) : undefined;
-    const key = stateObj && this.isConnected ? entityId + '|' + type : undefined;
+    const key = stateObj && this.isConnected && this._shown('weather_show', true) ? entityId + '|' + type : undefined;
     if (key === this._weatherKey) return;
     this._unsubscribeWeather();
     this._weatherKey = key;
@@ -4785,6 +4785,14 @@ export class Floor3dCard extends LitElement {
     if (below && beside && across(below, beside)) bottomRight.style.bottom = Math.round(card.bottom - below.top + 6) + 'px';
   }
 
+  // A switch of the config: on, or at its default when missing (the *_show of the boxes are on by
+  // default, status_show off).
+  private _shown(key: string, fallback: boolean): boolean {
+    const value = this._config[key];
+    if (value === undefined || value === null || value === '') return fallback;
+    return value === 'yes' || value === true;
+  }
+
   private _boxChanged(kind: string, deps: unknown[], force: boolean): boolean {
     const last = this._boxDeps.get(kind);
     this._boxDeps.set(kind, deps);
@@ -4820,12 +4828,11 @@ export class Floor3dCard extends LitElement {
     return text === 'common.' + key ? fallback : text;
   }
 
-  // status: yes. What is on or open among the entities of the card: lamps on, doors and windows
+  // status_show: yes. What is on or open among the entities of the card: lamps on, doors and windows
   // open, locks open, heaters working. A tap on a kind outlines its objects in the model and frames
   // them; a second tap, or ten seconds, ends it.
   private _renderStatus(force: boolean): void {
-    const on = this._config.status === 'yes' || this._config.status === true;
-    const box = this._box('status', on ? corner(this._config.status_position, 'top-left') : null);
+    const box = this._box('status', this._shown('status_show', false) ? corner(this._config.status_position, 'top-left') : null);
     if (!box) return;
     const entities: any[] = (this._config.entities || []).map((e: any) => (typeof e === 'string' ? { entity: e } : e));
     const deps: unknown[] = entities.map((e) => e && this._hass.states[e.entity]);
@@ -4916,7 +4923,7 @@ export class Floor3dCard extends LitElement {
   private _renderEnergy(force: boolean): void {
     const c = this._config;
     const plugsSet = Array.isArray(c.energy_plugs) ? c.energy_plugs.filter((p: any) => typeof p === 'string' && p) : [];
-    const on = !!(c.energy_power || c.energy_solar || c.energy_grid || c.energy_battery || plugsSet.length);
+    const on = !!(c.energy_power || c.energy_solar || c.energy_grid || c.energy_battery || plugsSet.length) && this._shown('energy_show', true);
     const box = this._box('energy', on ? corner(c.energy_position, 'bottom-left') : null);
     if (!box) return;
     const plugs: string[] = plugsSet.length ? plugsSet : this._roomViews.flatMap((room) => room.sensors.power || []);
@@ -4983,7 +4990,7 @@ export class Floor3dCard extends LitElement {
   // the room: a tap on it goes there.
   private _renderPeople(force: boolean): void {
     const people = peopleList(this._config.people);
-    const box = this._box('people', people.length ? corner(this._config.people_position, 'top-left') : null);
+    const box = this._box('people', people.length && this._shown('people_show', true) ? corner(this._config.people_position, 'top-left') : null);
     if (!box) return;
     const states = this._hass.states;
     const deps: unknown[] = people.flatMap((p) => [states[p.entity], p.room ? states[p.room] : undefined]);
@@ -5035,7 +5042,7 @@ export class Floor3dCard extends LitElement {
   private _renderAlarmPanel(force: boolean): void {
     const entityId = this._config.alarm_panel;
     const stateObj = entityId ? this._hass.states[entityId] : undefined;
-    const box = this._box('alarm_panel', stateObj ? corner(this._config.alarm_panel_position, 'top-right') : null);
+    const box = this._box('alarm_panel', stateObj && this._shown('alarm_panel_show', true) ? corner(this._config.alarm_panel_position, 'top-right') : null);
     if (!box || !this._boxChanged('alarm_panel', [stateObj, this._language()], force)) return;
     const look = panelLook(stateObj.state);
     const text = this._tOr('panel_' + stateObj.state, stateObj.state);
@@ -5048,7 +5055,7 @@ export class Floor3dCard extends LitElement {
   // chips: any entity as a chip, its icon and its state; a tap opens it.
   private _renderChips(force: boolean): void {
     const chips = chipList(this._config.chips);
-    const box = this._box('chips', chips.length ? corner(this._config.chips_position, 'bottom-right') : null);
+    const box = this._box('chips', chips.length && this._shown('chips_show', true) ? corner(this._config.chips_position, 'bottom-right') : null);
     if (!box) return;
     const states = this._hass.states;
     if (!this._boxChanged('chips', [...chips.map((c) => states[c.entity]), this._language()], force)) return;
@@ -5081,7 +5088,7 @@ export class Floor3dCard extends LitElement {
   private _renderWeather(force = false): void {
     const entityId = this._config.weather;
     const stateObj = entityId ? this._hass.states[entityId] : undefined;
-    const box = this._box('weather', stateObj ? corner(this._config.weather_position, 'bottom-left') : null);
+    const box = this._box('weather', stateObj && this._shown('weather_show', true) ? corner(this._config.weather_position, 'bottom-left') : null);
     if (!box || !this._boxChanged('weather', [stateObj, this._forecast, this._forecastType, this._language()], force)) return;
     this._wholeBox(box, entityId, this._t('weather'));
     const forecast: any[] = (Array.isArray(stateObj.attributes.forecast) ? stateObj.attributes.forecast : this._forecast) || [];
@@ -5199,8 +5206,9 @@ export class Floor3dCard extends LitElement {
     return MAP_MODES.includes(key) || PRESET_MAPS.some((p) => p.key === key) ? this._t('map_' + key) : key;
   }
 
+  // hideMapMenu: yes hides the menu and its legend; the map of room_colors stays.
   private _getMapMenu(): TemplateResult {
-    if (this._roomViews.length == 0) return html``;
+    if (this._roomViews.length == 0 || this._shown('hideMapMenu', false)) return html``;
     const option = (value: string, text: string) =>
       html`<option value=${value} ?selected=${this._mapMode == value}>${text}</option>`;
     const legend = this._mapMode !== 'none' && this._mapMode !== 'presence' ? this._legend : undefined;
