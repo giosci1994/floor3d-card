@@ -67,6 +67,8 @@
     "panel_arming": "In inserimento",
     "panel_pending": "In attesa",
     "panel_disarming": "In disinserimento",
-    "panel_triggered": "Allarme"
+    "panel_triggered": "Allarme",
+    "camera_popup": "Telecamera",
+    "camera_close": "Chiudi"
   }
 }

@@ -6,7 +6,8 @@
     "interaction": "Interaction",
     "colours": "State colours and room maps",
     "rendering": "Rendering",
-    "boxes": "Boxes"
+    "boxes": "Boxes",
+    "cameras": "Cameras of the house"
   },
   "labels": {
     "name": "Name",
@@ -180,7 +181,15 @@
     "people_show": "Show the people",
     "alarm_panel_show": "Show the alarm panel",
     "chips_show": "Show the chips",
-    "hideMapMenu": "Hide the Map menu"
+    "hideMapMenu": "Hide the Map menu",
+    "cameras_show": "Show the icons on the map",
+    "camera_popup_show": "Show the picture",
+    "camera_popup_position": "Position",
+    "camera_popup_duration": "Stays for",
+    "stars_show": "Stars at night",
+    "moon_show": "Moon at night",
+    "icon": "Icon",
+    "popup_on": "Sensors"
   },
   "helpers": {
     "path": "For example /local/floor3d/",
@@ -252,7 +261,13 @@
     "person_room": "Optional: an entity whose state is the room, such as the area of Bermuda or ESPresense",
     "box_show": "Off: hidden, its settings stay",
     "hideMapMenu": "The initial room map stays, without the menu and its legend",
-    "status_show": "Lamps on, doors and windows open, locks open, heaters working: a tap shows them in the model"
+    "status_show": "Lamps on, doors and windows open, locks open, heaters working: a tap shows them in the model",
+    "camera_popup_duration": "Seconds the picture stays once its sensors are off again, or after an event. Default 20",
+    "popup_on": "Doorbell, motion…: binary sensors or event entities. When one goes off, the picture of the camera pops up in its corner",
+    "camera_level": "The icon shows only with this level. Picking the point sets it",
+    "stars_show": "Stars after the sunset, fewer with clouds",
+    "moon_show": "The moon with its phase of today, from the sunset",
+    "icon": "The icon on the map. Default mdi:cctv"
   },
   "options": {
     "language": {
@@ -424,7 +439,10 @@
     "energy": "Energy",
     "people": "People",
     "alarm_panel": "Alarm panel",
-    "chips": "Chips"
+    "chips": "Chips",
+    "camera_popup": "Picture that pops up",
+    "camera_place": "Place on the map",
+    "camera_popup_on": "Pops up when"
   },
   "ui": {
     "loading": "Loading…",
@@ -481,6 +499,13 @@
     "add_person": "Add a person",
     "title_people": "Person",
     "person_room": "Room from {room}",
-    "no_room": "Home or away"
+    "no_room": "Home or away",
+    "add_camera": "Add a camera",
+    "title_cameras": "Camera",
+    "tap_point": "Tap the point of the model where the camera is",
+    "camera_on_map": "On the map",
+    "camera_not_on_map": "Not on the map",
+    "popup_sensors_one": "pops up with 1 sensor",
+    "popup_sensors_other": "pops up with {count} sensors"
   }
 }

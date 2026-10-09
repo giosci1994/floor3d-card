@@ -67,6 +67,8 @@
     "panel_arming": "Wird scharf geschaltet",
     "panel_pending": "Ausstehend",
     "panel_disarming": "Wird unscharf geschaltet",
-    "panel_triggered": "Ausgelöst"
+    "panel_triggered": "Ausgelöst",
+    "camera_popup": "Kamera",
+    "camera_close": "Schließen"
   }
 }

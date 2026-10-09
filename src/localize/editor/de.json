@@ -6,7 +6,8 @@
     "interaction": "Interaktion",
     "colours": "Zustandsfarben und Raumkarten",
     "rendering": "Darstellung",
-    "boxes": "Infoboxen"
+    "boxes": "Infoboxen",
+    "cameras": "Kameras im Haus"
   },
   "labels": {
     "name": "Name",
@@ -177,7 +178,15 @@
     "people_show": "Personen anzeigen",
     "alarm_panel_show": "Alarmanlage anzeigen",
     "chips_show": "Chips anzeigen",
-    "hideMapMenu": "Kartenmenü ausblenden"
+    "hideMapMenu": "Kartenmenü ausblenden",
+    "cameras_show": "Symbole auf der Karte anzeigen",
+    "camera_popup_show": "Bild anzeigen",
+    "camera_popup_position": "Position",
+    "camera_popup_duration": "Bleibt für",
+    "stars_show": "Sterne in der Nacht",
+    "moon_show": "Mond in der Nacht",
+    "icon": "Symbol",
+    "popup_on": "Sensoren"
   },
   "helpers": {
     "path": "Zum Beispiel /local/floor3d/",
@@ -249,7 +258,13 @@
     "person_room": "Optional: eine Entität, deren Zustand der Raum ist, wie der Bereich von Bermuda oder ESPresense",
     "box_show": "Aus: ausgeblendet, die Einstellungen bleiben",
     "hideMapMenu": "Die Raumkarte beim Start bleibt, ohne das Menü und seine Legende",
-    "status_show": "Lichter an, Türen und Fenster offen, Schlösser offen, Heizungen an: ein Tippen zeigt sie im Modell"
+    "status_show": "Lichter an, Türen und Fenster offen, Schlösser offen, Heizungen an: ein Tippen zeigt sie im Modell",
+    "camera_popup_duration": "Sekunden, die das Bild bleibt, nachdem die Sensoren wieder aus sind, oder nach einem Ereignis. Standard 20",
+    "popup_on": "Klingel, Bewegung …: Binärsensoren oder Ereignis-Entitäten. Löst einer aus, erscheint das Bild der Kamera in ihrer Ecke",
+    "camera_level": "Das Symbol erscheint nur mit dieser Etage. Die Auswahl des Punktes setzt sie",
+    "stars_show": "Sterne nach Sonnenuntergang, weniger bei Wolken",
+    "moon_show": "Der Mond mit seiner heutigen Phase, ab Sonnenuntergang",
+    "icon": "Das Symbol auf der Karte. Standard mdi:cctv"
   },
   "options": {
     "language": {
@@ -397,7 +412,10 @@
     "energy": "Energie",
     "people": "Personen",
     "alarm_panel": "Alarmanlage",
-    "chips": "Chips"
+    "chips": "Chips",
+    "camera_popup": "Bild bei Ereignis",
+    "camera_place": "Position auf der Karte",
+    "camera_popup_on": "Erscheint bei"
   },
   "ui": {
     "loading": "Wird geladen…",
@@ -454,6 +472,13 @@
     "add_person": "Person hinzufügen",
     "title_people": "Person",
     "person_room": "Raum aus {room}",
-    "no_room": "Zuhause oder unterwegs"
+    "no_room": "Zuhause oder unterwegs",
+    "add_camera": "Kamera hinzufügen",
+    "title_cameras": "Kamera",
+    "tap_point": "Tippe im Modell auf die Stelle, an der die Kamera ist",
+    "camera_on_map": "Auf der Karte",
+    "camera_not_on_map": "Nicht auf der Karte",
+    "popup_sensors_one": "erscheint bei 1 Sensor",
+    "popup_sensors_other": "erscheint bei {count} Sensoren"
   }
 }

@@ -10,8 +10,9 @@
 - [Room maps](FORK.md#sensor-maps): temperature, presence, illuminance, humidity, CO₂, PM2.5, VOC, power or any other sensor, with a legend.
 - [Alarms](FORK.md#alarms) and [heating](FORK.md#heating-and-cooling): a room blinks with smoke, gas or a water leak; radiators glow while they heat.
 - [Covers](FORK.md#covers): roller shades and curtains that shorten, and venetian blinds whose slats turn with the tilt.
-- [Sky and weather](FORK.md#sky-and-weather): a sky behind the house that follows the sun, and the forecast in a corner.
+- [Sky and weather](FORK.md#sky-and-weather): a sky behind the house that follows the sun, with stars and moon at night, and the forecast in a corner.
 - [Boxes](FORK.md#boxes): what is on or open (a tap shows it in the model), energy, people, alarm panel, and any entity as a chip.
+- [Cameras](FORK.md#cameras): an icon on the map where each camera is, and its picture popping up when the doorbell rings or it sees motion.
 - [New types](FORK.md#new-features): a TV screen that lights the room with its picture, person trackers, a shower, info boxes.
 - And more: [views from the page address](FORK.md#views-from-the-page-address), [object ids with `*`](FORK.md#object-ids-with-), [compressed models](FORK.md#compressed-models), and many [bugs of the original card fixed](FORK.md#fixes).
 
@@ -42,7 +43,7 @@ If the original floor3d-card is installed, remove it from HACS first: both defin
 Copy all the `.js` files of the [latest release](https://github.com/giosci1994/floor3d-card/releases/latest) into a folder of `/config/www` and add `floor3d-card.js` as a resource (details in [FORK.md](FORK.md#installation)). It's **required** to load this card as `module`.
 
 ```yaml
-- url: /local/floor3d-card/floor3d-card.js?v=2.9.0 # the version: change it at every update
+- url: /local/floor3d-card/floor3d-card.js?v=2.10.0 # the version: change it at every update
   type: module
 ```
 
@@ -94,7 +95,7 @@ In this fork the yes/no switches also accept `true`/`false`, and the objects of 
 | path             | string | **Required** | path to the Waterforont obj (objects), mtl (material) and other files.                                                                                                     |
 | objfile          | string | **Required** | object file name (.obj) for Waterfront format or glb file name for the binary (condensed) 3d format (still experimental).                                                                                                                                 |
 | mtlfile          | string | **Required** | material file name (.mtl) Waterfront format. Only relevant when objefile has obj extension (no glb)                                                                                                                               |
-| backgroundColor  | string | '#aaaaaa'    | canvas background color: #RGB notation (ex #aaaaaa), color name (ex. 'white') or 'transparent' for a transparent background; this fork adds 'sky', a sky that follows the sun (see [FORK.md](FORK.md#sky-and-weather))                                       |
+| backgroundColor  | string | '#aaaaaa'    | canvas background color: #RGB notation (ex #aaaaaa), color name (ex. 'white') or 'transparent' for a transparent background; this fork adds 'sky', a sky that follows the sun, with stars and moon at night (see [FORK.md](FORK.md#sky-and-weather))                                       |
 | header  | string | 'yes'    | if the header will be displayed or not                                                                                                                                                   |
 | editModeNotifications | string | 'yes'    | 'yes' to use the double click in edit mode to pop up the object ids or the camera position, 'no' to stop displaying popups                                            | 
 | selectionMode | string | 'no'    | 'yes' to activate the selection mode and select group of objects, the list of selected objects will appear in the console                                            |

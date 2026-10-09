@@ -8,7 +8,7 @@ export const CORNERS: Corner[] = ['top-left', 'top-right', 'bottom-left', 'botto
 export const corner = (value: unknown, fallback: Corner): Corner => (CORNERS.includes(value as Corner) ? (value as Corner) : fallback);
 
 // The boxes, in the order they stack from their corner.
-export const BOX_KINDS = ['alarm_panel', 'status', 'people', 'energy', 'weather', 'chips'];
+export const BOX_KINDS = ['alarm_panel', 'status', 'people', 'energy', 'weather', 'chips', 'camera_popup'];
 
 interface State {
   state: string;

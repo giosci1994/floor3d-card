@@ -21,7 +21,7 @@ If the original card is installed, remove it from HACS first: both define `custo
 ### By hand
 
 1. Download all the `.js` files of the [latest release](https://github.com/giosci1994/floor3d-card/releases/latest) (they are also in `dist/`) into a folder of `config/www`, for example `config/www/floor3d-card/`. There are six files: the card, its core (libraries and code shared with the editor), the editor, which is loaded only when you edit the card, the classic editor, which only old Home Assistant versions load, and the decoders of [compressed models](#compressed-models), loaded only by the models that need them.
-2. Add `/local/floor3d-card/floor3d-card.js?v=2.9.0` as a resource of type **module** (Settings › Dashboards › Resources). If the original card is installed too, remove it first.
+2. Add `/local/floor3d-card/floor3d-card.js?v=2.10.0` as a resource of type **module** (Settings › Dashboards › Resources). If the original card is installed too, remove it first.
 3. Reload the browser or the app.
 
 At every update copy the new files and change the `?v=` of the resource: Home Assistant serves `/local` with a 31-day cache, and so may a proxy in front of it, while a new query is a new address. The core and the editor have the hash of their content in the name, so they are new addresses too; the ones of older versions can be deleted.
@@ -75,6 +75,9 @@ The Validate workflow runs the HACS checks at every push and every night; the Bu
 - **Sky that follows the sun** (2.8, `backgroundColor: sky`): dark blue at night, orange at sunrise and sunset, light blue by day, grey with clouds. See [Sky and weather](#sky-and-weather).
 - **Weather forecast** (2.8, `weather`): a box in a corner with the weather now and the next days or hours. See [Sky and weather](#sky-and-weather).
 - **Boxes** (2.9): what is on or open (a tap shows it in the model), energy, people, alarm panel and chips, next to the weather, each with a switch to show or hide it. They stack in their corners without covering each other, also on a phone. `hideMapMenu` hides the Map menu. See [Boxes](#boxes).
+- **Cameras on the map** (2.10, `cameras`): an icon over the point of the model where a camera is, picked with a tap in the editor; a tap on it opens the camera with its live. See [Cameras](#cameras).
+- **Camera pop-up** (2.10): when the doorbell rings or a camera sees motion, its picture pops up in a corner, a new one every second, for as long as it is needed. See [Cameras](#cameras).
+- **Stars and moon** (2.10): at night the sky of `backgroundColor: sky` gets its stars and the moon with its phase of the day. See [Sky and weather](#sky-and-weather).
 - **Languages** (2.6): the card and its editor in English, Italian and German (the card also in Norwegian). Each user sees the language of their Home Assistant profile; the `language` option sets one for the card. See [Languages](#languages).
 - **Shadows in the editor** (2.6): the card editor says how many lights cast a shadow and how many the device can draw, and names the lights left without. See [Shadows](#shadows).
 - **Version label** at the top of the card editor and in the console banner.
@@ -92,11 +95,11 @@ The editor is built on the components of Home Assistant, like the editors of the
 | :---: | :---: |
 | Settings in sections, then the lists of entities, object groups and views | Editing an entity: its objects are highlighted in the preview |
 
-- **Settings in sections**: 3D model, camera and navigation, light and shadows, interaction (with the overlay), state colours and room maps (with the rooms), rendering. The yes/no options are toggles, and the help text of each field gives the value used when it is empty.
+- **Settings in sections**: 3D model, camera and navigation, light and shadows, boxes, cameras of the house, interaction (with the overlay), state colours and room maps (with the rooms), rendering. The yes/no options are toggles, and the help text of each field gives the value used when it is empty.
 - **Lists** of entities, object groups, views (zoom areas), rooms and colour conditions: one line per item, dragged to change the order, with a pencil to edit it. An entity shows its type and object, and a warning when the entity doesn't exist, or when the object isn't in the model (after exporting the model again, for example).
 - **Editing an item** opens its own page: the entity with the Home Assistant entity picker, its type, its object, then only the options of that type (changing the type takes away the options of the old one), and in a closed panel the tap and long press actions and the template.
 - **Objects of the model**: the object menus list the groups and all the objects of the model, with a search; any other name can be typed too. The names come from the preview, or from `objectlist` when set.
-- **Pick in the preview**: the button next to an object field turns the preview into a picker: a tap on an object fills the field. For an object group, every tap adds an object or takes it out, until the button is pressed again.
+- **Pick in the preview**: the button next to an object field turns the preview into a picker: a tap on an object fills the field. For an object group, every tap adds an object or takes it out, until the button is pressed again. For a camera (2.10), the tap gives the point of the model where it is, and its level.
 - **Highlight**: while an item is edited, or the mouse is over its line, its objects are outlined in the preview, groups included.
 - **Use the current view**: in a view (zoom area), the button copies the position, target and rotation of the camera of the preview, after it has been moved there with the mouse or fingers.
 - The **refresh** button next to the version reloads the preview.
@@ -486,6 +489,7 @@ A cover of the original card slides: the pane goes up (or down) into its box, an
 ### Sky and weather
 
 - `backgroundColor: sky`: the background is a sky that follows the elevation of the sun (`sun.sun`, or `sun_entity`): dark blue at night, orange at the horizon at sunrise and sunset, light blue by day. With a `weather` entity, clouds turn it grey (its `cloud_coverage`, else its condition). The sky is a gradient behind the canvas: it costs nothing to the GPU. Unlike the `sky: yes` of the original card, still ignored, it changes nothing else: lights, colours and ground stay the same.
+- Stars and moon (2.10): at night the sky gets its stars, which come out when the sun is 3° below the horizon and are all there at 12°, and the moon, from the sunset, with its phase of the day. Clouds hide the stars (none when overcast) and dim the moon. The phase comes from the date, without a sensor; the moon is lit on the right while it grows and on the left while it wanes, the other way round when the latitude of Home Assistant is south of the equator. Like the sky they are drawn behind the canvas, nothing more for the GPU. `stars_show: no` and `moon_show: no` hide them.
 - `weather: weather.home`: a box in a corner with the weather now and the next forecasts, in the language of the card. A tap opens the entity. Home Assistant sends the forecast as it changes (the same way as for its weather card), with nothing to set up.
   - `weather_position`: `bottom-left` (default), `bottom-right`, `top-left`, or `top-right` under the menus;
   - `weather_forecast`: `daily` (default), `hourly` or `twice_daily`; if the entity doesn't have it, the one it has;
@@ -527,6 +531,33 @@ chips:
 ```
 
 ![The boxes on a computer and on a phone](docs/images/boxes.jpg)
+
+### Cameras
+
+`cameras` lists the cameras of the house (`camera.*` entities), in the Cameras of the house section of the editor.
+
+- **On the map**: a camera with a `position` gets an icon over that point of the model. The icon follows the view, hides while its level is hidden (`level`), and fades while the camera is unavailable; a tap opens the camera with its live. In the editor, "Pick in the preview" and a tap on the model fill `position` (a point of the model, in the coordinates of the model file) and, when the model has more than one level, `level`. `name` and `icon` (`mdi:cctv` by default) change the name and the icon; `cameras_show: no` hides the icons.
+- **Pop-up**: `popup_on` lists the entities that make the picture of the camera pop up: binary sensors (a doorbell, motion, a person detected) or event entities (the doorbell of many integrations, whose state changes at each ring). When one goes off, the picture of the camera comes in a corner (`camera_popup_position`, bottom right by default), a new picture every second, with the name of the camera and of the sensor, and the icon of the camera blinks. It stays while the sensor is on and `camera_popup_duration` seconds after (20 by default; after an event, 20 seconds from it). A tap on the picture opens the camera with its live; the cross closes it until a sensor goes off again. With several cameras at once the last one shows, and the icons of all of them blink. `camera_popup_show: no` hides the pictures; the icons still blink.
+
+The pictures come from the camera proxy of Home Assistant (`entity_picture`), one a second and only while a picture is shown: no stream, and nothing for the GPU. A camera without `position` has no icon, but its picture can still pop up: a camera already drawn in the model with `type3d: camera` can be listed only for its `popup_on`.
+
+```yaml
+cameras:
+  - entity: camera.front_door
+    position: [510, 240, 990]        # picked in the editor
+    icon: mdi:doorbell-video
+    popup_on:
+      - binary_sensor.doorbell
+      - event.front_door_ring
+  - entity: camera.garden
+    position: [1100, 230, 700]
+  - entity: camera.living_room
+    position: [330, 250, 440]
+    popup_on: binary_sensor.living_room_motion
+camera_popup_duration: 30
+```
+
+![At night: stars and moon, the icons of three cameras and the picture of the front door when the doorbell rings](docs/images/cameras.jpg)
 
 ## Fixes
 
@@ -585,7 +616,8 @@ Some of these were found and fixed first in other forks: [Steven-D-Morgan/hass-3
 - a view with a level shows only that level, a view without one all of them, and the initial view `initialLevel` again, from the menu and from the buttons (2.7.1);
 - the slats of a blind turn with its tilt, also when they are one object with the rails and the cords; a roller shade shortens from its bottom and its bar follows; sliding covers are cut past the edge of their side, also when they open downward or sideways (2.8);
 - the sky follows the sun and turns grey with clouds; the forecast box shows the weather now and the next forecasts in the language of the card, asks for a forecast the entity has, opens the entity on a tap, and stops its subscription when the card goes away (2.8);
-- the status box counts what is on or open, outlines those objects on a tap and frames them; the energy, people, alarm panel and chips boxes show their entities, go to the room of a plug or of a person, and open their entities; every box stays in its corner without covering the others or the menus, also on a narrow card (2.9).
+- the status box counts what is on or open, outlines those objects on a tap and frames them; the energy, people, alarm panel and chips boxes show their entities, go to the room of a plug or of a person, and open their entities; every box stays in its corner without covering the others or the menus, also on a narrow card (2.9);
+- the icon of a camera stays over its point of the model as the view turns, hides with its level and opens the camera on a tap; its picture pops up when a sensor goes off or a doorbell event comes, gets a new picture every second, closes with the cross and goes away after the duration; the editor fills the place of a camera from a tap on the model, with its level; at night the stars and the moon come out over the sky, fewer with clouds (2.10).
 
 To run them locally: `npx playwright install --only-shell chromium` once, then `npm run build` and `npm run test:browser`.
 

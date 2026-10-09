@@ -1085,3 +1085,227 @@ test('boxes: energy, people, alarm panel and chips, each in its corner, stacked 
   assert.deepEqual(errors, []);
   await page.close();
 });
+
+// --- Cameras and the night sky -------------------------------------------------------------------
+
+const DOOR_PICTURE = '/api/camera_proxy/camera.door?token=abc';
+const cameraStates = (extra = {}) =>
+  states({
+    'camera.door': { state: 'idle', attributes: { friendly_name: 'Front door', entity_picture: DOOR_PICTURE } },
+    'camera.garden': { state: 'unavailable', attributes: { friendly_name: 'Garden' } },
+    'binary_sensor.doorbell': { state: 'off', attributes: { friendly_name: 'Doorbell' } },
+    'event.ring': { state: '2026-10-09T10:00:00.000+00:00', attributes: { friendly_name: 'Ring' } },
+    ...extra,
+  });
+
+// The icons of the cameras: what they show, whether they are visible, and their centre on the page.
+const pinsOf = (page) =>
+  page.evaluate(() =>
+    [...window.__card.shadowRoot.querySelectorAll('.f3d-pin')].map((el) => {
+      const r = el.getBoundingClientRect();
+      return {
+        title: el.title,
+        icon: el.querySelector('ha-icon').getAttribute('icon'),
+        visible: getComputedStyle(el).visibility === 'visible',
+        x: Math.round((r.left + r.right) / 2),
+        y: Math.round((r.top + r.bottom) / 2),
+        classes: el.className,
+      };
+    }),
+  );
+
+// Where a point of the model is on the page, as three.js projects it.
+const projected = (page, p) =>
+  page.evaluate((p) => {
+    const card = window.__card;
+    const v = new card._camera.position.constructor(...p).applyMatrix4(card._bboxmodel.matrixWorld).project(card._camera);
+    const r = card._renderer.domElement.getBoundingClientRect();
+    return [Math.round(r.left + ((v.x + 1) / 2) * r.width), Math.round(r.top + ((1 - v.y) / 2) * r.height)];
+  }, p);
+
+test('cameras: an icon over its point of the model that follows the view, hidden with its level; a tap opens the camera', { timeout: TIMEOUT }, async () => {
+  const config = house({
+    objfile: 'levels.obj',
+    cameras: [
+      { entity: 'camera.door', position: [510, 240, 990] },
+      { entity: 'camera.garden', position: [900, 100, 550], level: 1, icon: 'mdi:cctv-off', name: 'Garden cam' },
+      'camera.door', // without a position: no icon
+    ],
+  });
+  const { page, errors } = await open(config, cameraStates());
+  let pins = await pinsOf(page);
+  assert.deepEqual(pins.map((p) => [p.title, p.icon]), [['Front door', 'mdi:cctv'], ['Garden cam', 'mdi:cctv-off']]);
+  assert.deepEqual(pins.map((p) => p.visible), [true, true], 'both levels shown');
+  assert.match(pins[1].classes, /\boff\b/, 'unavailable: faded');
+  const near = (pin, at) => Math.abs(pin.x - at[0]) <= 1 && Math.abs(pin.y - at[1]) <= 1;
+  const at = await projected(page, [510, 240, 990]);
+  assert.ok(near(pins[0], at), 'over its point: ' + [pins[0].x, pins[0].y] + ' / ' + at);
+  // The view turns: the icon goes with its point.
+  await page.evaluate(() => {
+    const card = window.__card;
+    card._camera.position.set(-900, 700, 300);
+    card._controls.update();
+    card._render();
+  });
+  pins = await pinsOf(page);
+  const moved = await projected(page, [510, 240, 990]);
+  assert.notDeepEqual(moved, at);
+  assert.ok(near(pins[0], moved), 'follows the view: ' + [pins[0].x, pins[0].y] + ' / ' + moved);
+  // Only level 0 shown: the camera of level 1 hides.
+  await page.evaluate(() => {
+    window.__card._setVisibleLevel(0);
+    window.__card._render();
+  });
+  assert.deepEqual((await pinsOf(page)).map((p) => p.visible), [true, false]);
+  // A tap opens the camera; the model under it gets nothing.
+  await moreInfo(page);
+  await page.mouse.click(pins[0].x, pins[0].y);
+  assert.deepEqual(await page.evaluate(() => window.__moreInfo), ['camera.door']);
+  assert.deepEqual(await page.evaluate(() => window.__calls), []);
+  // cameras_show: no.
+  await page.evaluate(() => {
+    const card = window.__card;
+    card._config = { ...card._config, cameras_show: 'no' };
+    card._renderBoxes(true);
+  });
+  assert.deepEqual(await pinsOf(page), []);
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+test('camera pop-up: the picture comes in its corner when a sensor goes off, a new one every second; the cross closes it; it goes after the duration', { timeout: TIMEOUT }, async () => {
+  const config = house({
+    cameras: [{ entity: 'camera.door', position: [510, 240, 990], popup_on: ['binary_sensor.doorbell', 'event.ring'] }],
+    camera_popup_duration: 2,
+  });
+  const { page, errors } = await open(config, cameraStates());
+  const picture = () =>
+    page.evaluate(() => {
+      const box = window.__card.shadowRoot.querySelector('.f3d-camera_popup');
+      return box && { src: box.querySelector('img').getAttribute('src'), loaded: box.classList.contains('loaded'), width: box.offsetWidth };
+    });
+  assert.equal(await boxOf(page, 'camera_popup'), null, 'nothing yet');
+  const proxy = () => server.hits('/api/camera_proxy/camera.door');
+  const before = proxy();
+  await page.evaluate(() => window.__setState('binary_sensor.doorbell', 'on'));
+  let box = await boxOf(page, 'camera_popup');
+  assert.equal(box.corner, 'bottom-right');
+  assert.equal(box.text, 'Front door Doorbell');
+  assert.match((await pinsOf(page))[0].classes, /\balert\b/, 'the icon blinks');
+  const first = await picture();
+  assert.ok(first.src.startsWith(DOOR_PICTURE + '&t='), first.src);
+  assert.equal(first.width, Math.round(Math.min(320, 860 * 0.45)), '45% of the card');
+  await page.waitForTimeout(2600);
+  const later = await picture();
+  assert.ok(later.loaded, 'the picture arrived');
+  assert.notEqual(later.src, first.src, 'a new picture');
+  assert.ok(proxy() - before >= 2, 'asked again: ' + (proxy() - before));
+  // A tap on the picture opens the camera (its live).
+  await moreInfo(page);
+  await page.evaluate(() => window.__card.shadowRoot.querySelector('.f3d-camera_popup .picture').click());
+  assert.deepEqual(await page.evaluate(() => window.__moreInfo), ['camera.door']);
+  // The cross: closed, though the doorbell is still on; the pictures stop.
+  await page.evaluate(() => window.__card.shadowRoot.querySelector('.f3d-camera_popup .close').click());
+  assert.equal(await boxOf(page, 'camera_popup'), null);
+  assert.doesNotMatch((await pinsOf(page))[0].classes, /\balert\b/);
+  const closed = proxy();
+  await page.waitForTimeout(1500);
+  assert.ok(proxy() - closed <= 1, 'no more pictures');
+  // The doorbell event of another ring: back, then gone after the duration.
+  await page.evaluate(() => {
+    window.__setState('binary_sensor.doorbell', 'off');
+    window.__setState('event.ring', '2026-10-09T17:00:00.000+00:00');
+  });
+  box = await boxOf(page, 'camera_popup');
+  assert.equal(box.text, 'Front door Ring');
+  await page.waitForTimeout(2400);
+  assert.equal(await boxOf(page, 'camera_popup'), null, 'gone after 2 s');
+  // camera_popup_show: no: no picture, the icon still blinks.
+  await page.evaluate(() => {
+    const card = window.__card;
+    card._config = { ...card._config, camera_popup_show: 'no' };
+    window.__setState('binary_sensor.doorbell', 'on');
+  });
+  assert.equal(await boxOf(page, 'camera_popup'), null);
+  assert.match((await pinsOf(page))[0].classes, /\balert\b/);
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+test('card editor: the place of a camera picked with a tap on the model, with its level', { timeout: TIMEOUT }, async () => {
+  const config = house({ objfile: 'levels.obj', cameras: [{ entity: 'camera.door' }] });
+  const { page, errors } = await open(config, cameraStates());
+  await page.evaluate(async () => {
+    const card = window.__card;
+    card.preview = true;
+    const ed = await card.constructor.getConfigElement();
+    ed.hass = window.__hass();
+    ed.setConfig(JSON.parse(JSON.stringify(card._config)));
+    document.body.append(ed);
+    await new Promise((r) => setTimeout(r, 300));
+    ed._mode = 'ready';
+    ed._edit('cameras', 0);
+    await ed.updateComplete;
+    ed._startPick({ path: ['cameras', 0, 'position'], point: true });
+    window.__ed = ed;
+  });
+  assert.equal(await page.evaluate(() => window.__card._pickMode), true);
+  // The top of the bed, on level 1, and what the card finds under that point of the page.
+  const [x, y] = await projected(page, [900, 55, 480]);
+  const expected = await page.evaluate(
+    ({ x, y }) => {
+      const card = window.__card;
+      const hit = card._getintersect(x, y).find((i) => i.object.name);
+      const p = card._bboxmodel.worldToLocal(hit.point.clone());
+      return { name: hit.object.name, position: [p.x, p.y, p.z].map(Math.round), level: hit.object.userData.level };
+    },
+    { x, y },
+  );
+  assert.deepEqual([expected.name, expected.level], ['bed', 1]);
+  await page.mouse.click(x, y);
+  const result = await page.evaluate(() => ({
+    camera: window.__ed._config.cameras[0],
+    picking: !!window.__ed._picking,
+    pickMode: window.__card._pickMode,
+    line: window.__ed._describe('cameras', window.__ed._config.cameras[0], 0).secondary,
+  }));
+  assert.deepEqual(result, {
+    camera: { entity: 'camera.door', position: expected.position, level: 1 },
+    picking: false,
+    pickMode: false,
+    line: 'On the map',
+  });
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+test('night sky: stars and the moon come out after the sunset over the gradient, fewer with clouds; stars_show and moon_show', { timeout: TIMEOUT }, async () => {
+  const skyStates = states({ 'weather.home': { state: 'sunny', attributes: { temperature: 12, supported_features: 1 } } });
+  const { page, errors } = await open(house({ backgroundColor: 'sky', weather: 'weather.home', weather_count: 0 }), skyStates);
+  const layers = () =>
+    page.evaluate(() => {
+      const css = window.__card._renderer.domElement.style.background;
+      return (css.match(/url\("data:image\/svg\+xml,[^"]*"\)[^,]*/g) || []).map((l) => (l.includes('repeat-x') ? 'stars' : 'moon'));
+    });
+  assert.deepEqual(await layers(), [], 'day: only the gradient');
+  await page.evaluate(() => window.__setState('sun.sun', 'below_horizon', { azimuth: 340, elevation: -20 }));
+  assert.deepEqual(await layers(), ['moon', 'stars'], 'night: the moon over the stars');
+  assert.ok((await page.evaluate(() => window.__card._renderer.domElement.style.background)).includes('linear-gradient'), 'over the gradient');
+  await page.evaluate(() => window.__setState('weather.home', 'cloudy', { cloud_coverage: 100 }));
+  assert.deepEqual(await layers(), ['moon'], 'overcast: no stars, a glow of the moon');
+  await page.evaluate(() => {
+    const card = window.__card;
+    window.__setState('weather.home', 'sunny', { cloud_coverage: 0 });
+    card._config = { ...card._config, moon_show: 'no' };
+    window.__setState('sun.sun', 'below_horizon', { azimuth: 340, elevation: -21 });
+  });
+  assert.deepEqual(await layers(), ['stars']);
+  await page.evaluate(() => {
+    const card = window.__card;
+    card._config = { ...card._config, stars_show: false };
+    window.__setState('sun.sun', 'below_horizon', { azimuth: 340, elevation: -22 });
+  });
+  assert.deepEqual(await layers(), []);
+  assert.deepEqual(errors, []);
+  await page.close();
+});

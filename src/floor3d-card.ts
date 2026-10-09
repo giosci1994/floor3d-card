@@ -32,7 +32,8 @@ import {
 } from './maps';
 import { localize, pickLanguage } from './localize/localize';
 import { findSlats, slatAngle, Slat, tiltSlats } from './slats';
-import { skyColors, skyGradient, weatherClouds } from './sky';
+import { moonPhase, skyBackground, weatherClouds } from './sky';
+import { CameraItem, cameraList, cameraName, newPopupMemory, popupStep, snapshotUrl } from './cameras';
 import { forecastLabel, forecastType, ForecastType, formatDegrees, weatherIcon } from './weather';
 import {
   BOX_KINDS,
@@ -292,6 +293,17 @@ export class Floor3dCard extends LitElement {
   private _shownTimer?: number;
   private _cornerObserver?: ResizeObserver; // the card changes width (a phone turned): placed again
   private _boxesChanged = false; // a box was drawn, added or removed: the corners are placed again
+  // Cameras (cameras.ts): their icons over the model (placed again at every frame), the pictures
+  // that pop up (what the sensors did, the timer of the first picture to go away, the camera shown
+  // and the timer of its next picture).
+  private _pinsEl?: HTMLElement;
+  private _pins: { el: HTMLElement; camera: CameraItem }[] = [];
+  private _pinsKey?: string;
+  private _popupMemory = newPopupMemory();
+  private _popupShowing: { entity: string; trigger?: string }[] = [];
+  private _popupTimer?: number;
+  private _popupEntity?: string;
+  private _popupRefresh?: number;
   private _objects_to_rotate: THREE.Group[];
   private _pivot: THREE.Vector3[];
   private _degrees: number[];
@@ -467,6 +479,7 @@ export class Floor3dCard extends LitElement {
       this._applyUrlView(false);
       this._subscribeWeather();
       if (this._cornerObserver && (this._content || this._card)) this._cornerObserver.observe(this._content || this._card);
+      this._renderBoxes(true); // the pictures of the cameras start again
     }
   }
 
@@ -484,6 +497,8 @@ export class Floor3dCard extends LitElement {
 
     this._cancelTap();
     this._unsubscribeWeather();
+    window.clearTimeout(this._popupTimer);
+    this._stopPopupRefresh();
     if (this._cornerObserver) this._cornerObserver.disconnect();
     // The preview going away while the editor is paused (Home Assistant replaces it at every change
     // of the config): the next one shows its last picture, with the camera where it was.
@@ -892,6 +907,7 @@ export class Floor3dCard extends LitElement {
     //render the model
     if (this._torch) this._aimTorch();
     this._renderer.render(this._scene, this._camera);
+    this._placePins();
   }
 
   // The torch lights what the camera looks at: its target is a point in front of the camera.
@@ -967,7 +983,7 @@ export class Floor3dCard extends LitElement {
     if (this._pickMode) {
       // Picking objects for the card editor: the object goes to the editor, no action runs.
       const hit = this._getintersect(tap.x, tap.y).find((i) => i.object.name);
-      if (!tap.long && hit) this._toEditor({ picked: hit.object.name });
+      if (!tap.long && hit) this._toEditor({ picked: hit.object.name, ...this._pickedPoint(hit) });
       return;
     }
     if (!tap.long && performance.now() - tap.t < 500 && (this._config.click == 'yes' || this._selectionModeEnabled)) {
@@ -1201,6 +1217,8 @@ export class Floor3dCard extends LitElement {
     if ('pick' in detail) {
       this._pickMode = !!detail.pick;
       if (this._renderer) this._renderer.domElement.style.cursor = this._pickMode ? 'crosshair' : '';
+      // The icons of the cameras let the taps through to the model.
+      if (this._pinsEl) this._pinsEl.classList.toggle('picking', this._pickMode);
     }
     if ('highlight' in detail) this._setHighlight(detail.highlight || []);
     if (detail.request === 'snapshot') {
@@ -1217,6 +1235,16 @@ export class Floor3dCard extends LitElement {
       this._pausedEl = undefined;
       this.display3dmodel();
     }
+  }
+
+  // The point of the model that was tapped, to place a camera there, and its level when the model has
+  // more than one.
+  private _pickedPoint(hit: THREE.Intersection): { point: number[]; level?: number } {
+    this._bboxmodel.updateMatrixWorld(true);
+    const p = this._bboxmodel.worldToLocal(hit.point.clone());
+    const levels = (this._levels || []).filter((level) => level).length;
+    const level = hit.object.userData ? hit.object.userData.level : undefined;
+    return { point: [p.x, p.y, p.z].map((n) => Math.round(n)), ...(levels > 1 && level !== undefined ? { level } : {}) };
   }
 
   // The picture of the preview, kept for the cards created while it is paused.
@@ -1417,6 +1445,7 @@ export class Floor3dCard extends LitElement {
       );
       this._renderer.render(this._scene, this._camera);
     }
+    this._placePins();
     this._placeCorners();
     console.log('Resize canvas end');
   }
@@ -4696,6 +4725,7 @@ export class Floor3dCard extends LitElement {
     this._renderEnergy(force);
     this._renderWeather(force);
     this._renderChips(force);
+    this._renderCameras(force);
     // Measuring the boxes makes the browser lay out the page: only when one of them changed.
     if (force || this._boxesChanged) this._placeCorners();
   }
@@ -4749,6 +4779,7 @@ export class Floor3dCard extends LitElement {
   // levels at the top left, and the old buttons of the views and of selectionMode at the bottom.
   private _placeCorners(): void {
     if (!this._corners.size) return;
+    this._sizePopup();
     const height = (el?: HTMLElement): number => {
       const child = el && (el.firstElementChild as HTMLElement | null);
       return child ? child.getBoundingClientRect().height : 0;
@@ -5120,11 +5151,238 @@ export class Floor3dCard extends LitElement {
     );
   }
 
+  // --- Cameras (cameras.ts) ------------------------------------------------------------------------
+
+  // Their icons on the map, and the picture that pops up when their sensors go off.
+  private _renderCameras(force: boolean): void {
+    const cameras = cameraList(this._config.cameras);
+    this._stepPopup(cameras);
+    this._renderPins(cameras, force);
+    this._renderCameraPopup(cameras, force);
+  }
+
+  // What the sensors of the cameras did since the last update: the pictures to show, and a timer for
+  // the first of them to go away.
+  private _stepPopup(cameras: CameraItem[]): void {
+    const now = Date.now();
+    const duration = Math.max(1, this._num(this._config.camera_popup_duration, 20)) * 1000;
+    const { showing, next } = popupStep(this._popupMemory, cameras, this._hass.states, now, duration);
+    this._popupShowing = showing;
+    window.clearTimeout(this._popupTimer);
+    this._popupTimer = next !== undefined && this.isConnected ? window.setTimeout(() => this._renderBoxes(), next - now + 50) : undefined;
+  }
+
+  // cameras_show: the icon of each camera with a position, over its point of the model; a tap opens
+  // the camera. It blinks while its picture pops up.
+  private _renderPins(cameras: CameraItem[], force: boolean): void {
+    const placed = this._shown('cameras_show', true) ? cameras.filter((c) => c.position) : [];
+    const states = this._hass.states;
+    const alert = new Set(this._popupShowing.map((s) => s.entity));
+    const key = JSON.stringify(
+      placed.map((c) => [c.entity, c.position, c.level, c.icon, cameraName(c, states[c.entity]), states[c.entity] ? states[c.entity].state : '', alert.has(c.entity)]),
+    );
+    if (!force && key === this._pinsKey) return;
+    this._pinsKey = key;
+    if (!placed.length) {
+      if (this._pinsEl) this._pinsEl.remove();
+      this._pinsEl = undefined;
+      this._pins = [];
+      return;
+    }
+    if (!this._pinsEl) {
+      // Before the model in the card: the menus and the bars of the levels and of the views go over
+      // the icons, the icons over the model.
+      this._pinsEl = document.createElement('div');
+      this._pinsEl.className = 'f3d-pins';
+      this._pinsEl.classList.toggle('picking', !!this._pickMode);
+      this._card.insertBefore(this._pinsEl, this._content && this._content.parentNode === this._card ? this._content : this._card.firstChild);
+    }
+    render(
+      html`${placed.map((c) => {
+        const stateObj = states[c.entity];
+        const name = cameraName(c, stateObj);
+        const off = !stateObj || stateObj.state === 'unavailable';
+        return html`<button
+          class="f3d-pin ${off ? 'off' : ''} ${alert.has(c.entity) ? 'alert' : ''}"
+          title=${name}
+          aria-label=${name}
+          @click=${(ev: Event) => {
+            ev.stopPropagation();
+            this._moreInfo(c.entity);
+          }}
+        >
+          <ha-icon icon=${c.icon || 'mdi:cctv'}></ha-icon>
+        </button>`;
+      })}`,
+      this._pinsEl,
+    );
+    const elements = Array.from(this._pinsEl.querySelectorAll('.f3d-pin')) as HTMLElement[];
+    this._pins = elements.map((el, i) => ({ el, camera: placed[i] }));
+    this._placePins();
+  }
+
+  // The icons follow the camera of the card: placed again after every frame over their point of the
+  // model; hidden behind the camera, out of the view, or when their level is hidden.
+  private _placePins(): void {
+    if (!this._pins.length || !this._pinsEl || !this._renderer || !this._camera || !this._bboxmodel) return;
+    // The icons are placed from the top left corner of their layer, wherever the canvas is in the card.
+    const canvas = this._renderer.domElement.getBoundingClientRect();
+    const layer = this._pinsEl.getBoundingClientRect();
+    const width = canvas.width;
+    const height = canvas.height;
+    const left = canvas.left - layer.left;
+    const top = canvas.top - layer.top;
+    const point = new THREE.Vector3();
+    const view = new THREE.Vector3();
+    this._pins.forEach(({ el, camera }) => {
+      const p = camera.position;
+      let shown = !!p && width > 0 && height > 0;
+      if (shown && camera.level !== undefined && this._displaylevels && this._displaylevels[camera.level] === false) shown = false;
+      if (shown) {
+        point.set(p[0], p[1], p[2]).applyMatrix4(this._bboxmodel.matrixWorld);
+        view.copy(point).applyMatrix4(this._camera.matrixWorldInverse);
+        point.project(this._camera);
+        shown = view.z < 0 && Math.abs(point.x) <= 1 && Math.abs(point.y) <= 1;
+      }
+      if (shown) {
+        const x = left + ((point.x + 1) / 2) * width;
+        const y = top + ((1 - point.y) / 2) * height;
+        el.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px) translate(-50%, -50%)`;
+      }
+      el.style.visibility = shown ? 'visible' : 'hidden';
+    });
+  }
+
+  // camera_popup_show: the picture of the camera whose sensor went off last, in its corner, a new one
+  // every second; a tap opens the camera (live), the cross closes it until a sensor goes off again.
+  private _renderCameraPopup(cameras: CameraItem[], force: boolean): void {
+    const states = this._hass.states;
+    const shown = this._shown('camera_popup_show', true) ? this._popupShowing.find((s) => states[s.entity]) : undefined;
+    const box = this._box('camera_popup', shown ? corner(this._config.camera_popup_position, 'bottom-right') : null);
+    if (!box || !shown) {
+      this._stopPopupRefresh();
+      return;
+    }
+    const camera = cameras.find((c) => c.entity === shown.entity) as CameraItem;
+    const stateObj = states[shown.entity];
+    const trigger = shown.trigger ? states[shown.trigger] : undefined;
+    const deps = [shown.entity, shown.trigger, camera.name, camera.icon, stateObj.attributes.friendly_name, trigger && trigger.attributes.friendly_name, this._language()];
+    this._sizePopup();
+    if (this._boxChanged('camera_popup', deps, force)) {
+      const name = cameraName(camera, stateObj);
+      const triggerName = trigger ? String(trigger.attributes.friendly_name || shown.trigger) : '';
+      const open = (ev: Event): void => {
+        ev.stopPropagation();
+        this._moreInfo(shown.entity);
+      };
+      box.setAttribute('aria-label', this._t('camera_popup'));
+      render(
+        html`
+          <div
+            class="picture"
+            role="button"
+            tabindex="0"
+            title=${name}
+            aria-label=${name}
+            @click=${open}
+            @keydown=${(ev: KeyboardEvent) => {
+              if (ev.key === 'Enter' || ev.key === ' ') {
+                ev.preventDefault();
+                open(ev);
+              }
+            }}
+          >
+            <ha-icon class="placeholder" icon=${camera.icon || 'mdi:cctv'}></ha-icon>
+            <img alt="" />
+          </div>
+          <div class="caption">
+            <span class="name">${name}</span> ${triggerName ? html`<span class="trigger">${triggerName}</span>` : nothing}
+          </div>
+          <button
+            class="close"
+            title=${this._t('camera_close')}
+            aria-label=${this._t('camera_close')}
+            @click=${(ev: Event) => {
+              ev.stopPropagation();
+              this._closePopup();
+            }}
+          >
+            <ha-icon icon="mdi:close"></ha-icon>
+          </button>
+        `,
+        box,
+      );
+    }
+    if (this._popupEntity !== shown.entity) {
+      // Another camera: its pictures from now on.
+      this._stopPopupRefresh();
+      box.classList.remove('loaded');
+      this._popupEntity = shown.entity;
+      this._refreshPopup();
+    }
+  }
+
+  // The width of the picture: 45% of the card, between 160 and 320 pixels.
+  private _sizePopup(): void {
+    const box = this._boxEls.get('camera_popup');
+    const content = this._content || this._card;
+    if (!box || !content) return;
+    const width = content.getBoundingClientRect().width;
+    box.style.width = Math.round(Math.max(160, Math.min(320, width * 0.45))) + 'px';
+  }
+
+  // The next picture of the camera shown, a second after the last one arrived (or could not). The old
+  // picture stays until the new one is there.
+  private _refreshPopup(): void {
+    window.clearTimeout(this._popupRefresh);
+    this._popupRefresh = undefined;
+    const box = this._boxEls.get('camera_popup');
+    const img = box ? box.querySelector('img') : null;
+    const entity = this._popupEntity;
+    if (!box || !img || !entity || !this.isConnected || !this._hass) return;
+    const next = (): void => {
+      if (this._popupEntity !== entity || !img.isConnected) return; // closed, or another camera
+      window.clearTimeout(this._popupRefresh);
+      this._popupRefresh = window.setTimeout(() => this._refreshPopup(), 1000);
+    };
+    const url = snapshotUrl(this._hass.states[entity], Date.now());
+    if (!url) {
+      next();
+      return;
+    }
+    img.onload = () => {
+      box.classList.add('loaded');
+      next();
+    };
+    img.onerror = next;
+    img.src = url;
+  }
+
+  private _stopPopupRefresh(): void {
+    window.clearTimeout(this._popupRefresh);
+    this._popupRefresh = undefined;
+    this._popupEntity = undefined;
+  }
+
+  // The cross: the pictures showing go away until a sensor goes off again.
+  private _closePopup(): void {
+    this._popupMemory.dismissed = Date.now();
+    this._renderBoxes();
+  }
+
   // backgroundColor: sky. The colours of the sky for the elevation of the sun entity (the one of the
-  // day without it), greyer with the clouds of the weather entity of the forecast, if any.
+  // day without it), greyer with the clouds of the weather entity of the forecast, if any; at night
+  // the stars and the moon (stars_show, moon_show), the moon as it is seen from the hemisphere of the
+  // house.
   private _skyBackground(): string {
     const weather = this._config.weather && this._hass ? this._hass.states[this._config.weather] : undefined;
-    return skyGradient(skyColors(this._sunAngles()[1], weatherClouds(weather)));
+    const latitude = this._hass && this._hass.config ? Number((this._hass.config as any).latitude) : NaN;
+    return skyBackground(this._sunAngles()[1], weatherClouds(weather), {
+      stars: this._shown('stars_show', true),
+      moon: this._shown('moon_show', true),
+      phase: moonPhase(new Date()),
+      southern: latitude < 0,
+    });
   }
 
   private _updateSkyBackground(): void {
@@ -6266,6 +6524,128 @@ export class Floor3dCard extends LitElement {
         font-size: 11px;
         color: #8ec5ff;
       }
+      .f3d-camera_popup {
+        position: relative;
+        display: block;
+        padding: 0;
+        animation: f3d-appear 0.25s ease-out;
+      }
+      .f3d-camera_popup .picture {
+        position: relative;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        aspect-ratio: 16 / 9;
+        background: #000;
+        cursor: pointer;
+        --mdc-icon-size: 32px;
+      }
+      .f3d-camera_popup img {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        object-fit: contain;
+      }
+      .f3d-camera_popup:not(.loaded) img {
+        visibility: hidden;
+      }
+      .f3d-camera_popup .placeholder {
+        opacity: 0.5;
+      }
+      .f3d-camera_popup .caption {
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        display: flex;
+        align-items: baseline;
+        gap: 6px;
+        padding: 14px 8px 5px;
+        background: linear-gradient(transparent, rgba(0, 0, 0, 0.65));
+        font-size: 12px;
+        pointer-events: none;
+      }
+      .f3d-camera_popup .name {
+        font-weight: 600;
+        white-space: nowrap;
+      }
+      .f3d-camera_popup .trigger {
+        opacity: 0.85;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .f3d-box .close {
+        position: absolute;
+        top: 4px;
+        right: 4px;
+        justify-content: center;
+        width: 26px;
+        height: 26px;
+        border-radius: 50%;
+        background: rgba(0, 0, 0, 0.55);
+        --mdc-icon-size: 18px;
+      }
+      @keyframes f3d-appear {
+        from {
+          opacity: 0;
+          transform: scale(0.92);
+        }
+      }
+      .f3d-pins {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 0;
+        height: 0;
+        pointer-events: none;
+      }
+      .f3d-pin {
+        position: absolute;
+        left: 0;
+        top: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 30px;
+        height: 30px;
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+        border-radius: 50%;
+        border: 1px solid rgba(255, 255, 255, 0.7);
+        background: rgba(0, 0, 0, 0.55);
+        color: white;
+        cursor: pointer;
+        pointer-events: auto;
+        visibility: hidden;
+        --mdc-icon-size: 18px;
+      }
+      .f3d-pin:hover,
+      .f3d-pin:focus-visible {
+        background: rgba(0, 0, 0, 0.8);
+        outline: none;
+        box-shadow: 0 0 0 2px var(--primary-color, #03a9f4);
+      }
+      .f3d-pin.off {
+        opacity: 0.5;
+      }
+      .f3d-pin.alert {
+        background: rgba(229, 57, 53, 0.9);
+        animation: f3d-ring 1.2s ease-out infinite;
+      }
+      .f3d-pins.picking .f3d-pin {
+        pointer-events: none;
+      }
+      @keyframes f3d-ring {
+        from {
+          box-shadow: 0 0 0 0 rgba(229, 57, 53, 0.7);
+        }
+        to {
+          box-shadow: 0 0 0 14px rgba(229, 57, 53, 0);
+        }
+      }
       .f3d-loading {
         display: flex;
         flex-direction: column;
@@ -6346,7 +6726,9 @@ export class Floor3dCard extends LitElement {
         }
       }
       @media (prefers-reduced-motion: reduce) {
-        .f3d-icon {
+        .f3d-icon,
+        .f3d-pin.alert,
+        .f3d-camera_popup {
           animation: none;
         }
         .f3d-bar.indeterminate .f3d-fill {
