@@ -163,18 +163,21 @@ export function starsSvg(opacity = 1): string {
 const svgUrl = (svg: string): string => `url("data:image/svg+xml,${encodeURIComponent(svg)}")`;
 
 // backgroundColor: sky. The CSS background: the gradient of the sky and, at night, the stars and the
-// moon over it (phase from moonPhase, southern south of the equator).
+// moon over it (phase from moonPhase, southern south of the equator, moonSize the width of its disc
+// in pixels, 30 by default).
 export function skyBackground(
   elevation: number,
   clouds = 0,
-  night: { stars?: boolean; moon?: boolean; phase?: number; southern?: boolean } = {},
+  night: { stars?: boolean; moon?: boolean; phase?: number; southern?: boolean; moonSize?: number } = {},
 ): string {
   const shown = nightSky(elevation, clouds);
   const layers: string[] = [];
   if (night.moon && shown.moon > 0 && night.phase !== undefined && !isNaN(night.phase)) {
     // A new picture every hour or so of the cycle, not at every update.
     const phase = (Math.round(night.phase * 200) / 200) % 1;
-    layers.push(`${svgUrl(moonSvg(phase, night.southern, shown.moon))} 78% 12% / 60px 60px no-repeat`);
+    // The disc is 36% of the picture, which holds the halo too.
+    const size = Math.round((night.moonSize && night.moonSize > 0 ? night.moonSize : 30) / 0.36);
+    layers.push(`${svgUrl(moonSvg(phase, night.southern, shown.moon))} 78% 12% / ${size}px ${size}px no-repeat`);
   }
   if (night.stars && shown.stars > 0) layers.push(`${svgUrl(starsSvg(shown.stars))} 0 0 / 1600px 900px repeat-x`);
   layers.push(skyGradient(skyColors(elevation, clouds)));

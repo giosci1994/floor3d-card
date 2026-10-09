@@ -69,6 +69,7 @@
     "panel_disarming": "Wird unscharf geschaltet",
     "panel_triggered": "Ausgelöst",
     "camera_popup": "Kamera",
-    "camera_close": "Schließen"
+    "camera_close": "Schließen",
+    "box_collapse": "Einklappen"
   }
 }

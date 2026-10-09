@@ -35,6 +35,7 @@ const SWITCH_DEFAULTS: { [key: string]: 'yes' | 'no' } = {
   camera_popup_show: 'yes',
   stars_show: 'yes',
   moon_show: 'yes',
+  sky_clouds: 'yes',
   sky: 'no', // no longer used by the card
 };
 
@@ -56,6 +57,7 @@ const VALUE_DEFAULTS: { [key: string]: string | number } = {
   chips_position: 'bottom-right',
   camera_popup_position: 'bottom-right',
   camera_popup_duration: 20,
+  moon_size: 30,
 };
 
 // Switches inside the options block of an entity. They have no default: the card reads a missing
@@ -82,6 +84,7 @@ const TOP_NUMBERS = [
   'weather_count',
   'energy_top',
   'camera_popup_duration',
+  'moon_size',
 ];
 const BLOCK_NUMBERS: { [block: string]: string[] } = {
   light: ['lumens', 'decay', 'distance', 'angle'],

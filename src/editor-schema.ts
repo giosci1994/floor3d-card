@@ -75,6 +75,7 @@ export const SWITCHES: { [key: string]: 'yes' | 'no' } = {
   camera_popup_show: 'yes',
   stars_show: 'yes',
   moon_show: 'yes',
+  sky_clouds: 'yes',
   alarm_view: 'no',
 };
 // The same inside the options block of a type.
@@ -115,7 +116,15 @@ export const SECTIONS: Section[] = [
           text('style'),
         ),
         // The night of the sky background.
-        ...(config.backgroundColor === 'sky' ? [row(bool('stars_show'), bool('moon_show'))] : []),
+        ...(config.backgroundColor === 'sky'
+          ? [row(bool('stars_show'), bool('moon_show')), row(num('moon_size', { min: 8, max: 300, step: 1, unit_of_measurement: 'px' }), bool('sky_clouds'))]
+          : []),
+        // The ground under the house: a lawn, or a colour typed in.
+        {
+          name: 'ground',
+          options_key: 'options.ground',
+          selector: { select: { mode: 'dropdown', custom_value: true, options: [{ value: 'grass', label: 'grass' }] } },
+        },
       ],
     ],
   },

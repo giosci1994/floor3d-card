@@ -69,6 +69,7 @@
     "panel_disarming": "Disarming",
     "panel_triggered": "Triggered",
     "camera_popup": "Camera",
-    "camera_close": "Close"
+    "camera_close": "Close",
+    "box_collapse": "Collapse"
   }
 }

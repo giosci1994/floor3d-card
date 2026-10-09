@@ -69,6 +69,7 @@
     "panel_disarming": "In disinserimento",
     "panel_triggered": "Allarme",
     "camera_popup": "Telecamera",
-    "camera_close": "Chiudi"
+    "camera_close": "Chiudi",
+    "box_collapse": "Riduci"
   }
 }

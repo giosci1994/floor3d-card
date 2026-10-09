@@ -186,7 +186,10 @@
     "stars_show": "Stelle di notte",
     "moon_show": "Luna di notte",
     "icon": "Icona",
-    "popup_on": "Sensori"
+    "popup_on": "Sensori",
+    "ground": "Terreno",
+    "moon_size": "Grandezza della luna",
+    "sky_clouds": "Nuvole del meteo"
   },
   "helpers": {
     "path": "Per esempio /local/floor3d/",
@@ -264,7 +267,10 @@
     "camera_level": "L'icona compare solo con questo piano. Scegliendo il punto si imposta da solo",
     "stars_show": "Le stelle dopo il tramonto, meno con le nuvole",
     "moon_show": "La luna con la fase di oggi, dal tramonto",
-    "icon": "L'icona sulla mappa. Predefinita mdi:cctv"
+    "icon": "L'icona sulla mappa. Predefinita mdi:cctv",
+    "ground": "grass: un prato, oppure un colore (#rrggbb): una superficie sotto la casa che riceve le ombre del sole. Vuoto: nessuna",
+    "moon_size": "Larghezza della luna in pixel. Predefinita 30",
+    "sky_clouds": "Spento: il cielo ignora le nuvole dell'entità meteo, e stelle e luna si vedono sempre"
   },
   "options": {
     "language": {
@@ -360,6 +366,9 @@
       "daily": "Giornaliere",
       "hourly": "Orarie",
       "twice_daily": "Due volte al giorno"
+    },
+    "ground": {
+      "grass": "Prato"
     }
   },
   "types": {
