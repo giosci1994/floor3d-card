@@ -1,6 +1,19 @@
 ![floor3d-card mod](docs/images/banner.png)
 
-> **This is a fork** of [adizanni/floor3d-card](https://github.com/adizanni/floor3d-card) with updated libraries (three.js 0.186, Lit 3), a new card editor (objects picked with a tap in the preview), bug fixes and new features: see [FORK.md](FORK.md) for what changed. If the fork is useful to you, you can support it on [Buy Me a Coffee](https://buymeacoffee.com/giosci1994u). The rest of this page is the original documentation: the donation link and the ExportToHASS plugin below refer to the original card and its author.
+> **This is a fork** of [adizanni/floor3d-card](https://github.com/adizanni/floor3d-card) with updated libraries (three.js 0.186, Lit 3), a new card editor, bug fixes and new features, all described in [FORK.md](FORK.md). If the fork is useful to you, you can support it on [Buy Me a Coffee](https://buymeacoffee.com/giosci1994u). After the list below, this page is the original documentation: the donation link and the ExportToHASS plugin there refer to the original card and its author.
+
+## What this fork adds
+
+- [Card editor](FORK.md#card-editor): settings in sections; lists of entities, groups, views and rooms; objects picked with a tap in the preview; a pause while you edit.
+- [Languages](FORK.md#languages): the card and its editor in English, Italian and German (the card also in Norwegian), in the language of each user.
+- [Light](FORK.md#light-and-colours): the sun of `sun.sun` with its shadows, sun and sky from sensors for cloudy days, one light for a lamp made of many objects, and shadows kept within what the device can draw.
+- [Room maps](FORK.md#sensor-maps): temperature, presence, illuminance, humidity, CO₂, PM2.5, VOC, power or any other sensor, with a legend.
+- [Alarms](FORK.md#alarms) and [heating](FORK.md#heating-and-cooling): a room blinks with smoke, gas or a water leak; radiators glow while they heat.
+- [Covers](FORK.md#covers): roller shades and curtains that shorten, and venetian blinds whose slats turn with the tilt.
+- [Sky and weather](FORK.md#sky-and-weather): a sky behind the house that follows the sun, and the forecast in a corner.
+- [Boxes](FORK.md#boxes): what is on or open (a tap shows it in the model), energy, people, alarm panel, and any entity as a chip.
+- [New types](FORK.md#new-features): a TV screen that lights the room with its picture, person trackers, a shower, info boxes.
+- And more: [views from the page address](FORK.md#views-from-the-page-address), [object ids with `*`](FORK.md#object-ids-with-), [compressed models](FORK.md#compressed-models), and many [bugs of the original card fixed](FORK.md#fixes).
 
 # floor3d-card (aka Your Home Digital Twin)
 
@@ -29,7 +42,7 @@ If the original floor3d-card is installed, remove it from HACS first: both defin
 Copy all the `.js` files of the [latest release](https://github.com/giosci1994/floor3d-card/releases/latest) into a folder of `/config/www` and add `floor3d-card.js` as a resource (details in [FORK.md](FORK.md#installation)). It's **required** to load this card as `module`.
 
 ```yaml
-- url: /local/floor3d-card/floor3d-card.js?v=2.0.0
+- url: /local/floor3d-card/floor3d-card.js?v=2.9.0 # the version: change it at every update
   type: module
 ```
 
@@ -81,7 +94,7 @@ In this fork the yes/no switches also accept `true`/`false`, and the objects of 
 | path             | string | **Required** | path to the Waterforont obj (objects), mtl (material) and other files.                                                                                                     |
 | objfile          | string | **Required** | object file name (.obj) for Waterfront format or glb file name for the binary (condensed) 3d format (still experimental).                                                                                                                                 |
 | mtlfile          | string | **Required** | material file name (.mtl) Waterfront format. Only relevant when objefile has obj extension (no glb)                                                                                                                               |
-| backgroundColor  | string | '#aaaaaa'    | canvas background color: #RGB notation (ex #aaaaaa), color name (ex. 'white') or 'transparent' for a transparent background                                       |
+| backgroundColor  | string | '#aaaaaa'    | canvas background color: #RGB notation (ex #aaaaaa), color name (ex. 'white') or 'transparent' for a transparent background; this fork adds 'sky', a sky that follows the sun (see [FORK.md](FORK.md#sky-and-weather))                                       |
 | header  | string | 'yes'    | if the header will be displayed or not                                                                                                                                                   |
 | editModeNotifications | string | 'yes'    | 'yes' to use the double click in edit mode to pop up the object ids or the camera position, 'no' to stop displaying popups                                            | 
 | selectionMode | string | 'no'    | 'yes' to activate the selection mode and select group of objects, the list of selected objects will appear in the console                                            |
@@ -113,7 +126,7 @@ For each entity in the entities list you need to specify the following options:
 | entity_template | string | none         | a JavaScript template formatted as follow: [[[ template]]]. Template is a valid Javascript command. With $entity you specify the state of the entity (a number when the state is numeric)                                                                                                                                                |
 | action          | string | none         | on-click behaviour: it can be 'more-info' to open the more-info dialog for the entity associated to the clicked objec; it can be 'overlay' to display the state of the entity in the ovelay panel; it can be 'default' to do the same action that used to be associated to the double click action. |
 | object_id       | string | **Required** | the name of the object in the model to bind to your entity.                                                                                                                                                                                                                                        |
-| type3d          | string | **Required** | the type of object binding. Values are: light, hide, show, color, text, room, gesture, door, cover, rotate, camera; this fork adds image, info, shower and tracker (see [FORK.md](FORK.md#new-features))                                                                                            |
+| type3d          | string | **Required** | the type of object binding. Values are: light, hide, show, color, text, room, gesture, door, cover, rotate, camera; this fork adds image, info, shower, tracker, climate and alarm (see [FORK.md](FORK.md#new-features))                                                                                            |
 
 **Note: to facilitate the configuration you can load the model without entity bindings and you will be able to show the object_id you want to bind to by double clicking on the object**
 
