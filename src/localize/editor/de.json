@@ -186,7 +186,10 @@
     "stars_show": "Sterne in der Nacht",
     "moon_show": "Mond in der Nacht",
     "icon": "Symbol",
-    "popup_on": "Sensoren"
+    "popup_on": "Sensoren",
+    "ground": "Boden",
+    "moon_size": "Mondgröße",
+    "sky_clouds": "Wolken des Wetters"
   },
   "helpers": {
     "path": "Zum Beispiel /local/floor3d/",
@@ -264,7 +267,10 @@
     "camera_level": "Das Symbol erscheint nur mit dieser Etage. Die Auswahl des Punktes setzt sie",
     "stars_show": "Sterne nach Sonnenuntergang, weniger bei Wolken",
     "moon_show": "Der Mond mit seiner heutigen Phase, ab Sonnenuntergang",
-    "icon": "Das Symbol auf der Karte. Standard mdi:cctv"
+    "icon": "Das Symbol auf der Karte. Standard mdi:cctv",
+    "ground": "grass: eine Wiese, oder eine Farbe (#rrggbb): eine Fläche unter dem Haus, die die Schatten der Sonne aufnimmt. Leer: keine",
+    "moon_size": "Breite des Mondes in Pixeln. Standard 30",
+    "sky_clouds": "Aus: der Himmel ignoriert die Wolken der Wetter-Entität, Sterne und Mond sind immer zu sehen"
   },
   "options": {
     "language": {
@@ -360,6 +366,9 @@
       "daily": "Täglich",
       "hourly": "Stündlich",
       "twice_daily": "Zweimal täglich"
+    },
+    "ground": {
+      "grass": "Wiese"
     }
   },
   "types": {

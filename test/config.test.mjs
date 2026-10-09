@@ -277,3 +277,12 @@ test('cameras: position as [x, y, z] once complete, sensors as a list, an id alo
   assert.deepEqual(one.cameras, ['camera.a'], 'one alone: a list');
   assert.deepEqual(normalizeConfig({ cameras: [{ entity: 'camera.a', popup_on: 'event.bell' }], entities: [] }).cameras[0].popup_on, ['event.bell']);
 });
+
+test('night sky and ground: moon_size written as a number, defaults left out, ground kept', () => {
+  const c = cleanConfig({ moon_size: '45', sky_clouds: true, ground: 'grass', entities: [] });
+  assert.equal(c.moon_size, 45);
+  assert.ok(!('sky_clouds' in c), 'yes is the default');
+  assert.equal(c.ground, 'grass');
+  assert.equal(cleanConfig({ sky_clouds: false, entities: [] }).sky_clouds, 'no');
+  assert.ok(!('moon_size' in cleanConfig({ moon_size: 30, entities: [] })), '30 is the default');
+});

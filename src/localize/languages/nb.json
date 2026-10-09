@@ -69,6 +69,7 @@
     "panel_disarming": "Deaktiverer",
     "panel_triggered": "Utløst",
     "camera_popup": "Kamera",
-    "camera_close": "Lukk"
+    "camera_close": "Lukk",
+    "box_collapse": "Skjul"
   }
 }

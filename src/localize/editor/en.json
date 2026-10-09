@@ -189,7 +189,10 @@
     "stars_show": "Stars at night",
     "moon_show": "Moon at night",
     "icon": "Icon",
-    "popup_on": "Sensors"
+    "popup_on": "Sensors",
+    "ground": "Ground",
+    "moon_size": "Moon size",
+    "sky_clouds": "Clouds of the weather"
   },
   "helpers": {
     "path": "For example /local/floor3d/",
@@ -267,7 +270,10 @@
     "camera_level": "The icon shows only with this level. Picking the point sets it",
     "stars_show": "Stars after the sunset, fewer with clouds",
     "moon_show": "The moon with its phase of today, from the sunset",
-    "icon": "The icon on the map. Default mdi:cctv"
+    "icon": "The icon on the map. Default mdi:cctv",
+    "ground": "grass: a lawn, or a colour (#rrggbb): a surface under the house that takes the shadows of the sun. Empty: none",
+    "moon_size": "Width of the moon in pixels. Default 30",
+    "sky_clouds": "Off: the sky ignores the clouds of the weather entity, and stars and moon always show"
   },
   "options": {
     "language": {
@@ -387,6 +393,9 @@
       "daily": "Daily",
       "hourly": "Hourly",
       "twice_daily": "Twice a day"
+    },
+    "ground": {
+      "grass": "Lawn"
     }
   },
   "types": {

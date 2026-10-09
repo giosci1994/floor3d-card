@@ -1293,6 +1293,18 @@ test('night sky: stars and the moon come out after the sunset over the gradient,
   assert.ok((await page.evaluate(() => window.__card._renderer.domElement.style.background)).includes('linear-gradient'), 'over the gradient');
   await page.evaluate(() => window.__setState('weather.home', 'cloudy', { cloud_coverage: 100 }));
   assert.deepEqual(await layers(), ['moon'], 'overcast: no stars, a glow of the moon');
+  // sky_clouds: no: the sky ignores the clouds; moon_size: the width of the moon.
+  await page.evaluate(() => {
+    const card = window.__card;
+    card._config = { ...card._config, sky_clouds: 'no', moon_size: 60 };
+    window.__setState('sun.sun', 'below_horizon', { azimuth: 340, elevation: -20.5 });
+  });
+  assert.deepEqual(await layers(), ['moon', 'stars'], 'stars and moon through the clouds');
+  assert.ok((await page.evaluate(() => window.__card._renderer.domElement.style.background)).includes('167px 167px'), 'a moon of 60 px');
+  await page.evaluate(() => {
+    const card = window.__card;
+    card._config = { ...card._config, sky_clouds: 'yes', moon_size: undefined };
+  });
   await page.evaluate(() => {
     const card = window.__card;
     window.__setState('weather.home', 'sunny', { cloud_coverage: 0 });
@@ -1306,6 +1318,167 @@ test('night sky: stars and the moon come out after the sunset over the gradient,
     window.__setState('sun.sun', 'below_horizon', { azimuth: 340, elevation: -22 });
   });
   assert.deepEqual(await layers(), []);
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+// The colour of the picture at a point of the canvas (fractions of its width and height).
+const pixelAt = (page, fx, fy) =>
+  page.evaluate(
+    ({ fx, fy }) => {
+      const card = window.__card;
+      card._render(); // the drawing buffer can be read only in the task that draws it
+      const source = card._renderer.domElement;
+      const canvas = document.createElement('canvas');
+      canvas.width = source.width;
+      canvas.height = source.height;
+      const g = canvas.getContext('2d');
+      g.drawImage(source, 0, 0);
+      return Array.from(g.getImageData(Math.round(fx * source.width), Math.round(fy * source.height), 1, 1).data.slice(0, 3));
+    },
+    { fx, fy },
+  );
+
+test('ground: a lawn under the house that takes the shadows of the sun, outside the model; or a colour', { timeout: TIMEOUT }, async () => {
+  const ground = (page) =>
+    page.evaluate(() => {
+      const card = window.__card;
+      const g = card._scene.getObjectByName('f3d_ground');
+      return {
+        sunBox: Math.round((card._sun.shadow.camera.right / card._modelRadius) * 10) / 10,
+        units: card._textureUnits.units,
+        ...(g && {
+          receiveShadow: g.receiveShadow,
+          castShadow: g.castShadow,
+          lawn: !!g.material.map,
+          color: '#' + g.material.color.getHexString(),
+          inModel: !!card._bboxmodel.getObjectById(g.id),
+          pickable: card._raycasting.includes(g),
+          listed: card._modelObjectNames().includes('f3d_ground'),
+          y: g.position.y, // the house stands on 0
+          wide: g.geometry.boundingSphere ? g.geometry.boundingSphere.radius >= 2.5 * card._modelRadius * 0.99 : true,
+        }),
+      };
+    });
+  // Without ground: the background where the model ends.
+  let { page, errors } = await open(house());
+  const before = await pixelAt(page, 0.5, 0.04);
+  const without = await ground(page);
+  assert.deepEqual(without.sunBox, 1, 'the shadow of the sun fits the model');
+  await page.close();
+  assert.deepEqual(errors, []);
+
+  ({ page, errors } = await open(house({ ground: 'grass' })));
+  const lawn = await ground(page);
+  assert.deepEqual(lawn, {
+    sunBox: 1.5,
+    units: without.units,
+    receiveShadow: true,
+    castShadow: false,
+    lawn: true,
+    color: '#ffffff',
+    inModel: false,
+    pickable: false,
+    listed: false,
+    y: -0.5,
+    wide: true,
+  });
+  const [r, g, b] = await pixelAt(page, 0.5, 0.04);
+  assert.ok(g > r && g > b && g > before[1] + 10, 'far from the house, the lawn instead of the background: ' + [r, g, b] + ' / ' + before);
+  await page.close();
+  assert.deepEqual(errors, []);
+
+  ({ page, errors } = await open(house({ ground: '#806040', shadow: 'no' })));
+  const colour = await ground(page);
+  assert.deepEqual([colour.color, colour.lawn, colour.receiveShadow], ['#806040', false, false]);
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+test('boxes: weather and people fold to what matters and open with a tap, remembered on the device; on a phone a narrow box stays beside the menus', { timeout: TIMEOUT }, async () => {
+  const config = house({
+    rooms: [{ name: 'Living room', object_id: 'floor_living', temperature: 'sensor.t_living' }],
+    zoom_areas: [{ zoom: 'Living', camera_position: { x: -200, y: 500, z: 300 }, camera_target: { x: -200, y: 0, z: 0 } }],
+    status_show: 'yes',
+    weather: 'weather.home',
+    people: ['person.anna', 'person.marco', 'person.lucia'],
+    entities: lamps(2),
+  });
+  const boxStates = states({
+    'weather.home': { state: 'rainy', attributes: { temperature: 11, supported_features: 1 } },
+    'person.anna': { state: 'home', attributes: { friendly_name: 'Anna Rossi', entity_picture: PICTURE } },
+    'person.marco': { state: 'not_home', attributes: { friendly_name: 'Marco' } },
+    'person.lucia': { state: 'Work', attributes: { friendly_name: 'Lucia' } },
+  });
+  const { page, errors } = await open(config, boxStates);
+  await page.evaluate(() =>
+    window.__forecast('weather.home', [
+      { datetime: '2026-10-12T12:00:00+00:00', condition: 'sunny', temperature: 19, templow: 9 },
+      { datetime: '2026-10-13T12:00:00+00:00', condition: 'cloudy', temperature: 16, templow: 10 },
+    ]),
+  );
+  await moreInfo(page);
+  const tap = (selector) => page.evaluate((selector) => window.__card.shadowRoot.querySelector(selector).click(), selector);
+  const parts = () =>
+    page.evaluate(() => {
+      const root = window.__card.shadowRoot;
+      return {
+        avatars: root.querySelectorAll('.f3d-people .avatar').length,
+        names: root.querySelectorAll('.f3d-people .name').length,
+        forecasts: root.querySelectorAll('.f3d-weather .item').length,
+      };
+    });
+  assert.deepEqual(await parts(), { avatars: 3, names: 3, forecasts: 2 });
+  // The chevrons fold them: the weather now, the faces; nothing opens.
+  await tap('.f3d-weather .fold');
+  await tap('.f3d-people .fold');
+  let weather = await boxOf(page, 'weather');
+  let people = await boxOf(page, 'people');
+  assert.match(weather.classes, /\bcollapsed\b/);
+  assert.match(people.classes, /\bcollapsed\b/);
+  assert.equal(weather.text, '11°');
+  assert.deepEqual(await parts(), { avatars: 3, names: 0, forecasts: 0 });
+  assert.deepEqual(await page.evaluate(() => window.__moreInfo), []);
+  // Remembered on this device: a card that reads it again starts folded.
+  assert.deepEqual(await page.evaluate(() => JSON.parse(localStorage.getItem('floor3d-card-collapsed:/local/floor3d/home.obj'))), ['weather', 'people']);
+  await page.evaluate(() => {
+    window.__card._collapsed = undefined;
+    window.__card._renderBoxes(true);
+  });
+  assert.match((await boxOf(page, 'weather')).classes, /\bcollapsed\b/);
+  // A tap on a folded box opens it, and only that; open, a tap on the weather opens the entity.
+  await tap('.f3d-weather');
+  weather = await boxOf(page, 'weather');
+  assert.doesNotMatch(weather.classes, /\bcollapsed\b/);
+  assert.equal((await parts()).forecasts, 2);
+  assert.deepEqual(await page.evaluate(() => window.__moreInfo), []);
+  await tap('.f3d-weather');
+  assert.deepEqual(await page.evaluate(() => window.__moreInfo), ['weather.home']);
+  await tap('.f3d-people');
+  assert.equal((await parts()).names, 3);
+
+  // On a phone: the status box stays at the top beside the menus, the people (wider) under it.
+  const rects = () =>
+    page.evaluate(() => {
+      const c = window.__card;
+      const r = (el) => {
+        const b = el.getBoundingClientRect();
+        return [b.left, b.top, b.right, b.bottom].map(Math.round);
+      };
+      return { menus: r(c._zoommenu), status: r(c.shadowRoot.querySelector('.f3d-status')), people: r(c.shadowRoot.querySelector('.f3d-people')) };
+    });
+  const overlap = (a, b) => a[0] < b[2] && b[0] < a[2] && a[1] < b[3] && b[1] < a[3];
+  await page.addStyleTag({ content: '#wrap { width: 420px !important; }' });
+  await page.waitForTimeout(300);
+  let r = await rects();
+  assert.equal(r.status[1], r.menus[1], 'the status box at the height of the menus: ' + JSON.stringify(r));
+  assert.ok(!overlap(r.status, r.menus) && !overlap(r.people, r.menus) && r.people[1] > r.status[3], JSON.stringify(r));
+  // Narrower, the status box meets the menus too: it goes under them.
+  await page.addStyleTag({ content: '#wrap { width: 300px !important; }' });
+  await page.waitForTimeout(300);
+  r = await rects();
+  assert.ok(r.status[1] >= r.menus[3], 'under the menus: ' + JSON.stringify(r));
+  assert.ok(!overlap(r.status, r.menus) && !overlap(r.people, r.menus), JSON.stringify(r));
   assert.deepEqual(errors, []);
   await page.close();
 });

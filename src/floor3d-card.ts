@@ -34,6 +34,7 @@ import { localize, pickLanguage } from './localize/localize';
 import { findSlats, slatAngle, Slat, tiltSlats } from './slats';
 import { moonPhase, skyBackground, weatherClouds } from './sky';
 import { CameraItem, cameraList, cameraName, newPopupMemory, popupStep, snapshotUrl } from './cameras';
+import { grassTexture, groundAlpha, groundStyle } from './ground';
 import { forecastLabel, forecastType, ForecastType, formatDegrees, weatherIcon } from './weather';
 import {
   BOX_KINDS,
@@ -293,6 +294,8 @@ export class Floor3dCard extends LitElement {
   private _shownTimer?: number;
   private _cornerObserver?: ResizeObserver; // the card changes width (a phone turned): placed again
   private _boxesChanged = false; // a box was drawn, added or removed: the corners are placed again
+  private _collapsed?: Set<string>; // the boxes folded on this device (weather, people), read once
+  private _ground?: THREE.Mesh; // ground: the surface under the house
   // Cameras (cameras.ts): their icons over the model (placed again at every frame), the pictures
   // that pop up (what the sensors did, the timer of the first picture to go away, the camera shown
   // and the timer of its next picture).
@@ -2182,6 +2185,8 @@ export class Floor3dCard extends LitElement {
       this._initTorch();
 
       this._initSky();
+
+      this._initGround();
 
       this._initSun();
 
@@ -4586,6 +4591,53 @@ export class Floor3dCard extends LitElement {
     }
   }
 
+  // ground: grass or a colour. A disc under the model, two and a half times as wide, that fades at its
+  // edge into the background, so that the sky still shows around the house. It takes the shadows (shadow: yes), casts none, and isn't part of the
+  // model: taps go through it, and the camera, the views and the sun are fitted to the house
+  // without it. The lawn is a texture made by the card (one texture unit, as a plain material:
+  // the shadows of the lamps keep their limit); the fade is in the colours of the vertices.
+  private _initGround(): void {
+    this._ground?.removeFromParent();
+    this._ground = undefined;
+    const style = groundStyle(this._config.ground);
+    if (!style || !this._modelCenter) return;
+    const R = Math.max(this._modelRadius * 2.5, 1500);
+    const geometry = new THREE.RingGeometry(0.01, R, 96, 8);
+    geometry.rotateX(-Math.PI / 2);
+    const position = geometry.getAttribute('position');
+    const colors = new Float32Array(position.count * 4);
+    for (let i = 0; i < position.count; i++) {
+      colors.set([1, 1, 1, groundAlpha(Math.hypot(position.getX(i), position.getZ(i)), R)], i * 4);
+    }
+    geometry.setAttribute('color', new THREE.BufferAttribute(colors, 4));
+    const material = new THREE.MeshLambertMaterial({ vertexColors: true, transparent: true, depthWrite: false });
+    material.name = 'f3d_ground';
+    if (style.kind === 'grass') {
+      const size = 256;
+      const texture = new THREE.DataTexture(grassTexture(size), size, size);
+      texture.colorSpace = THREE.SRGBColorSpace;
+      texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+      texture.magFilter = THREE.LinearFilter;
+      texture.minFilter = THREE.LinearMipmapLinearFilter;
+      texture.generateMipmaps = true;
+      texture.anisotropy = this._renderer.capabilities.getMaxAnisotropy();
+      texture.repeat.set((2 * R) / 300, (2 * R) / 300); // a tile every 3 m
+      texture.needsUpdate = true;
+      material.map = texture;
+    } else {
+      material.color.set(style.color); // three.js warns about a name it doesn't know
+    }
+    const ground = new THREE.Mesh(geometry, material);
+    ground.name = 'f3d_ground';
+    const bottom = new THREE.Box3().setFromObject(this._bboxmodel).min.y;
+    ground.position.set(this._modelCenter.x, bottom - 0.5, this._modelCenter.z);
+    ground.receiveShadow = this._config.shadow == 'yes';
+    ground.castShadow = false;
+    ground.renderOrder = -1; // before the glass of the windows, which shows it through
+    this._scene.add(ground);
+    this._ground = ground;
+  }
+
   // Sun (sun: yes): a directional light placed like sun.sun (azimuth and elevation), using the north
   // of the config. Its shadow covers the whole model and is redrawn when the sun moves.
   private _initSun(): void {
@@ -4597,7 +4649,8 @@ export class Floor3dCard extends LitElement {
     this._scene.add(this._sun);
     this._scene.add(this._sunTarget);
     if (this._config.sun_shadow != 'no') {
-      const r = this._modelRadius;
+      // With a ground the shadow reaches farther: at sunset the shadow of the house falls on it.
+      const r = this._modelRadius * (this._ground ? 1.5 : 1);
       const camera = this._sun.shadow.camera;
       camera.left = -r;
       camera.right = r;
@@ -4795,9 +4848,10 @@ export class Floor3dCard extends LitElement {
       el.style.top = where.startsWith('top') ? offset + 'px' : '';
       el.style.bottom = where.startsWith('bottom') ? offset + 'px' : '';
     });
-    // On a narrow card the two corners of a side meet: at the top, the boxes on the left go under
-    // the menus and the boxes on the right; at the bottom, the boxes on the right go above the ones
-    // on the left.
+    // On a narrow card the two corners of a side meet. At the top, a box on the left that would meet
+    // the menus or a box on the right goes under them, and the boxes after it with it; the ones
+    // before it stay at the top, beside the menus. At the bottom, the boxes on the right go above the
+    // ones on the left.
     const card = this._card.getBoundingClientRect();
     const box = (el?: HTMLElement): DOMRect | null => {
       const r = el && el.childElementCount ? el.getBoundingClientRect() : null;
@@ -4805,10 +4859,18 @@ export class Floor3dCard extends LitElement {
     };
     const across = (a: DOMRect, b: DOMRect): boolean => a.left < b.right && b.left < a.right;
     const topLeft = this._corners.get('top-left');
-    const left = box(topLeft);
-    if (left) {
-      const right = [this._zoommenu, this._corners.get('top-right')].map(box).filter((r) => r && across(left, r));
-      if (right.length) topLeft.style.top = Math.round(Math.max(...right.map((r) => r.bottom)) - card.top + 6) + 'px';
+    if (topLeft) {
+      const lefts = Array.from(topLeft.children) as HTMLElement[];
+      lefts.forEach((el) => (el.style.marginTop = ''));
+      const topRight = this._corners.get('top-right');
+      const obstacles = [box(this._zoommenu), ...(topRight ? (Array.from(topRight.children) as HTMLElement[]) : []).map((el) => el.getBoundingClientRect())].filter(
+        (r) => r && r.height > 0,
+      );
+      lefts.forEach((el) => {
+        const r = el.getBoundingClientRect();
+        const met = obstacles.filter((o) => across(r, o) && r.top < o.bottom && o.top < r.bottom);
+        if (met.length) el.style.marginTop = Math.round(Math.max(...met.map((o) => o.bottom)) - r.top + 6) + 'px';
+      });
     }
     const bottomRight = this._corners.get('bottom-right');
     const below = box(this._corners.get('bottom-left'));
@@ -5021,14 +5083,32 @@ export class Floor3dCard extends LitElement {
   // the room: a tap on it goes there.
   private _renderPeople(force: boolean): void {
     const people = peopleList(this._config.people);
-    const box = this._box('people', people.length && this._shown('people_show', true) ? corner(this._config.people_position, 'top-left') : null);
+    const where = corner(this._config.people_position, 'top-left');
+    const box = this._box('people', people.length && this._shown('people_show', true) ? where : null);
     if (!box) return;
     const states = this._hass.states;
+    const collapsed = this._isCollapsed('people');
     const deps: unknown[] = people.flatMap((p) => [states[p.entity], p.room ? states[p.room] : undefined]);
-    deps.push(this._language());
+    deps.push(this._language(), collapsed, where);
     if (!this._boxChanged('people', deps, force)) return;
     const rooms: any[] = Array.isArray(this._config.rooms) ? this._config.rooms : [];
-    box.setAttribute('aria-label', this._t('people'));
+    this._foldable(box, 'people', where, collapsed, this._t('people'));
+    if (collapsed) {
+      // Folded: only the faces, grey for who is away.
+      render(
+        html`${people.map((p) => {
+          const person = states[p.entity];
+          if (!person) return nothing;
+          const name = String(person.attributes.friendly_name || p.entity);
+          const picture = person.attributes.entity_picture as string | undefined;
+          return html`<span class="avatar ${person.state === 'home' ? '' : 'away'}" title=${name}
+            >${picture ? html`<img src=${picture} alt="" />` : html`<span>${initials(name)}</span>`}</span
+          >`;
+        })}${this._foldMark('people', where, true)}`,
+        box,
+      );
+      return;
+    }
     render(
       html`${people.map((p) => {
         const person = states[p.entity];
@@ -5063,9 +5143,94 @@ export class Floor3dCard extends LitElement {
               : html`<span class="place">${place.home ? this._t('people_home') : place.zone || this._t('people_away')}</span>`}
           </div>
         `;
-      })}`,
+      })}${this._foldMark('people', where, false)}`,
       box,
     );
+  }
+
+  // --- Boxes that fold (weather, people) ---------------------------------------------------------
+
+  // Folded, a box shows only what matters most (the weather now, the faces of the people) and a tap
+  // anywhere on it opens it again; open, its chevron folds it. Remembered on this device, for this
+  // model (the browser storage; without it, until the page is loaded again).
+  private _collapseKey(): string {
+    return 'floor3d-card-collapsed:' + (this._config.path || '') + (this._config.objfile || '');
+  }
+
+  private _isCollapsed(kind: string): boolean {
+    if (!this._collapsed) {
+      this._collapsed = new Set();
+      try {
+        const saved = JSON.parse(window.localStorage.getItem(this._collapseKey()) || '[]');
+        if (Array.isArray(saved)) saved.forEach((k) => typeof k === 'string' && this._collapsed.add(k));
+      } catch {
+        // No storage (a private window): nothing folded yet.
+      }
+    }
+    return this._collapsed.has(kind);
+  }
+
+  private _setCollapsed(kind: string, collapsed: boolean): void {
+    this._isCollapsed(kind);
+    if (collapsed) this._collapsed.add(kind);
+    else this._collapsed.delete(kind);
+    try {
+      window.localStorage.setItem(this._collapseKey(), JSON.stringify(Array.from(this._collapsed)));
+    } catch {
+      // As above.
+    }
+    this._renderBoxes(true);
+  }
+
+  // A box that folds: folded, the whole box opens it; open, the taps go to its parts.
+  private _foldable(box: HTMLElement, kind: string, where: Corner, collapsed: boolean, label: string): void {
+    box.classList.toggle('collapsed', collapsed);
+    box.classList.toggle('end', !where.endsWith('left')); // the chevron away from the corner
+    box.setAttribute('aria-label', label);
+    if (!collapsed) {
+      box.removeAttribute('aria-expanded');
+      if (box.getAttribute('role') === 'button' && kind !== 'weather') {
+        box.removeAttribute('role');
+        box.removeAttribute('tabindex');
+        box.onclick = null;
+        box.onkeydown = null;
+      }
+      return;
+    }
+    const open = (): void => this._setCollapsed(kind, false);
+    box.setAttribute('role', 'button');
+    box.setAttribute('aria-expanded', 'false');
+    box.tabIndex = 0;
+    box.onclick = (ev) => {
+      ev.stopPropagation();
+      open();
+    };
+    box.onkeydown = (ev) => {
+      if (ev.key === 'Enter' || ev.key === ' ') {
+        ev.preventDefault();
+        open();
+      }
+    };
+  }
+
+  // The chevron of a box that folds, on its side away from the corner: a button that folds the open
+  // box, or the mark of a folded one (the whole box opens it).
+  private _foldMark(kind: string, where: Corner, collapsed: boolean): TemplateResult {
+    const towardCorner = where.endsWith('left') ? 'mdi:chevron-left' : 'mdi:chevron-right';
+    const awayFromCorner = where.endsWith('left') ? 'mdi:chevron-right' : 'mdi:chevron-left';
+    if (collapsed) return html`<ha-icon class="fold" icon=${awayFromCorner}></ha-icon>`;
+    return html`<button
+      class="fold"
+      title=${this._t('box_collapse')}
+      aria-label=${this._t('box_collapse')}
+      aria-expanded="true"
+      @click=${(ev: Event) => {
+        ev.stopPropagation();
+        this._setCollapsed(kind, true);
+      }}
+    >
+      <ha-icon icon=${towardCorner}></ha-icon>
+    </button>`;
   }
 
   // alarm_panel: the state of an alarm_control_panel, green while armed, orange while it changes,
@@ -5119,9 +5284,24 @@ export class Floor3dCard extends LitElement {
   private _renderWeather(force = false): void {
     const entityId = this._config.weather;
     const stateObj = entityId ? this._hass.states[entityId] : undefined;
-    const box = this._box('weather', stateObj && this._shown('weather_show', true) ? corner(this._config.weather_position, 'bottom-left') : null);
-    if (!box || !this._boxChanged('weather', [stateObj, this._forecast, this._forecastType, this._language()], force)) return;
-    this._wholeBox(box, entityId, this._t('weather'));
+    const where = corner(this._config.weather_position, 'bottom-left');
+    const box = this._box('weather', stateObj && this._shown('weather_show', true) ? where : null);
+    const collapsed = this._isCollapsed('weather');
+    if (!box || !this._boxChanged('weather', [stateObj, this._forecast, this._forecastType, this._language(), collapsed, where], force)) return;
+    // Open, a tap opens the entity; folded, it opens the box.
+    if (!collapsed) this._wholeBox(box, entityId, this._t('weather'));
+    this._foldable(box, 'weather', where, collapsed, this._t('weather'));
+    if (collapsed) {
+      render(
+        html`<div class="now">
+            <ha-icon icon=${weatherIcon(stateObj.state)}></ha-icon>
+            <span>${formatDegrees(stateObj.attributes.temperature)}</span>
+          </div>
+          ${this._foldMark('weather', where, true)}`,
+        box,
+      );
+      return;
+    }
     const forecast: any[] = (Array.isArray(stateObj.attributes.forecast) ? stateObj.attributes.forecast : this._forecast) || [];
     const count = Math.min(12, Math.max(0, Math.round(this._num(this._config.weather_count, 4))));
     const type = this._forecastType || 'daily';
@@ -5146,6 +5326,7 @@ export class Floor3dCard extends LitElement {
             </div>
           `,
         )}
+        ${this._foldMark('weather', where, false)}
       `,
       box,
     );
@@ -5371,17 +5552,18 @@ export class Floor3dCard extends LitElement {
   }
 
   // backgroundColor: sky. The colours of the sky for the elevation of the sun entity (the one of the
-  // day without it), greyer with the clouds of the weather entity of the forecast, if any; at night
-  // the stars and the moon (stars_show, moon_show), the moon as it is seen from the hemisphere of the
-  // house.
+  // day without it), greyer with the clouds of the weather entity of the forecast, if any (unless
+  // sky_clouds: no); at night the stars and the moon (stars_show, moon_show, moon_size), the moon as
+  // it is seen from the hemisphere of the house.
   private _skyBackground(): string {
     const weather = this._config.weather && this._hass ? this._hass.states[this._config.weather] : undefined;
     const latitude = this._hass && this._hass.config ? Number((this._hass.config as any).latitude) : NaN;
-    return skyBackground(this._sunAngles()[1], weatherClouds(weather), {
+    return skyBackground(this._sunAngles()[1], this._shown('sky_clouds', true) ? weatherClouds(weather) : 0, {
       stars: this._shown('stars_show', true),
       moon: this._shown('moon_show', true),
       phase: moonPhase(new Date()),
       southern: latitude < 0,
+      moonSize: Math.min(300, Math.max(8, this._num(this._config.moon_size, 30))),
     });
   }
 
@@ -6484,6 +6666,37 @@ export class Floor3dCard extends LitElement {
       }
       .f3d-people .place.link {
         text-decoration: underline dotted;
+      }
+      .f3d-box .fold {
+        flex: none;
+        align-self: center;
+        opacity: 0.75;
+        --mdc-icon-size: 20px;
+      }
+      .f3d-box.end .fold {
+        order: -1;
+      }
+      .f3d-box.collapsed {
+        flex-wrap: nowrap;
+        gap: 6px;
+        cursor: pointer;
+      }
+      .f3d-people span.avatar {
+        display: inline-flex;
+        align-items: center;
+        flex: none;
+      }
+      .f3d-people.collapsed {
+        align-items: center;
+      }
+      .f3d-people.collapsed .avatar {
+        width: 28px;
+        height: 28px;
+        font-size: 12px;
+      }
+      .f3d-people .avatar.away {
+        filter: grayscale(1);
+        opacity: 0.55;
       }
       .f3d-alarm_panel {
         border-left: 4px solid var(--f3d-panel, #9e9e9e);

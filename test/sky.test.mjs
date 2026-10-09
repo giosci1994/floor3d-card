@@ -73,7 +73,7 @@ test('sky background: at night the stars and the moon over the gradient, by day 
   const night = skyBackground(-20, 0, { stars: true, moon: true, phase: 0.5 });
   const layers = night.split(/, (?=url|linear)/);
   assert.equal(layers.length, 3);
-  assert.match(layers[0], /^url\("data:image\/svg\+xml,.*"\) 78% 12% \/ 60px 60px no-repeat$/, 'the moon first, over the stars');
+  assert.match(layers[0], /^url\("data:image\/svg\+xml,.*"\) 78% 12% \/ 83px 83px no-repeat$/, 'the moon first, over the stars: a disc of 30 px');
   assert.match(layers[1], /^url\("data:image\/svg\+xml,.*"\) 0 0 \/ 1600px 900px repeat-x$/);
   assert.equal(layers[2], skyGradient(skyColors(-20)));
   assert.ok(!/["#<>]/.test(layers[0].slice(5, -40)), 'the picture is encoded');
@@ -88,6 +88,7 @@ test('sky background: at night the stars and the moon over the gradient, by day 
     skyBackground(-20, 0, { moon: true, phase: 0.502 }),
     'the moon changes picture rarely',
   );
+  assert.match(skyBackground(-20, 0, { moon: true, phase: 0.5, moonSize: 60 }), / 167px 167px no-repeat/, 'moon_size: 60');
   assert.equal(starsSvg(), starsSvg(), 'always the same stars');
   assert.equal((starsSvg().match(/<circle/g) || []).length, 280);
 });

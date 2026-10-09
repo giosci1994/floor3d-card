@@ -21,7 +21,7 @@ If the original card is installed, remove it from HACS first: both define `custo
 ### By hand
 
 1. Download all the `.js` files of the [latest release](https://github.com/giosci1994/floor3d-card/releases/latest) (they are also in `dist/`) into a folder of `config/www`, for example `config/www/floor3d-card/`. There are six files: the card, its core (libraries and code shared with the editor), the editor, which is loaded only when you edit the card, the classic editor, which only old Home Assistant versions load, and the decoders of [compressed models](#compressed-models), loaded only by the models that need them.
-2. Add `/local/floor3d-card/floor3d-card.js?v=2.10.0` as a resource of type **module** (Settings › Dashboards › Resources). If the original card is installed too, remove it first.
+2. Add `/local/floor3d-card/floor3d-card.js?v=2.10.1` as a resource of type **module** (Settings › Dashboards › Resources). If the original card is installed too, remove it first.
 3. Reload the browser or the app.
 
 At every update copy the new files and change the `?v=` of the resource: Home Assistant serves `/local` with a 31-day cache, and so may a proxy in front of it, while a new query is a new address. The core and the editor have the hash of their content in the name, so they are new addresses too; the ones of older versions can be deleted.
@@ -78,6 +78,9 @@ The Validate workflow runs the HACS checks at every push and every night; the Bu
 - **Cameras on the map** (2.10, `cameras`): an icon over the point of the model where a camera is, picked with a tap in the editor; a tap on it opens the camera with its live. See [Cameras](#cameras).
 - **Camera pop-up** (2.10): when the doorbell rings or a camera sees motion, its picture pops up in a corner, a new one every second, for as long as it is needed. See [Cameras](#cameras).
 - **Stars and moon** (2.10): at night the sky of `backgroundColor: sky` gets its stars and the moon with its phase of the day. See [Sky and weather](#sky-and-weather).
+- **Ground** (2.10.1, `ground`): a lawn or a colour under the house, which takes the shadows of the sun and fades into the background at its edge. See [Sky and weather](#sky-and-weather).
+- **Moon size and clouds** (2.10.1): `moon_size` sets how big the moon is, and `sky_clouds: no` shows stars and moon whatever the weather. See [Sky and weather](#sky-and-weather).
+- **Boxes that fold** (2.10.1): the weather and the people fold to what matters most with a tap, and stay so on that device. On a phone, the boxes at the top left stay beside the menus when they fit. See [Boxes](#boxes).
 - **Languages** (2.6): the card and its editor in English, Italian and German (the card also in Norwegian). Each user sees the language of their Home Assistant profile; the `language` option sets one for the card. See [Languages](#languages).
 - **Shadows in the editor** (2.6): the card editor says how many lights cast a shadow and how many the device can draw, and names the lights left without. See [Shadows](#shadows).
 - **Version label** at the top of the card editor and in the console banner.
@@ -490,6 +493,9 @@ A cover of the original card slides: the pane goes up (or down) into its box, an
 
 - `backgroundColor: sky`: the background is a sky that follows the elevation of the sun (`sun.sun`, or `sun_entity`): dark blue at night, orange at the horizon at sunrise and sunset, light blue by day. With a `weather` entity, clouds turn it grey (its `cloud_coverage`, else its condition). The sky is a gradient behind the canvas: it costs nothing to the GPU. Unlike the `sky: yes` of the original card, still ignored, it changes nothing else: lights, colours and ground stay the same.
 - Stars and moon (2.10): at night the sky gets its stars, which come out when the sun is 3° below the horizon and are all there at 12°, and the moon, from the sunset, with its phase of the day. Clouds hide the stars (none when overcast) and dim the moon. The phase comes from the date, without a sensor; the moon is lit on the right while it grows and on the left while it wanes, the other way round when the latitude of Home Assistant is south of the equator. Like the sky they are drawn behind the canvas, nothing more for the GPU. `stars_show: no` and `moon_show: no` hide them.
+  - `moon_size` (2.10.1): the width of the moon in pixels, 30 by default (22 before 2.10.1).
+  - `sky_clouds: no` (2.10.1): the sky ignores the clouds of the weather entity: no grey, and stars and moon whatever the weather. The forecast box stays as it is.
+- `ground` (2.10.1): `grass` for a lawn drawn by the card, or a colour (`'#806040'`), under the house. It is two and a half times as wide as the house and fades into the background at its edge, so that the sky, its stars and its moon still show around the house. With `shadow: yes` it takes the shadows of the sun, which then covers one and a half times the model, for the long shadows of the evening. It isn't part of the model: taps go through it, and the camera, the views and the sun are fitted to the house as before. It takes no more texture units than a plain material, so the lamps keep their shadows (see [Shadows](#shadows)). A model with a ground of its own keeps it: the one of the card stays under it. The card draws no ground without this option, and the sand-coloured ground of the `sky: yes` of the original card is gone (see [Test page](#test-page)).
 - `weather: weather.home`: a box in a corner with the weather now and the next forecasts, in the language of the card. A tap opens the entity. Home Assistant sends the forecast as it changes (the same way as for its weather card), with nothing to set up.
   - `weather_position`: `bottom-left` (default), `bottom-right`, `top-left`, or `top-right` under the menus;
   - `weather_forecast`: `daily` (default), `hourly` or `twice_daily`; if the entity doesn't have it, the one it has;
@@ -497,15 +503,22 @@ A cover of the original card slides: the pane goes up (or down) into its box, an
 
 ```yaml
 backgroundColor: sky
+ground: grass
 weather: weather.home
 weather_forecast: hourly
 ```
 
 ![The sky by day and at sunset, with the forecast box](docs/images/sky-weather.jpg)
 
+![The lawn of the card under the house, with the shadow of the sun](docs/images/ground.jpg)
+
 ### Boxes
 
-Boxes in the corners of the card, next to the weather of [Sky and weather](#sky-and-weather), in the Boxes section of the editor. Each has its `*_position`: `top-left`, `top-right`, `bottom-left` or `bottom-right`. Each has a switch too: `weather_show`, `energy_show`, `people_show`, `alarm_panel_show` and `chips_show` set to `no` hide their box and keep its settings, and `status_show: yes` shows the status box. In the same corner they stack from the corner, and at the top right under the menus. On a narrow card (a phone) the boxes on the left go under the menus and the boxes on the right, and at the bottom the boxes on the right go above the ones on the left.
+Boxes in the corners of the card, next to the weather of [Sky and weather](#sky-and-weather), in the Boxes section of the editor. Each has its `*_position`: `top-left`, `top-right`, `bottom-left` or `bottom-right`. Each has a switch too: `weather_show`, `energy_show`, `people_show`, `alarm_panel_show` and `chips_show` set to `no` hide their box and keep its settings, and `status_show: yes` shows the status box. In the same corner they stack from the corner, and at the top right under the menus. On a narrow card (a phone), at the top a box on the left that would meet the menus or the boxes on the right goes under them, with the boxes after it, while the ones before it stay beside the menus (2.10.1; before, the whole corner went under them). At the bottom the boxes on the right go above the ones on the left.
+
+The weather and the people fold (2.10.1): the chevron on the side of the box away from its corner folds it to what matters most, the weather now or the faces of the people (grey for who is away), and a tap anywhere on the folded box opens it again. Each device remembers which boxes are folded (in the storage of the browser), so a phone can keep them folded while a computer shows them open.
+
+![On a phone: the boxes open, then the weather and the people folded](docs/images/boxes-folded.jpg)
 
 - `status_show: yes` (top left): what is on or open among the entities of the card. It counts lamps on (`light`), doors and windows open (`door`, or a binary sensor of class door, window, garage door or opening), locks open, and heaters or coolers working (`climate`). Open shutters and blinds don't count. A tap on a number outlines those objects in the model and frames them; a second tap, or ten seconds, ends it. With nothing on or open the box says so.
 - Energy (bottom left): `energy_power` (the house), `energy_solar`, `energy_grid` (positive from the grid, negative to it) and `energy_battery` (%), each a sensor in W or kW; a tap opens it. Under them, the plugs that use the most now (`energy_top`, 3): those of `energy_plugs`, else the power sensors of the rooms (see [Sensor maps](#sensor-maps)). A tap on a plug goes to its room.
@@ -617,7 +630,8 @@ Some of these were found and fixed first in other forks: [Steven-D-Morgan/hass-3
 - the slats of a blind turn with its tilt, also when they are one object with the rails and the cords; a roller shade shortens from its bottom and its bar follows; sliding covers are cut past the edge of their side, also when they open downward or sideways (2.8);
 - the sky follows the sun and turns grey with clouds; the forecast box shows the weather now and the next forecasts in the language of the card, asks for a forecast the entity has, opens the entity on a tap, and stops its subscription when the card goes away (2.8);
 - the status box counts what is on or open, outlines those objects on a tap and frames them; the energy, people, alarm panel and chips boxes show their entities, go to the room of a plug or of a person, and open their entities; every box stays in its corner without covering the others or the menus, also on a narrow card (2.9);
-- the icon of a camera stays over its point of the model as the view turns, hides with its level and opens the camera on a tap; its picture pops up when a sensor goes off or a doorbell event comes, gets a new picture every second, closes with the cross and goes away after the duration; the editor fills the place of a camera from a tap on the model, with its level; at night the stars and the moon come out over the sky, fewer with clouds (2.10).
+- the icon of a camera stays over its point of the model as the view turns, hides with its level and opens the camera on a tap; its picture pops up when a sensor goes off or a doorbell event comes, gets a new picture every second, closes with the cross and goes away after the duration; the editor fills the place of a camera from a tap on the model, with its level; at night the stars and the moon come out over the sky, fewer with clouds (2.10);
+- the ground lies just under the house, wide, outside the model (not tapped, not listed), takes the shadows of the sun without lowering the limit of the shadows, and shows where the background showed before; a colour instead of the lawn; `moon_size` and `sky_clouds: no` change the moon and show the stars through the clouds; the weather and the people fold with their chevron, open with a tap and are remembered on the device; on a phone a narrow box at the top left stays beside the menus, and goes under them only when it meets them (2.10.1).
 
 To run them locally: `npx playwright install --only-shell chromium` once, then `npm run build` and `npm run test:browser`.
 
