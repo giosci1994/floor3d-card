@@ -233,6 +233,8 @@ test('boxes: people and chips without empty rows, an id alone written as the id,
   assert.ok(!('chips' in c));
   assert.ok(!('alarm_panel_position' in c), 'top-right is the default');
   assert.ok(!('status_show' in cleanConfig({ status_show: 'no', entities: [] })));
+  assert.equal(cleanConfig({ status: true, entities: [] }).status_show, 'yes', 'the status: yes of before');
+  assert.ok(!('status' in normalizeConfig({ status: 'yes', entities: [] })));
   // A box hidden keeps its settings; shown is the default and goes away.
   const hidden = cleanConfig({ weather: 'weather.home', weather_show: false, chips: ['sensor.t'], chips_show: 'yes', hideMapMenu: true, entities: [] });
   assert.deepEqual([hidden.weather, hidden.weather_show, hidden.chips, 'chips_show' in hidden, hidden.hideMapMenu], ['weather.home', 'no', ['sensor.t'], false, 'yes']);
