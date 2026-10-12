@@ -3331,7 +3331,7 @@ export class Floor3dCard extends LitElement {
             } else if (entity.type3d == 'door') {
               this._updatedoor(entity, i);
             } else if (entity.type3d == 'text') {
-              this._canvas[i] = this._createTextCanvas(entity.text, this._text[i], this._unit_of_measurement[i]);
+              this._canvas[i] = this._createTextCanvas(entity, this._text[i], this._unit_of_measurement[i]);
               this._updatetext(entity, this._text[i], this._canvas[i], this._unit_of_measurement[i]);
             } else if (entity.type3d == 'rotate') {
               this._rotatecalc(entity, i);
