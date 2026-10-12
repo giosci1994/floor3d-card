@@ -409,6 +409,12 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
 
   private _startPick(target: PickTarget): void {
     const same = this._picking && JSON.stringify(this._picking) === JSON.stringify(target);
+
+    // If stopping picking (same target clicked again) and there's a pending config, flush it now
+    if (same && this._pending) {
+      this._flush();
+    }
+
     this._picking = same ? undefined : target;
     // Objects are picked in the model: a paused preview showing its picture loads it, and the
     // pause stays (before, picking resumed the preview, which went back to the initial view).
@@ -439,7 +445,7 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
       if (at >= 0) objects.splice(at, 1);
       else objects.push({ object_id: name });
 
-      // Update config without triggering preview rebuild while picking
+      // Update config immediately without flushing - keep picking active
       const config = copy(this._config);
       const list_array = config[list].slice();
       list_array[index] = { ...group, objects };
@@ -447,10 +453,10 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
       this._config = config;
       this._internal = normalizeConfig(config);
       this._pending = cleanConfig(config);
-      // Don't flush immediately - keep picking without rerendering
-      // The config will be sent when picking ends or after delay
+      // Clear any pending timer - don't flush while picking
       window.clearTimeout(this._timer);
-      this._timer = window.setTimeout(() => this._flush(), CONFIG_DELAY_MS);
+      this._timer = undefined;
+      // The config will be sent only when picking ends (user clicks button again)
     } else {
       this._picking = undefined;
       this._toPreview({ pick: false });
