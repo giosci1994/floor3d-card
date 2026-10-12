@@ -2358,6 +2358,13 @@ export class Floor3dCard extends LitElement {
     });
     this._updateRaycasting();
     render(this._getLevelBar(), this._levelbar);
+
+    // Update infobox visibility based on level changes
+    this._config.entities.forEach((entity, index) => {
+      if (entity.type3d === 'info') {
+        this._updateinfo(entity, this._info[index], this._unit_of_measurement[index], index);
+      }
+    });
   }
 
   private _toggleVisibleLevel(level: number): void {
@@ -2370,6 +2377,13 @@ export class Floor3dCard extends LitElement {
       element.visible = this._displaylevels[i];
     });
     this._updateRaycasting();
+
+    // Update infobox visibility based on level changes
+    this._config.entities.forEach((entity, index) => {
+      if (entity.type3d === 'info') {
+        this._updateinfo(entity, this._info[index], this._unit_of_measurement[index], index);
+      }
+    });
   }
 
   private _updateRaycasting() {
@@ -3233,6 +3247,10 @@ export class Floor3dCard extends LitElement {
                 const size = entity.info && entity.info.size ? entity.info.size : 100;
                 const aspect = this._canvas[i].width / this._canvas[i].height;
                 sprite.scale.set(size * aspect, size, 1);
+
+                // Track the level of the associated object
+                let infoLevel: number | undefined;
+
                 if (entity.info && entity.info.position) {
                   sprite.position.set(entity.info.position[0], entity.info.position[1], entity.info.position[2]);
                 } else if (entity.object_id) {
@@ -3243,8 +3261,16 @@ export class Floor3dCard extends LitElement {
                     box.getCenter(center);
                     sprite.position.copy(center);
                     sprite.position.y = box.max.y + size / 2 + 10;
+                    // Store the level from the associated object
+                    infoLevel = _foundobject.userData.level;
                   }
                 }
+
+                // Store the level in sprite's userData for visibility management
+                if (infoLevel !== undefined) {
+                  sprite.userData.level = infoLevel;
+                }
+
                 this._scene.add(sprite);
               }
               if (entity.type3d == 'shower') {
@@ -3552,6 +3578,13 @@ export class Floor3dCard extends LitElement {
       const size = item.info && item.info.size ? item.info.size : 100;
       const aspect = canvas.width / canvas.height;
       sprite.scale.set(size * aspect, size, 1);
+
+      // Hide infobox if its level is disabled
+      if (sprite.userData.level !== undefined && this._displaylevels && this._displaylevels[sprite.userData.level] === false) {
+        sprite.visible = false;
+      } else {
+        sprite.visible = true;
+      }
     }
   }
 

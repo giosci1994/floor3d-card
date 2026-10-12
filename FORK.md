@@ -21,7 +21,7 @@ If the original card is installed, remove it from HACS first: both define `custo
 ### By hand
 
 1. Download all the `.js` files of the [latest release](https://github.com/giosci1994/floor3d-card/releases/latest) (they are also in `dist/`) into a folder of `config/www`, for example `config/www/floor3d-card/`. There are six files: the card, its core (libraries and code shared with the editor), the editor, which is loaded only when you edit the card, the classic editor, which only old Home Assistant versions load, and the decoders of [compressed models](#compressed-models), loaded only by the models that need them.
-2. Add `/local/floor3d-card/floor3d-card.js?v=2.11.0` as a resource of type **module** (Settings › Dashboards › Resources). If the original card is installed too, remove it first.
+2. Add `/local/floor3d-card/floor3d-card.js?v=2.11.1` as a resource of type **module** (Settings › Dashboards › Resources). If the original card is installed too, remove it first.
 3. Reload the browser or the app.
 
 At every update copy the new files and change the `?v=` of the resource: Home Assistant serves `/local` with a 31-day cache, and so may a proxy in front of it, while a new query is a new address. The core and the editor have the hash of their content in the name, so they are new addresses too; the ones of older versions can be deleted.
@@ -84,6 +84,8 @@ The Validate workflow runs the HACS checks at every push and every night; the Bu
 - **Ground floor level** (2.11.0, `ground_floor_level`): adjusts the Y position of the ground for models with basements. Set this to the height offset in centimeters where the real ground floor is. See [Sky and weather](#sky-and-weather).
 - **Sensor-controlled animations** (2.11.0): objects can now rotate based on numeric sensor values. `speed_entity` controls rotation speed (0-100), and `angle_entity` controls rotation angle in degrees. See [Fans](#fans).
 - **CCTV icon visibility fix** (2.11.0): camera icons are now correctly hidden when occluded by the model geometry, improving visibility at different zoom levels.
+- **InfoBox level visibility** (2.11.1): infoboxes now respect level visibility settings. When a level is hidden, infoboxes assigned to objects on that level are also hidden.
+- **Editor performance improvement** (2.11.1): picking objects for object groups no longer triggers a preview rebuild after each selection, making group creation much faster.
 - **Languages** (2.6): the card and its editor in English, Italian and German (the card also in Norwegian). Each user sees the language of their Home Assistant profile; the `language` option sets one for the card. See [Languages](#languages).
 - **Shadows in the editor** (2.6): the card editor says how many lights cast a shadow and how many the device can draw, and names the lights left without. See [Shadows](#shadows).
 - **Version label** at the top of the card editor and in the console banner.
