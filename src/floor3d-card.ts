@@ -3253,6 +3253,17 @@ export class Floor3dCard extends LitElement {
 
                 if (entity.info && entity.info.position) {
                   sprite.position.set(entity.info.position[0], entity.info.position[1], entity.info.position[2]);
+                  // For custom positioned infoboxes, try to get level from the associated object
+                  if (entity.object_id) {
+                    const _foundobject = this._scene.getObjectByName(entity.object_id);
+                    if (_foundobject) {
+                      infoLevel = _foundobject.userData.level;
+                    }
+                  }
+                  // If no object_id or object not found, use explicit level from config
+                  if (infoLevel === undefined && entity.info.level !== undefined) {
+                    infoLevel = entity.info.level;
+                  }
                 } else if (entity.object_id) {
                   const _foundobject = this._scene.getObjectByName(entity.object_id);
                   if (_foundobject) {
@@ -3331,7 +3342,7 @@ export class Floor3dCard extends LitElement {
             } else if (entity.type3d == 'door') {
               this._updatedoor(entity, i);
             } else if (entity.type3d == 'text') {
-              this._canvas[i] = this._createTextCanvas(entity.text, this._text[i], this._unit_of_measurement[i]);
+              this._canvas[i] = this._createTextCanvas(entity, this._text[i], this._unit_of_measurement[i]);
               this._updatetext(entity, this._text[i], this._canvas[i], this._unit_of_measurement[i]);
             } else if (entity.type3d == 'rotate') {
               this._rotatecalc(entity, i);
@@ -4664,7 +4675,7 @@ export class Floor3dCard extends LitElement {
     ground.name = 'f3d_ground';
     const bottom = new THREE.Box3().setFromObject(this._bboxmodel).min.y;
     // Apply ground_floor_level offset for basements
-    const groundOffset = this._num('ground_floor_level', 0);
+    const groundOffset = this._num(this._config.ground_floor_level, 0);
     ground.position.set(this._modelCenter.x, bottom - 0.5 + groundOffset, this._modelCenter.z);
     ground.receiveShadow = this._config.shadow == 'yes';
     ground.castShadow = false;
