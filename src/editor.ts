@@ -438,7 +438,19 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
       const at = objects.findIndex((o) => (isObject(o) ? o.object_id : o) === name);
       if (at >= 0) objects.splice(at, 1);
       else objects.push({ object_id: name });
-      this._setItem(list, index, { ...group, objects });
+
+      // Update config without triggering preview rebuild while picking
+      const config = copy(this._config);
+      const list_array = config[list].slice();
+      list_array[index] = { ...group, objects };
+      config[list] = list_array;
+      this._config = config;
+      this._internal = normalizeConfig(config);
+      this._pending = cleanConfig(config);
+      // Don't flush immediately - keep picking without rerendering
+      // The config will be sent when picking ends or after delay
+      window.clearTimeout(this._timer);
+      this._timer = window.setTimeout(() => this._flush(), CONFIG_DELAY_MS);
     } else {
       this._picking = undefined;
       this._toPreview({ pick: false });
