@@ -58,6 +58,7 @@ const VALUE_DEFAULTS: { [key: string]: string | number } = {
   camera_popup_position: 'bottom-right',
   camera_popup_duration: 20,
   moon_size: 30,
+  ground_floor_level: 0,
 };
 
 // Switches inside the options block of an entity. They have no default: the card reads a missing
@@ -92,7 +93,7 @@ const BLOCK_NUMBERS: { [block: string]: string[] } = {
   cover: ['tilt_closed', 'tilt_open'],
   room: ['transparency', 'elevation', 'width', 'height'],
   image: ['rotate', 'lumens', 'lighting_lumens'],
-  rotate: ['round_per_second', 'ramp'],
+  rotate: ['round_per_second', 'ramp', 'speed_multiplier', 'angle_min', 'angle_max'],
   tracker: ['sensor_rotation', 'scale', 'height', 'size'],
   info: ['size'],
   shower: ['velocity', 'count', 'size', 'height', 'width'],

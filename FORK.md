@@ -21,7 +21,7 @@ If the original card is installed, remove it from HACS first: both define `custo
 ### By hand
 
 1. Download all the `.js` files of the [latest release](https://github.com/giosci1994/floor3d-card/releases/latest) (they are also in `dist/`) into a folder of `config/www`, for example `config/www/floor3d-card/`. There are six files: the card, its core (libraries and code shared with the editor), the editor, which is loaded only when you edit the card, the classic editor, which only old Home Assistant versions load, and the decoders of [compressed models](#compressed-models), loaded only by the models that need them.
-2. Add `/local/floor3d-card/floor3d-card.js?v=2.10.1` as a resource of type **module** (Settings › Dashboards › Resources). If the original card is installed too, remove it first.
+2. Add `/local/floor3d-card/floor3d-card.js?v=2.11.0` as a resource of type **module** (Settings › Dashboards › Resources). If the original card is installed too, remove it first.
 3. Reload the browser or the app.
 
 At every update copy the new files and change the `?v=` of the resource: Home Assistant serves `/local` with a 31-day cache, and so may a proxy in front of it, while a new query is a new address. The core and the editor have the hash of their content in the name, so they are new addresses too; the ones of older versions can be deleted.
@@ -81,6 +81,9 @@ The Validate workflow runs the HACS checks at every push and every night; the Bu
 - **Ground** (2.10.1, `ground`): a lawn or a colour under the house, which takes the shadows of the sun and fades into the background at its edge. See [Sky and weather](#sky-and-weather).
 - **Moon size and clouds** (2.10.1): `moon_size` sets how big the moon is, and `sky_clouds: no` shows stars and moon whatever the weather. See [Sky and weather](#sky-and-weather).
 - **Boxes that fold** (2.10.1): the weather and the people fold to what matters most with a tap, and stay so on that device. On a phone, the boxes at the top left stay beside the menus when they fit. See [Boxes](#boxes).
+- **Ground floor level** (2.11.0, `ground_floor_level`): adjusts the Y position of the ground for models with basements. Set this to the height offset in centimeters where the real ground floor is. See [Sky and weather](#sky-and-weather).
+- **Sensor-controlled animations** (2.11.0): objects can now rotate based on numeric sensor values. `speed_entity` controls rotation speed (0-100), and `angle_entity` controls rotation angle in degrees. See [Fans](#fans).
+- **CCTV icon visibility fix** (2.11.0): camera icons are now correctly hidden when occluded by the model geometry, improving visibility at different zoom levels.
 - **Languages** (2.6): the card and its editor in English, Italian and German (the card also in Norwegian). Each user sees the language of their Home Assistant profile; the `language` option sets one for the card. See [Languages](#languages).
 - **Shadows in the editor** (2.6): the card editor says how many lights cast a shadow and how many the device can draw, and names the lights left without. See [Shadows](#shadows).
 - **Version label** at the top of the card editor and in the console banner.
@@ -316,6 +319,12 @@ tap_action:
 
 Rotating objects (`type3d: rotate`) speed up when they are switched on and slow down when they are switched off, instead of starting and stopping at once. `ramp` is the time from stopped to full speed, in seconds: 1.5 by default, `0` for the old behaviour. A fan with a `percentage` attribute turns at that fraction of `round_per_second`, and with `direction: reverse` the other way; a change of direction slows down and speeds up again. The idea comes from [Steven-D-Morgan/hass-3d-floorplan](https://github.com/Steven-D-Morgan/hass-3d-floorplan).
 
+**Sensor-controlled rotation** (2.11.0): rotation can now be controlled by numeric sensors instead of only on/off entities:
+- `speed_entity`: a numeric sensor (0-100) that controls the rotation speed. Use `speed_multiplier` to adjust the scale (default: 1).
+- `angle_entity`: a numeric sensor providing rotation angle in degrees. Use `angle_min` and `angle_max` to define the range (defaults: 0-360). The object rotates to match the sensor value.
+
+These options are useful for things like anemometers controlling wind turbines, directional sensors controlling weather vanes, or any automation that outputs numeric rotation values.
+
 ```yaml
 - entity: fan.ceiling
   type3d: rotate
@@ -325,6 +334,25 @@ Rotating objects (`type3d: rotate`) speed up when they are switched on and slow 
     round_per_second: 1.5
     ramp: 3
     hinge: Fan_hub
+
+# Sensor-controlled examples:
+- entity: sensor.wind_turbine_speed
+  type3d: rotate
+  object_id: <Turbine>
+  rotate:
+    axis: y
+    round_per_second: 2
+    speed_entity: sensor.wind_speed
+    speed_multiplier: 0.8
+
+- entity: sensor.weather_vane_direction
+  type3d: rotate
+  object_id: <WeatherVane>
+  rotate:
+    axis: y
+    angle_entity: sensor.wind_direction
+    angle_min: 0
+    angle_max: 360
 ```
 
 ### Object ids with *
@@ -496,6 +524,7 @@ A cover of the original card slides: the pane goes up (or down) into its box, an
   - `moon_size` (2.10.1): the width of the moon in pixels, 30 by default (22 before 2.10.1).
   - `sky_clouds: no` (2.10.1): the sky ignores the clouds of the weather entity: no grey, and stars and moon whatever the weather. The forecast box stays as it is.
 - `ground` (2.10.1): `grass` for a lawn drawn by the card, or a colour (`'#806040'`), under the house. It is two and a half times as wide as the house and fades into the background at its edge, so that the sky, its stars and its moon still show around the house. With `shadow: yes` it takes the shadows of the sun, which then covers one and a half times the model, for the long shadows of the evening. It isn't part of the model: taps go through it, and the camera, the views and the sun are fitted to the house as before. It takes no more texture units than a plain material, so the lamps keep their shadows (see [Shadows](#shadows)). A model with a ground of its own keeps it: the one of the card stays under it. The card draws no ground without this option, and the sand-coloured ground of the `sky: yes` of the original card is gone (see [Test page](#test-page)).
+  - `ground_floor_level` (2.11.0): Y offset in centimeters for positioning the ground. Useful when the model includes a basement: the card positions the ground at the bottom of the bounding box (which includes the basement), but you may want it at the real ground floor instead. Set this to a positive value to raise the ground, or a negative value to lower it. Default: 0 (no offset).
 - `weather: weather.home`: a box in a corner with the weather now and the next forecasts, in the language of the card. A tap opens the entity. Home Assistant sends the forecast as it changes (the same way as for its weather card), with nothing to set up.
   - `weather_position`: `bottom-left` (default), `bottom-right`, `top-left`, or `top-right` under the menus;
   - `weather_forecast`: `daily` (default), `hourly` or `twice_daily`; if the entity doesn't have it, the one it has;

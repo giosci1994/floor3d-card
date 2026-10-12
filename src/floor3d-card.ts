@@ -4630,7 +4630,9 @@ export class Floor3dCard extends LitElement {
     const ground = new THREE.Mesh(geometry, material);
     ground.name = 'f3d_ground';
     const bottom = new THREE.Box3().setFromObject(this._bboxmodel).min.y;
-    ground.position.set(this._modelCenter.x, bottom - 0.5, this._modelCenter.z);
+    // Apply ground_floor_level offset for basements
+    const groundOffset = this._num('ground_floor_level', 0);
+    ground.position.set(this._modelCenter.x, bottom - 0.5 + groundOffset, this._modelCenter.z);
     ground.receiveShadow = this._config.shadow == 'yes';
     ground.castShadow = false;
     ground.renderOrder = -1; // before the glass of the windows, which shows it through
@@ -5415,6 +5417,7 @@ export class Floor3dCard extends LitElement {
     const top = canvas.top - layer.top;
     const point = new THREE.Vector3();
     const view = new THREE.Vector3();
+    const raycaster = new THREE.Raycaster();
     this._pins.forEach(({ el, camera }) => {
       const p = camera.position;
       let shown = !!p && width > 0 && height > 0;
@@ -5424,6 +5427,24 @@ export class Floor3dCard extends LitElement {
         view.copy(point).applyMatrix4(this._camera.matrixWorldInverse);
         point.project(this._camera);
         shown = view.z < 0 && Math.abs(point.x) <= 1 && Math.abs(point.y) <= 1;
+
+        // Check for occlusion: raycast from camera to pin position
+        if (shown) {
+          const direction = view.clone().normalize();
+          const distance = this._camera.position.distanceTo(point);
+          raycaster.set(this._camera.position, direction);
+          raycaster.far = distance * 0.95; // Slightly before the pin
+
+          // Only intersect with the model, exclude ground, overlays, and room colors
+          const intersects = raycaster.intersectObjects(this._bboxmodel.children, true).filter(
+            (hit) => !hit.object.name.includes('f3d_') && !hit.object.name.includes('_room_color')
+          );
+
+          // If there's an intersection, the icon is occluded
+          if (intersects.length > 0) {
+            shown = false;
+          }
+        }
       }
       if (shown) {
         const x = left + ((point.x + 1) / 2) * width;
@@ -6330,6 +6351,36 @@ export class Floor3dCard extends LitElement {
 
   private _rotatecalc(entity: Floor3dCardConfig, i: number) {
     let j = this._rotation_index.indexOf(i);
+
+    // Check for speed_entity: numeric sensor controlling rotation speed
+    if (entity.rotate.speed_entity) {
+      const speedState = this._hass.states[entity.rotate.speed_entity];
+      if (speedState && speedState.state !== 'unavailable' && speedState.state !== 'unknown') {
+        const speed = parseFloat(speedState.state);
+        if (!isNaN(speed)) {
+          const multiplier = entity.rotate.speed_multiplier || 1;
+          this._rotation_state[j] = (speed * multiplier) / 100; // Normalize to 0-1
+          this._startOrStopAnimationLoop();
+          return;
+        }
+      }
+    }
+
+    // Check for angle_entity: numeric sensor controlling rotation angle
+    if (entity.rotate.angle_entity) {
+      const angleState = this._hass.states[entity.rotate.angle_entity];
+      if (angleState && angleState.state !== 'unavailable' && angleState.state !== 'unknown') {
+        const angle = parseFloat(angleState.state);
+        if (!isNaN(angle)) {
+          const min = entity.rotate.angle_min !== undefined ? Number(entity.rotate.angle_min) : 0;
+          const max = entity.rotate.angle_max !== undefined ? Number(entity.rotate.angle_max) : 360;
+          // Normalize angle to 0-1 range
+          this._rotation_state[j] = Math.max(0, Math.min(1, (angle - min) / (max - min)));
+          this._startOrStopAnimationLoop();
+          return;
+        }
+      }
+    }
 
     //1 if the entity is on, 0 if the entity is off
     this._rotation_state[j] = this._states[i] == 'on' ? 1 : 0;
