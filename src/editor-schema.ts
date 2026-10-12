@@ -125,6 +125,7 @@ export const SECTIONS: Section[] = [
           options_key: 'options.ground',
           selector: { select: { mode: 'dropdown', custom_value: true, options: [{ value: 'grass', label: 'grass' }] } },
         },
+        num('ground_floor_level', { unit_of_measurement: 'cm' }),
       ],
     ],
   },
@@ -394,6 +395,20 @@ export const typeSchema = (type: string, objects: string[], item: any = {}, part
               num('round_per_second', { min: 0 }),
               num('ramp', { min: 0, unit_of_measurement: 's' }),
               objectField('hinge', objects),
+            ],
+          },
+        ],
+        'sensor_control',
+        [
+          {
+            name: 'rotate',
+            type: 'grid',
+            column_min_width: '140px',
+            schema: [
+              entity('speed_entity'),
+              num('speed_multiplier', { min: 0 }),
+              entity('angle_entity'),
+              row(num('angle_min'), num('angle_max')),
             ],
           },
         ],

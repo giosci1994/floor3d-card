@@ -60,6 +60,7 @@ export interface Floor3dCardConfig {
   moon_size?: number | string; // width of the moon in pixels, 30 by default
   sky_clouds?: string | boolean; // no: the sky ignores the clouds of the weather entity
   ground?: string; // grass or a colour: a surface under the house (ground.ts)
+  ground_floor_level?: number | string; // Y offset for ground positioning (useful with basements)
   globalLightPower: number | string; // a number or a numeric sensor
   hideLevelsMenu: string;
   initialLevel: number;
