@@ -19,7 +19,7 @@ jobs:
           node-version: 22
       - name: Build
         run: |
-          npx --yes yarn@1.22.22 install --frozen-lockfile
+          npm ci
           npm run lint
           npm run build
           npm test
