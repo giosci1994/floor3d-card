@@ -1,4 +1,4 @@
-import{ba as e,bb as t,_ as o,n as i,r as n,t as a,i as r,Z as s,P as l,p as c,b as d,bc as h,f as m,bd as p,be as u,bf as _,U as g,E as f,aE as b,C as y,o as w,m as v,bg as k,bh as x,bi as S,bj as j,bk as z,bl as P,bm as L,bn as O,bo as A,b7 as M}from"./floor3d-card-core-C4CPgeb0.js";
+import{ba as e,bb as t,_ as o,n as i,r as n,t as a,i as r,Z as s,P as l,p as c,b as d,bc as h,f as m,bd as p,be as u,bf as _,U as g,E as f,aE as b,C as y,o as w,m as v,bg as k,bh as x,bi as S,bj as j,bk as z,bl as P,b7 as L,bm as O,bn as A,bo as M}from"./floor3d-card-core-BcnurDPN.js";
 /**
  * @license
  * Copyright 2017 Google LLC
@@ -20,7 +20,7 @@ import{ba as e,bb as t,_ as o,n as i,r as n,t as a,i as r,Z as s,P as l,p as c,b
         @click=${()=>this._setPaused(!this._paused)}
       ></ha-icon-button>
       <ha-icon-button .label=${this._t("ui.reload_preview")} .path=${_} @click=${()=>this._reloadPreview()}></ha-icon-button>
-    `}_setPaused(e){this._paused=e,c.paused=e,e?(c.image=void 0,this._toPreview({request:"snapshot"})):this._reloadPreview()}_reloadPreview(){this._flush()||this._toPreview({request:"reload"})}_setTop(e){this._update(Ze(We(e,this._config,ee)))}_list(e){return Array.isArray(this._config[e])?this._config[e]:[]}_setList(e,t){this._update({...this._config,[e]:t})}_setItem(e,t,o){const i=this._list(e).slice();i[t]=o,this._setList(e,i)}_key(e){return Be(e)?(this._keys.has(e)||this._keys.set(e,Math.random().toString(36).slice(2)),this._keys.get(e)):String(e)}_toPreview(e){window.dispatchEvent(new CustomEvent(f,{detail:e}))}_onPreview(e){if(e&&(e.objects&&(this._modelObjects=e.objects,this._picking&&this._toPreview({pick:!0}),this._highlightCurrent()),e.shadows&&(this._shadows=e.shadows),e.paused&&this._picking&&this._toPreview({request:"live"}),e.picked&&this._picking&&this._onPicked(e.picked,e),e.camera&&this._cameraTarget)){const t=this._cameraTarget;this._cameraTarget=void 0,this._applyCamera(t,e.camera)}}_useCurrentView(e,t){this._cameraTarget={list:e,index:t},this._toPreview({request:"camera"})}_applyCamera(e,t){const o=e=>({x:+e.x.toFixed(2),y:+e.y.toFixed(2),z:+e.z.toFixed(2)}),i={camera_position:o(t.camera_position),camera_target:o(t.camera_target),camera_rotate:{x:+t.camera_rotate.x.toFixed(4),y:+t.camera_rotate.y.toFixed(4),z:+t.camera_rotate.z.toFixed(4)}};if(e.list){const t={...this._list(e.list)[e.index],...i};this._setItem(e.list,e.index,t)}else this._update({...this._config,...i})}_startPick(e){const t=this._picking&&JSON.stringify(this._picking)===JSON.stringify(e);this._picking=t?void 0:e,!t&&this._paused&&this._toPreview({request:"live"}),this._toPreview({pick:!t})}_onPicked(e,t={}){const o=this._picking;if(o.point){if(!Array.isArray(t.point))return;this._picking=void 0,this._toPreview({pick:!1});const[e,i]=o.path,n=this._list(e)[i],a={...Be(n)?n:{entity:n},position:t.point};return void 0!==t.level&&(a.level=t.level),void this._setItem(e,i,a)}if(o.add){const[t,i]=o.path,n={...this._list(t)[i]},a=(n.objects||[]).slice(),r=a.findIndex(t=>(Be(t)?t.object_id:t)===e);r>=0?a.splice(r,1):a.push({object_id:e});const s=Ke(this._config),l=s[t].slice();l[i]={...n,objects:a},s[t]=l,this._config=s,this._internal=d(s),this._pending=h(s),window.clearTimeout(this._timer),this._timer=window.setTimeout(()=>this._flush(),1e3)}else this._picking=void 0,this._toPreview({pick:!1}),this._setPath(o.path,e)}_setPath(e,t){const o=Ke(this._config);let i=o;e.slice(0,-1).forEach(e=>{void 0===i[e]&&(i[e]={}),i=i[e]}),i[e[e.length-1]]=t,this._update(o)}_highlight(e){this._toPreview({highlight:e.filter(e=>"string"==typeof e&&""!==e)})}_highlightCurrent(){const{list:e,index:t}=this._view;this._highlight(e&&void 0!==t?this._itemObjects(e,this._list(e)[t]):[])}_itemObjects(e,t){return Be(t)&&"maps"!==e&&"people"!==e&&"cameras"!==e?"object_groups"===e?(t.objects||[]).map(e=>Be(e)?e.object_id:e):[t.object_id]:[]}_objectOptions(){const e=this._list("object_groups").filter(e=>Be(e)&&e.object_group).map(e=>"<"+e.object_group+">"),t=Array.from(new Set([...this._modelObjects,...this._listObjects])).sort((e,t)=>e.toLowerCase().localeCompare(t.toLowerCase()));return[...e,...t]}_loadObjectList(){const{path:e,objectlist:t}=this._config||{},o=t&&e?e.replace(/\/?$/,"/")+t:void 0;o!==this._objectlist&&(this._objectlist=o,this._listObjects=[],o&&fetch(o).then(e=>e.ok?e.json():{}).then(e=>{this._objectlist===o&&(this._listObjects=Object.keys(e||{}))}).catch(()=>{}))}async _showClassic(){await(import("./floor3d-card-editor-classic-DzXWNrIC.js"));const e=document.createElement("floor3d-card-editor-classic");e.hass=this.hass,this._config&&e.setConfig(this._config),this._classic=e,this.requestUpdate()}updated(e){e.has("hass")&&this._classic&&(this._classic.hass=this.hass),e.has("_view")&&this._highlightCurrent()}render(){if(!this.hass||!this._config)return b;if("classic"===this._mode)return g`${this._classic||b}`;if("loading"===this._mode)return g`<div class="loading">${this._t("ui.loading")}</div>`;const{list:e,index:t}=this._view;return e&&void 0!==t&&void 0!==this._list(e)[t]?this._renderItemEditor(e,t):g`
+    `}_setPaused(e){this._paused=e,c.paused=e,e?(c.image=void 0,this._toPreview({request:"snapshot"})):this._reloadPreview()}_reloadPreview(){this._flush()||this._toPreview({request:"reload"})}_setTop(e){this._update(Ze(We(e,this._config,ee)))}_list(e){return Array.isArray(this._config[e])?this._config[e]:[]}_setList(e,t){this._update({...this._config,[e]:t})}_setItem(e,t,o){const i=this._list(e).slice();i[t]=o,this._setList(e,i)}_key(e){return Be(e)?(this._keys.has(e)||this._keys.set(e,Math.random().toString(36).slice(2)),this._keys.get(e)):String(e)}_toPreview(e){window.dispatchEvent(new CustomEvent(f,{detail:e}))}_onPreview(e){if(e&&(e.objects&&(this._modelObjects=e.objects,this._picking&&this._toPreview({pick:!0}),this._highlightCurrent()),e.shadows&&(this._shadows=e.shadows),e.paused&&this._picking&&this._toPreview({request:"live"}),e.picked&&this._picking&&this._onPicked(e.picked,e),e.camera&&this._cameraTarget)){const t=this._cameraTarget;this._cameraTarget=void 0,this._applyCamera(t,e.camera)}}_useCurrentView(e,t){this._cameraTarget={list:e,index:t},this._toPreview({request:"camera"})}_applyCamera(e,t){const o=e=>({x:+e.x.toFixed(2),y:+e.y.toFixed(2),z:+e.z.toFixed(2)}),i={camera_position:o(t.camera_position),camera_target:o(t.camera_target),camera_rotate:{x:+t.camera_rotate.x.toFixed(4),y:+t.camera_rotate.y.toFixed(4),z:+t.camera_rotate.z.toFixed(4)}};if(e.list){const t={...this._list(e.list)[e.index],...i};this._setItem(e.list,e.index,t)}else this._update({...this._config,...i})}_startPick(e){const t=this._picking&&JSON.stringify(this._picking)===JSON.stringify(e);this._picking=t?void 0:e,!t&&this._paused&&this._toPreview({request:"live"}),this._toPreview({pick:!t})}_onPicked(e,t={}){const o=this._picking;if(o.point){if(!Array.isArray(t.point))return;this._picking=void 0,this._toPreview({pick:!1});const[e,i]=o.path,n=this._list(e)[i],a={...Be(n)?n:{entity:n},position:t.point};return void 0!==t.level&&(a.level=t.level),void this._setItem(e,i,a)}if(o.add){const[t,i]=o.path,n={...this._list(t)[i]},a=(n.objects||[]).slice(),r=a.findIndex(t=>(Be(t)?t.object_id:t)===e);r>=0?a.splice(r,1):a.push({object_id:e});const s=Ke(this._config),l=s[t].slice();l[i]={...n,objects:a},s[t]=l,this._config=s,this._internal=d(s),this._pending=h(s),window.clearTimeout(this._timer),this._timer=window.setTimeout(()=>this._flush(),1e3)}else this._picking=void 0,this._toPreview({pick:!1}),this._setPath(o.path,e)}_setPath(e,t){const o=Ke(this._config);let i=o;e.slice(0,-1).forEach(e=>{void 0===i[e]&&(i[e]={}),i=i[e]}),i[e[e.length-1]]=t,this._update(o)}_highlight(e){this._toPreview({highlight:e.filter(e=>"string"==typeof e&&""!==e)})}_highlightCurrent(){const{list:e,index:t}=this._view;this._highlight(e&&void 0!==t?this._itemObjects(e,this._list(e)[t]):[])}_itemObjects(e,t){return Be(t)&&"maps"!==e&&"people"!==e&&"cameras"!==e?"object_groups"===e?(t.objects||[]).map(e=>Be(e)?e.object_id:e):[t.object_id]:[]}_objectOptions(){const e=this._list("object_groups").filter(e=>Be(e)&&e.object_group).map(e=>"<"+e.object_group+">"),t=Array.from(new Set([...this._modelObjects,...this._listObjects])).sort((e,t)=>e.toLowerCase().localeCompare(t.toLowerCase()));return[...e,...t]}_loadObjectList(){const{path:e,objectlist:t}=this._config||{},o=t&&e?e.replace(/\/?$/,"/")+t:void 0;o!==this._objectlist&&(this._objectlist=o,this._listObjects=[],o&&fetch(o).then(e=>e.ok?e.json():{}).then(e=>{this._objectlist===o&&(this._listObjects=Object.keys(e||{}))}).catch(()=>{}))}async _showClassic(){await(import("./floor3d-card-editor-classic-4Hd7zUXZ.js"));const e=document.createElement("floor3d-card-editor-classic");e.hass=this.hass,this._config&&e.setConfig(this._config),this._classic=e,this.requestUpdate()}updated(e){e.has("hass")&&this._classic&&(this._classic.hass=this.hass),e.has("_view")&&this._highlightCurrent()}render(){if(!this.hass||!this._config)return b;if("classic"===this._mode)return g`${this._classic||b}`;if("loading"===this._mode)return g`<div class="loading">${this._t("ui.loading")}</div>`;const{list:e,index:t}=this._view;return e&&void 0!==t&&void 0!==this._list(e)[t]?this._renderItemEditor(e,t):g`
       <div class="version">
         floor3d-card ${y} ${this._previewButtons()}
       </div>
@@ -64,14 +64,14 @@ import{ba as e,bb as t,_ as o,n as i,r as n,t as a,i as r,Z as s,P as l,p as c,b
                   @mouseenter=${()=>this._highlight(this._itemObjects(e,t))}
                   @mouseleave=${()=>this._highlight([])}
                 >
-                  <div class="handle"><ha-svg-icon .path=${S}></ha-svg-icon></div>
+                  <div class="handle"><ha-svg-icon .path=${O}></ha-svg-icon></div>
                   <ha-icon class="type" .icon=${i.icon}></ha-icon>
                   <div class="info" @click=${()=>this._edit(e,o)}>
                     <span class="primary">${i.primary}</span>
                     <span class="secondary ${i.warning?"warning":""}">${i.secondary}</span>
                   </div>
-                  <ha-icon-button .label=${this._t("ui.edit")} .path=${j} @click=${()=>this._edit(e,o)}></ha-icon-button>
-                  <ha-icon-button .label=${this._t("ui.remove")} .path=${z} @click=${()=>this._removeItem(e,o)}></ha-icon-button>
+                  <ha-icon-button .label=${this._t("ui.edit")} .path=${A} @click=${()=>this._edit(e,o)}></ha-icon-button>
+                  <ha-icon-button .label=${this._t("ui.remove")} .path=${M} @click=${()=>this._removeItem(e,o)}></ha-icon-button>
                 </div>
               `})}
         </div>
@@ -81,7 +81,7 @@ import{ba as e,bb as t,_ as o,n as i,r as n,t as a,i as r,Z as s,P as l,p as c,b
       </ha-button>
     `}_moveItem(e,t,o){const i=this._list(e).slice();i.splice(o,0,i.splice(t,1)[0]),this._setList(e,i)}_removeItem(e,t){const o=this._list(e).slice();o.splice(t,1),this._highlight([]),this._setList(e,o)}_addItem(e,t){const o=[...this._list(e),Ke(t)];this._setList(e,o),this._edit(e,o.length-1)}_edit(e,t){this._view={list:e,index:t}}_back(){this._picking&&this._startPick(this._picking),this._view={},this._highlight([])}_renderItemEditor(e,t){const o=this._list(e)[t],i=o=>this._setItem(e,t,o);let n;return n="entities"===e?this._renderEntity(t,Be(o)?o:{entity:o},i):"object_groups"===e?this._renderGroup(t,o,i):"zoom_areas"===e?this._renderZoom(t,o,i):"maps"===e?this._renderMap(o,i):"people"===e?this._form([U("entity","person"),{...U("room"),label_key:"person_room",helper_key:"person_room"}],Be(o)?o:{entity:o},e=>i(Ze({...e}))):"cameras"===e?this._renderCamera(t,Be(o)?o:{entity:o},i):this._renderRoom(t,o,i),g`
       <div class="subheader">
-        <ha-icon-button .label=${this._t("ui.back")} .path=${P} @click=${()=>this._back()}></ha-icon-button>
+        <ha-icon-button .label=${this._t("ui.back")} .path=${S} @click=${()=>this._back()}></ha-icon-button>
         <span class="title">${this._t("ui.title_"+e)}</span>
         ${this._previewButtons()}
       </div>
@@ -92,7 +92,7 @@ import{ba as e,bb as t,_ as o,n as i,r as n,t as a,i as r,Z as s,P as l,p as c,b
         <ha-icon-button
           class=${n?"picking":""}
           .label=${this._t("ui.pick")}
-          .path=${L}
+          .path=${j}
           @click=${()=>this._startPick({path:e})}
         ></ha-icon-button>
       </div>
@@ -112,11 +112,11 @@ import{ba as e,bb as t,_ as o,n as i,r as n,t as a,i as r,Z as s,P as l,p as c,b
         <div class="rows">
           ${K(i,e=>this._key(e),(e,t)=>g`
               <div class="row condition">
-                <div class="handle"><ha-svg-icon .path=${S}></ha-svg-icon></div>
+                <div class="handle"><ha-svg-icon .path=${O}></ha-svg-icon></div>
                 ${this._form([Y(H("state"),H("color"))],e,e=>{const o=i.slice();o[t]=Ze({...e}),n(o)})}
                 <ha-icon-button
                   .label=${this._t("ui.remove")}
-                  .path=${z}
+                  .path=${M}
                   @click=${()=>n(i.filter((e,o)=>o!==t))}
                 ></ha-icon-button>
               </div>
@@ -135,11 +135,11 @@ import{ba as e,bb as t,_ as o,n as i,r as n,t as a,i as r,Z as s,P as l,p as c,b
           <div class="rows">
             ${K(i,e=>this._key(e),(e,t)=>g`
                 <div class="row" @mouseenter=${()=>this._highlight([n(e)])} @mouseleave=${()=>this._highlightCurrent()}>
-                  <div class="handle"><ha-svg-icon .path=${S}></ha-svg-icon></div>
+                  <div class="handle"><ha-svg-icon .path=${O}></ha-svg-icon></div>
                   <div class="info"><span class="primary">${n(e)||this._t("ui.no_object_title")}</span></div>
                   <ha-icon-button
                     .label=${this._t("ui.remove")}
-                    .path=${z}
+                    .path=${M}
                     @click=${()=>s(i.filter((e,o)=>o!==t))}
                   ></ha-icon-button>
                 </div>
@@ -151,7 +151,7 @@ import{ba as e,bb as t,_ as o,n as i,r as n,t as a,i as r,Z as s,P as l,p as c,b
           <ha-icon-button
             class=${r?"picking":""}
             .label=${this._t("ui.pick")}
-            .path=${L}
+            .path=${j}
             @click=${()=>this._startPick({path:a,add:!0})}
           ></ha-icon-button>
         </div>
@@ -160,19 +160,19 @@ import{ba as e,bb as t,_ as o,n as i,r as n,t as a,i as r,Z as s,P as l,p as c,b
         <div class="heading-row">
           <div class="heading">${this._t("headings.camera")}</div>
           <ha-button appearance="plain" size="s" @click=${()=>this._useCurrentView("zoom_areas",e)}>
-            <ha-svg-icon slot="start" .path=${O}></ha-svg-icon>${this._t("ui.use_current_view")}
+            <ha-svg-icon slot="start" .path=${z}></ha-svg-icon>${this._t("ui.use_current_view")}
           </ha-button>
         </div>
       `,this._form([X("camera_position")],t,i),this._form([X("camera_target")],t,i),this._form([X("camera_rotate")],t,i),g`<div class="heading">${this._t("headings.around_object")}</div>
-        <div class="hint">${this._t("ui.around_object_hint")}</div>`,this._objectRow(["zoom_areas",e,"object_id"],(n=this._objectOptions(),[Y(Q("object_id",n),W("distance",{min:0,unit_of_measurement:"cm"}))]),t,i),this._form([X("direction")],t,i,this._t("headings.direction")),this._form([X("rotation")],t,i,this._t("headings.rotation"))];var n}_renderRoom(e,t,o){const i=["presence","alarms","power"],n={...t};i.forEach(e=>n[e]=t[e]?Array.isArray(t[e])?t[e]:[t[e]]:[]);const a=e=>{const t=Ze({...e});i.forEach(e=>{Array.isArray(t[e])&&(0===t[e].length?delete t[e]:1===t[e].length&&(t[e]=t[e][0]))}),o(t)},r=this._list("maps").filter(e=>Be(e)&&e.key&&!ce.includes(e.key)&&!A.includes(e.key));return[this._objectRow(["rooms",e,"object_id"],(s=this._objectOptions(),[Y(H("name"),Q("object_id",s)),Y(U("temperature","sensor"),U("illuminance","sensor")),U("presence",["binary_sensor","person","device_tracker"],!0)]),n,a),this._form(de(r),n,a,this._t("headings.map_sensors")),this._form([U("alarms",["binary_sensor"],!0),U("climate",["climate","switch","input_boolean","binary_sensor"])],n,a,this._t("headings.alarms_climate"))];var s}_renderCamera(e,t,o){const i=t.position,n={...t,position:Array.isArray(i)?{x:i[0],y:i[1],z:i[2]}:i,popup_on:Array.isArray(t.popup_on)?t.popup_on:t.popup_on?[t.popup_on]:[]},a=e=>{const t=Ze({...e});if(Be(t.position)){const e=[t.position.x,t.position.y,t.position.z];e.every(e=>"number"==typeof e&&isFinite(e))?t.position=e:e.every(e=>null==e)&&delete t.position}Array.isArray(t.popup_on)&&0===t.popup_on.length&&delete t.popup_on,o(t)},r=["cameras",e,"position"],s=this._picking&&JSON.stringify(this._picking.path)===JSON.stringify(r);return[this._form([U("entity","camera"),Y(H("name"),{name:"icon",selector:{icon:{}}})],n,a),g`
+        <div class="hint">${this._t("ui.around_object_hint")}</div>`,this._objectRow(["zoom_areas",e,"object_id"],(n=this._objectOptions(),[Y(Q("object_id",n),W("distance",{min:0,unit_of_measurement:"cm"}))]),t,i),this._form([X("direction")],t,i,this._t("headings.direction")),this._form([X("rotation")],t,i,this._t("headings.rotation"))];var n}_renderRoom(e,t,o){const i=["presence","alarms","power"],n={...t};i.forEach(e=>n[e]=t[e]?Array.isArray(t[e])?t[e]:[t[e]]:[]);const a=e=>{const t=Ze({...e});i.forEach(e=>{Array.isArray(t[e])&&(0===t[e].length?delete t[e]:1===t[e].length&&(t[e]=t[e][0]))}),o(t)},r=this._list("maps").filter(e=>Be(e)&&e.key&&!ce.includes(e.key)&&!P.includes(e.key));return[this._objectRow(["rooms",e,"object_id"],(s=this._objectOptions(),[Y(H("name"),Q("object_id",s)),Y(U("temperature","sensor"),U("illuminance","sensor")),U("presence",["binary_sensor","person","device_tracker"],!0)]),n,a),this._form(de(r),n,a,this._t("headings.map_sensors")),this._form([U("alarms",["binary_sensor"],!0),U("climate",["climate","switch","input_boolean","binary_sensor"])],n,a,this._t("headings.alarms_climate"))];var s}_renderCamera(e,t,o){const i=t.position,n={...t,position:Array.isArray(i)?{x:i[0],y:i[1],z:i[2]}:i,popup_on:Array.isArray(t.popup_on)?t.popup_on:t.popup_on?[t.popup_on]:[]},a=e=>{const t=Ze({...e});if(Be(t.position)){const e=[t.position.x,t.position.y,t.position.z];e.every(e=>"number"==typeof e&&isFinite(e))?t.position=e:e.every(e=>null==e)&&delete t.position}Array.isArray(t.popup_on)&&0===t.popup_on.length&&delete t.popup_on,o(t)},r=["cameras",e,"position"],s=this._picking&&JSON.stringify(this._picking.path)===JSON.stringify(r);return[this._form([U("entity","camera"),Y(H("name"),{name:"icon",selector:{icon:{}}})],n,a),g`
         <div class="heading-row">
           <div class="heading">${this._t("headings.camera_place")}</div>
           <ha-button appearance="plain" size="s" class=${s?"picking":""} @click=${()=>this._startPick({path:r,point:!0})}>
-            <ha-svg-icon slot="start" .path=${L}></ha-svg-icon>${this._t("ui.pick")}
+            <ha-svg-icon slot="start" .path=${j}></ha-svg-icon>${this._t("ui.pick")}
           </ha-button>
         </div>
         ${s?g`<div class="hint">${this._t("ui.tap_point")}</div>`:b}
-      `,this._form([X("position"),{...W("level",{min:0,step:1}),helper_key:"camera_level"}],n,a),this._form([U("popup_on",["binary_sensor","event","input_boolean","switch"],!0)],n,a,this._t("headings.camera_popup_on"))]}_renderMap(e,t){return[this._form([Y({name:"key",options_key:"options.map_key",selector:{select:{mode:"dropdown",custom_value:!0,options:ce.map(e=>({value:e,label:e}))}}},H("name")),Y(H("unit"),Z("aggregate",["mean","sum","max"])),Y(W("min"),W("max"),W("decimals",{min:0,max:3,step:1})),{name:"colors",selector:{text:{multiple:!0}}}],e,e=>{const o=Ze({...e});Array.isArray(o.colors)&&(o.colors=o.colors.filter(e=>"string"==typeof e&&""!==e.trim()),0===o.colors.length&&delete o.colors),t(o)}),g`<div class="hint">${this._t("ui.map_hint")}</div>`]}static get styles(){return M`
+      `,this._form([X("position"),{...W("level",{min:0,step:1}),helper_key:"camera_level"}],n,a),this._form([U("popup_on",["binary_sensor","event","input_boolean","switch"],!0)],n,a,this._t("headings.camera_popup_on"))]}_renderMap(e,t){return[this._form([Y({name:"key",options_key:"options.map_key",selector:{select:{mode:"dropdown",custom_value:!0,options:ce.map(e=>({value:e,label:e}))}}},H("name")),Y(H("unit"),Z("aggregate",["mean","sum","max"])),Y(W("min"),W("max"),W("decimals",{min:0,max:3,step:1})),{name:"colors",selector:{text:{multiple:!0}}}],e,e=>{const o=Ze({...e});Array.isArray(o.colors)&&(o.colors=o.colors.filter(e=>"string"==typeof e&&""!==e.trim()),0===o.colors.length&&delete o.colors),t(o)}),g`<div class="hint">${this._t("ui.map_hint")}</div>`]}static get styles(){return L`
       :host {
         display: block;
       }

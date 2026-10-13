@@ -3243,7 +3243,7 @@ export class Floor3dCard extends LitElement {
                 sprite.name = entity.object_id + '_info';
                 this._sprites[i] = sprite.name;
                 const info = entity.info || {};
-                this._canvas[i] = this._createTextCanvas(info, this._info[i], this._unit_of_measurement[i]);
+                this._canvas[i] = this._createTextCanvas(entity, this._info[i], this._unit_of_measurement[i]);
                 const size = entity.info && entity.info.size ? entity.info.size : 100;
                 const aspect = this._canvas[i].width / this._canvas[i].height;
                 sprite.scale.set(size * aspect, size, 1);
