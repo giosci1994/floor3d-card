@@ -195,7 +195,9 @@
     "ground": "Terreno",
     "ground_floor_level": "Livello del piano terra",
     "moon_size": "Grandezza della luna",
-    "sky_clouds": "Nuvole del meteo"
+    "sky_clouds": "Nuvole del meteo",
+    "angle_offset": "Angolo dello 0 del sensore",
+    "mapping": "Testo sull'oggetto"
   },
   "helpers": {
     "path": "Per esempio /local/floor3d/",
@@ -224,11 +226,11 @@
     "light_object": "Vuoto: al centro di tutti gli oggetti",
     "round_per_second": "2 o meno",
     "ramp": "Secondi per arrivare a piena velocità o per fermarsi. Predefinito 1.5, 0 per nessuno",
-    "speed_entity": "Sensore numerico che controlla la velocità di rotazione (0-100)",
+    "speed_entity": "Un sensore da 0 a 100: la frazione di round_per_second a cui gira l'oggetto",
     "speed_multiplier": "Moltiplica il valore del sensore per questo fattore. Predefinito 1",
-    "angle_entity": "Sensore numerico che fornisce l'angolo di rotazione in gradi",
-    "angle_min": "Valore minimo dell'angolo per la normalizzazione. Predefinito 0",
-    "angle_max": "Valore massimo dell'angolo per la normalizzazione. Predefinito 360",
+    "angle_entity": "Un sensore in gradi (direzione del vento, una valvola): l'oggetto gira fino a quell'angolo, in senso orario visto dall'estremo positivo dell'asse, a round_per_second. Il sensore di velocità non viene più usato",
+    "angle_min": "L'angolo resta entro questi limiti. Predefinito 0",
+    "angle_max": "Predefinito 360: un giro intero, e l'oggetto passa dalla parte più corta",
     "objfile": "Un .glb può essere compresso con Draco o meshopt",
     "draco_decoder_path": "Solo per i modelli .glb compressi con Draco. Predefinito: CDN di Google",
     "span": "Dell'oggetto, in %",
@@ -280,9 +282,11 @@
     "moon_show": "La luna con la fase di oggi, dal tramonto",
     "icon": "L'icona sulla mappa. Predefinita mdi:cctv",
     "ground": "grass: un prato, oppure un colore (#rrggbb): una superficie sotto la casa che riceve le ombre del sole. Vuoto: nessuna",
-    "ground_floor_level": "Offset Y per posizionare il terreno in centimetri. Utile quando il modello include un seminterrato. Predefinito 0",
+    "ground_floor_level": "Quanto più in alto del fondo del modello sta il terreno, nelle unità del modello (cm per Sweet Home 3D): l'altezza del seminterrato. Il terreno si nasconde quando sono mostrati solo i piani sotto di esso. Predefinito 0",
     "moon_size": "Larghezza della luna in pixel. Predefinita 30",
-    "sky_clouds": "Spento: il cielo ignora le nuvole dell'entità meteo, e stelle e luna si vedono sempre"
+    "sky_clouds": "Spento: il cielo ignora le nuvole dell'entità meteo, e stelle e luna si vedono sempre",
+    "angle_offset": "Aggiunto all'angolo del sensore: dov'è il suo 0 sul modello. Predefinito 0",
+    "mapping": "Piatto: sulla faccia più grande dell'oggetto, leggibile davanti e dietro. Modello: sulla mappatura del modello, come prima della 2.11.3"
   },
   "options": {
     "language": {
@@ -381,6 +385,10 @@
     },
     "ground": {
       "grass": "Prato"
+    },
+    "mapping": {
+      "flat": "Piatto sulla faccia più grande",
+      "model": "Mappatura del modello"
     }
   },
   "types": {

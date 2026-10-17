@@ -81,6 +81,36 @@ async function open(config, stateSet = states()) {
   return { page, errors };
 }
 
+// Waits until fn (run in the page with arg) returns true: animations take their time on a slow
+// computer, a fixed wait fails there. The message says what didn't happen.
+const until = async (page, fn, arg, message, timeout = 15000) => {
+  try {
+    await page.waitForFunction(fn, arg, { timeout, polling: 50 });
+  } catch (error) {
+    throw new Error(message + ': ' + error.message.split('\n')[0]);
+  }
+};
+
+// Until what moves has stopped (doors, covers, camera flights: their tweens end, and so does the
+// animation loop), however slow the computer is.
+const still = (page, message = 'the animations end') => until(page, () => !window.__card._to_animate, null, message);
+// Until the card has followed a new size of its box: the boxes in the corners are placed again by a
+// ResizeObserver, which runs in the frame after the change, before its paint; two frames later they
+// are, however long a frame takes.
+const resized = (page) => page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+// Until fn (in the test) returns something true, polled; it gives it back.
+const eventually = async (fn, message, timeout = 15000) => {
+  const end = Date.now() + timeout;
+  for (;;) {
+    const value = await fn();
+    if (value) return value;
+    if (Date.now() > end) throw new Error(message + ': not within ' + timeout / 1000 + ' s');
+    await new Promise((r) => setTimeout(r, 100));
+  }
+};
+// Until the camera has arrived (other animations, as the blink of an alarm, may go on).
+const flown = (page, message = 'the camera arrives') => until(page, () => window.__card._cameraTweens.every((t) => !t.isPlaying()), null, message);
+
 // The shadow limit as the card computes it, from the GPU of the page and the richest material.
 const shadowState = (page) =>
   page.evaluate(() => {
@@ -263,7 +293,7 @@ test('card editor: objects and shadows from the preview, texts in the language o
   assert.deepEqual(editor.objects, objectNames.slice().sort());
   assert.equal(editor.shadows.lights, 32);
   assert.equal(editor.panels[0], '3D-Modell');
-  assert.ok(editor.panels.includes('Infoboxen'), 'the section of the boxes: ' + editor.panels.join(', '));
+  assert.ok(editor.panels.includes('Anzeigen in den Ecken'), 'the section of the boxes: ' + editor.panels.join(', '));
   assert.ok(editor.panels.includes('Entitäten (31)'), editor.panels.join(', '));
   assert.equal(editor.noShadow, editor.shadows.dropped.length, 'the lines of the lights left without shadow say so');
   assert.deepEqual(errors, []);
@@ -389,13 +419,14 @@ test('alarms: a room blinks over any map with the kind written on it, an object 
   assert.equal(rooms.Living.label, 'Smoke');
   assert.ok(near(rooms.Living.color, '#ff3b30'));
   assert.ok(await page.evaluate(() => window.__card._roomAlarms && window.__card._to_animate), 'blinking');
+  // It blinks: its opacity changes from frame to frame (sampled until it has, a few seconds at most).
   const opacities = [];
-  for (let k = 0; k < 4; k++) {
+  for (let k = 0; k < 50 && !(opacities.length >= 4 && Math.max(...opacities) - Math.min(...opacities) > 0.1); k++) {
     opacities.push((await roomState(page)).Living.opacity);
-    await page.waitForTimeout(170);
+    await page.waitForTimeout(100);
   }
   assert.ok(Math.max(...opacities) - Math.min(...opacities) > 0.1, 'the opacity changes: ' + opacities);
-  await page.waitForTimeout(900); // the camera flies to the room (700 ms)
+  await flown(page, 'the camera flies to the room');
   const target = await page.evaluate(() => {
     const t = window.__card._controls.target;
     const c = window.__card._roomViews[0].box.getCenter(t.clone());
@@ -738,10 +769,10 @@ test('covers: the slats of a blind turn with its tilt, a roller shade shortens, 
   const blindBefore = await worldBox(page, 'blind');
   assert.deepEqual(await slats(), { count: 12, height: 0.4 }, 'open: as in the model');
   await page.evaluate(() => window.__setState('cover.blind', 'closed', { current_tilt_position: 0 }));
-  await page.waitForTimeout(1600);
+  await still(page);
   assert.equal((await slats()).height, 9.92, 'closed: turned by 80°');
   await page.evaluate(() => window.__setState('cover.blind', 'open', { current_tilt_position: 50 }));
-  await page.waitForTimeout(1600);
+  await still(page);
   assert.equal((await slats()).height, 6.73, 'half: 40°');
   assert.deepEqual((await worldBox(page, 'blind'))[1][1], blindBefore[1][1], 'motion none: the head rail stays');
 
@@ -755,7 +786,7 @@ test('covers: the slats of a blind turn with its tilt, a roller shade shortens, 
   const material = await page.evaluate(() => [].concat(window.__card._scene.getObjectByName('shade').material)[0].clippingPlanes);
   assert.ok(!material || material.length === 0, 'no plane cuts a shade that shortens');
   await page.evaluate(() => window.__setState('cover.shade', 'closed', { current_position: 0 }));
-  await page.waitForTimeout(1600);
+  await still(page);
   const closed = await worldBox(page, 'shade');
   assert.ok(Math.abs(closed[1][1] - closed[0][1] - height) < 0.2, 'closed: full length');
   assert.ok(Math.abs(closed[1][1] - shade[1][1]) < 0.2, 'the top stays');
@@ -763,7 +794,7 @@ test('covers: the slats of a blind turn with its tilt, a roller shade shortens, 
   // Shutter opening downward: shown while closed, hidden once open.
   assert.equal(await keeps(page, 'shutter'), true, 'closed: shown');
   await page.evaluate(() => window.__setState('cover.shutter', 'open', { current_position: 100 }));
-  await page.waitForTimeout(1600);
+  await still(page);
   assert.equal(await keeps(page, 'shutter'), false, 'open: under the edge, cut');
   assert.deepEqual(errors, []);
   await page.close();
@@ -787,7 +818,7 @@ test('covers: sliding up and to the left are cut past their edge; tilt_open and 
     window.__setState('cover.shade', 'open', { current_position: 100 });
     window.__setState('cover.blind', 'open', { current_position: 100, current_tilt_position: 100 });
   });
-  await page.waitForTimeout(1600);
+  await still(page);
   assert.equal(await keeps(page, 'shade'), false, 'up: past the top, cut');
   assert.equal(await keeps(page, 'blind'), false, 'left: past the left edge, cut');
   assert.equal(await angle(), 30, 'tilt 100: tilt_open');
@@ -944,7 +975,7 @@ test('status box: what is on or open; a tap outlines those objects and frames th
   assert.equal(box.text, '2 1 1');
   const before = await cameraTarget(page);
   await page.evaluate(() => window.__card.shadowRoot.querySelector('.f3d-status .chip').click());
-  await page.waitForTimeout(900);
+  await flown(page);
   assert.deepEqual(await helpers(page), ['#ffd54f', '#ffd54f'], 'the two lamps on, outlined in yellow');
   assert.notDeepEqual(await cameraTarget(page), before, 'the camera goes to them');
   assert.match((await boxOf(page, 'status')).classes, /f3d-status/);
@@ -1022,7 +1053,7 @@ test('boxes: energy, people, alarm panel and chips, each in its corner, stacked 
   assert.equal(boxes.energy.text, '1.2 kW 3.4 kW 500 W 80% Washer1.9 kW Heater800 W');
   const living = await page.evaluate(() => window.__card._roomViews.find((r) => r.name === 'Living room').box.getCenter(window.__card._controls.target.clone()).toArray().map(Math.round));
   await page.evaluate(() => window.__card.shadowRoot.querySelector('.f3d-energy .consumer').click());
-  await page.waitForTimeout(900);
+  await flown(page);
   assert.deepEqual(await cameraTarget(page), living, 'the washer: to its room');
   await page.evaluate(() => window.__card.shadowRoot.querySelector('.f3d-energy .value').click());
 
@@ -1032,7 +1063,7 @@ test('boxes: energy, people, alarm panel and chips, each in its corner, stacked 
   assert.equal(await page.evaluate(() => window.__card.shadowRoot.querySelectorAll('.f3d-people .away').length), 2);
   const bedroom = await page.evaluate(() => window.__card._roomViews.find((r) => r.name === 'Bedroom').box.getCenter(window.__card._controls.target.clone()).toArray().map(Math.round));
   await page.evaluate(() => window.__card.shadowRoot.querySelector('.f3d-people .place.link').click());
-  await page.waitForTimeout(900);
+  await flown(page);
   assert.deepEqual(await cameraTarget(page), bedroom, 'her room');
   assert.deepEqual(await helpers(page), ['#ffffff'], 'its floor outlined');
 
@@ -1051,7 +1082,7 @@ test('boxes: energy, people, alarm panel and chips, each in its corner, stacked 
   assert.deepEqual(await page.evaluate(() => window.__moreInfo), ['sensor.house_power', 'alarm_control_panel.home', 'sensor.outdoor']);
   // On a narrow card (a phone) the corners of a side don't cover each other or the menus.
   await page.addStyleTag({ content: '#wrap { width: 380px !important; }' });
-  await page.waitForTimeout(300);
+  await resized(page);
   const narrow = Object.fromEntries(await Promise.all(kinds.map(async (k) => [k, (await boxOf(page, k)).rect])));
   narrow.menus = await page.evaluate(() => {
     const r = window.__card._zoommenu.getBoundingClientRect();
@@ -1195,8 +1226,11 @@ test('camera pop-up: the picture comes in its corner when a sensor goes off, a n
   const first = await picture();
   assert.ok(first.src.startsWith(DOOR_PICTURE + '&t='), first.src);
   assert.equal(first.width, Math.round(Math.min(320, 860 * 0.45)), '45% of the card');
-  await page.waitForTimeout(2600);
-  const later = await picture();
+  // A new picture every second, asked again of the camera proxy.
+  const later = await eventually(async () => {
+    const p = await picture();
+    return p.loaded && p.src !== first.src && proxy() - before >= 2 && p;
+  }, 'a new picture');
   assert.ok(later.loaded, 'the picture arrived');
   assert.notEqual(later.src, first.src, 'a new picture');
   assert.ok(proxy() - before >= 2, 'asked again: ' + (proxy() - before));
@@ -1218,8 +1252,7 @@ test('camera pop-up: the picture comes in its corner when a sensor goes off, a n
   });
   box = await boxOf(page, 'camera_popup');
   assert.equal(box.text, 'Front door Ring');
-  await page.waitForTimeout(2400);
-  assert.equal(await boxOf(page, 'camera_popup'), null, 'gone after 2 s');
+  await eventually(async () => (await boxOf(page, 'camera_popup')) === null, 'gone after 2 s');
   // camera_popup_show: no: no picture, the icon still blinks.
   await page.evaluate(() => {
     const card = window.__card;
@@ -1469,16 +1502,277 @@ test('boxes: weather and people fold to what matters and open with a tap, rememb
     });
   const overlap = (a, b) => a[0] < b[2] && b[0] < a[2] && a[1] < b[3] && b[1] < a[3];
   await page.addStyleTag({ content: '#wrap { width: 420px !important; }' });
-  await page.waitForTimeout(300);
+  await resized(page);
   let r = await rects();
   assert.equal(r.status[1], r.menus[1], 'the status box at the height of the menus: ' + JSON.stringify(r));
   assert.ok(!overlap(r.status, r.menus) && !overlap(r.people, r.menus) && r.people[1] > r.status[3], JSON.stringify(r));
   // Narrower, the status box meets the menus too: it goes under them.
   await page.addStyleTag({ content: '#wrap { width: 300px !important; }' });
-  await page.waitForTimeout(300);
+  await resized(page);
   r = await rects();
   assert.ok(r.status[1] >= r.menus[3], 'under the menus: ' + JSON.stringify(r));
   assert.ok(!overlap(r.status, r.menus) && !overlap(r.people, r.menus), JSON.stringify(r));
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+// --- 2.11.3: issue #25 ---------------------------------------------------------------------------
+
+test('ground_floor_level: the ground at the floor of the ground floor, hidden when only the levels under it are shown', { timeout: TIMEOUT }, async () => {
+  const ground = (page) =>
+    page.evaluate(() => {
+      const g = window.__card._scene.getObjectByName('f3d_ground');
+      return { y: Math.round(g.position.y * 10) / 10, visible: g.visible };
+    });
+  // The bedroom of levels.obj (level 1) is lower than the walls of level 0: under a ground at 230.
+  let { page, errors } = await open(house({ objfile: 'levels.obj', ground: 'grass', ground_floor_level: '230' }));
+  assert.deepEqual(await ground(page), { y: 229.5, visible: true }, 'the value of the option, not its name');
+  await page.evaluate(() => window.__card._setVisibleLevel(1));
+  assert.equal((await ground(page)).visible, false, 'only the level under the ground: no ground over it');
+  await page.evaluate(() => window.__card._setVisibleLevel(0));
+  assert.equal((await ground(page)).visible, true);
+  await page.evaluate(() => window.__card._toggleVisibleLevel(0));
+  assert.equal((await ground(page)).visible, false, 'the buttons of the levels too');
+  await page.evaluate(() => window.__card._setVisibleLevel(-1));
+  assert.equal((await ground(page)).visible, true);
+  assert.deepEqual(errors, []);
+  await page.close();
+
+  ({ page, errors } = await open(house({ ground: 'grass' })));
+  assert.deepEqual(await ground(page), { y: -0.5, visible: true }, 'without it: just under the model');
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+test('cameras: the icons over the model also with overlay: yes, under the menus; a tap on an icon is not a tap on the model', { timeout: TIMEOUT }, async () => {
+  const config = house({
+    overlay: 'yes',
+    click: 'yes',
+    zoom_areas: [{ zoom: 'Living', camera_position: { x: -200, y: 500, z: 300 }, camera_target: { x: -200, y: 0, z: 0 } }],
+    entities: [{ entity: 'light.lamp_1', type3d: 'light', object_id: 'table', light: { lumens: 300 } }],
+    cameras: [{ entity: 'camera.door', position: [510, 80, 650] }],
+  });
+  const { page, errors } = await open(config, cameraStates());
+  const [pin] = await pinsOf(page);
+  assert.ok(pin && pin.visible, 'shown');
+  // What is on top at the middle of the icon: the icon (with overlay: yes the model covered it).
+  const onTop = await page.evaluate(({ x, y }) => {
+    const el = window.__card.shadowRoot.elementFromPoint(x, y);
+    return el && (el.closest('.f3d-pin') ? 'pin' : el.localName);
+  }, pin);
+  assert.equal(onTop, 'pin');
+  // The layer of the icons comes before the menus in the box of the model, after a reload too.
+  const order = () =>
+    page.evaluate(() => {
+      const card = window.__card;
+      const kids = [...card._content.children];
+      return { pins: kids.indexOf(card._pinsEl), canvas: kids.indexOf(card._renderer.domElement), levelbar: kids.indexOf(card._levelbar) };
+    });
+  let o = await order();
+  assert.ok(o.pins === 0 && o.levelbar > 0 && o.canvas > 0, JSON.stringify(o));
+  // A tap on the icon opens the camera; the light of the table under it is not switched.
+  await moreInfo(page);
+  await page.mouse.click(pin.x, pin.y);
+  assert.deepEqual(await page.evaluate(() => window.__moreInfo), ['camera.door']);
+  assert.deepEqual(await page.evaluate(() => window.__calls), []);
+  await page.evaluate(() => {
+    window.__before = window.__card._renderer;
+    window.__card.rerender(); // the refresh button of the editor: the box of the model is emptied
+  });
+  const back = () => {
+    const card = window.__card;
+    return card._renderer && card._renderer !== window.__before && card._modelready && card._pinsEl && card._pinsEl.isConnected;
+  };
+  await until(page, back, null, 'the icons come back after a reload', 120000);
+  o = await order();
+  assert.equal(o.pins, 0, JSON.stringify(o));
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+test('info boxes: over their object once the model is centred, hidden with its level, with the font and colours of the info block', { timeout: TIMEOUT }, async () => {
+  const config = house({
+    objfile: 'levels.obj',
+    entities: [
+      { entity: 'sensor.t_living', type3d: 'info', object_id: 'table', info: { size: 40, textfgcolor: 'yellow', textbgcolor: 'rgb(0, 0, 255)' } },
+      // A position of its own (a point of the scene): it still hides with the level of its object.
+      { entity: 'sensor.t_living', type3d: 'info', object_id: 'bed', info: { position: [100, 300, 100] } },
+    ],
+  });
+  const { page, errors } = await open(config);
+  const sprites = () =>
+    page.evaluate(() => {
+      const card = window.__card;
+      return card._sprites.map((name) => {
+        const s = card._scene.getObjectByName(name);
+        const canvas = s.material.map.image;
+        const corner = Array.from(canvas.getContext('2d').getImageData(0, 0, 1, 1).data);
+        return { position: s.position.toArray().map(Math.round), visible: s.visible, level: s.userData.level, corner };
+      });
+    });
+  const table = await worldBox(page, 'table');
+  let [onTable, onBed] = await sprites();
+  const middle = (i) => Math.round((table[0][i] + table[1][i]) / 2);
+  assert.deepEqual(onTable.position, [middle(0), Math.round(table[1][1] + 40 / 2 + 10), middle(2)], 'over the table, where it is now');
+  assert.deepEqual(onTable.corner, [0, 0, 255, 255], 'the background of the info block');
+  assert.deepEqual(onBed.position, [100, 300, 100]);
+  assert.deepEqual([onTable.level, onBed.level], [0, 1]);
+  await page.evaluate(() => window.__card._setVisibleLevel(0));
+  [onTable, onBed] = await sprites();
+  assert.deepEqual([onTable.visible, onBed.visible], [true, false], 'the bedroom hidden: its box too');
+  await page.evaluate(() => window.__card._toggleVisibleLevel(0));
+  [onTable, onBed] = await sprites();
+  assert.deepEqual([onTable.visible, onBed.visible], [false, false]);
+  // A new state: drawn again with the same colours, and still hidden.
+  await page.evaluate(() => window.__setState('sensor.t_living', '22.5'));
+  [onTable] = await sprites();
+  assert.deepEqual([onTable.visible, onTable.corner], [false, [0, 0, 255, 255]]);
+  // The initial view centres the model as the loading did: the boxes stay over their objects.
+  await page.evaluate(() => window.__card._goToView(-1, false));
+  assert.deepEqual(await worldBox(page, 'table'), table);
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+test('text: font and colours from the text block (also those the editor wrote on the entity), flat on the screen, readable, the right way up', { timeout: TIMEOUT }, async () => {
+  // The texture of the text on tv_screen, and the u, v at the corners of its front (facing the room, +z).
+  const screen = (page) =>
+    page.evaluate(() => {
+      const card = window.__card;
+      const mesh = card._scene.getObjectByName('tv_screen');
+      mesh.updateWorldMatrix(true, false);
+      const picture = mesh.material.map.image;
+      const ctx = picture.getContext('2d');
+      const px = (x, y) => Array.from(ctx.getImageData(x, y, 1, 1).data);
+      const position = mesh.geometry.getAttribute('position');
+      const uv = mesh.geometry.getAttribute('uv');
+      const v = new card._camera.position.constructor();
+      const corners = {};
+      for (let k = 0; k < position.count; k++) {
+        v.fromBufferAttribute(position, k).applyMatrix4(mesh.matrixWorld);
+        if (Math.round(v.z + 700) !== 429) continue; // the front
+        const key = (Math.round(v.x + 700) === 420 ? 'left' : 'right') + '-' + (Math.round(v.y) === 205 ? 'top' : 'bottom');
+        corners[key] = [uv.getX(k), uv.getY(k)].map((n) => Math.round(n * 100) / 100);
+      }
+      return { aspect: Math.round((picture.width / picture.height) * 100) / 100, corner: px(0, 0), corners, flipY: mesh.material.map.flipY };
+    });
+  const text = { entity: 'sensor.t_living', type3d: 'text', object_id: 'tv_screen' };
+  let { page, errors } = await open(house({ entities: [{ ...text, text: { textbgcolor: 'rgb(0, 0, 255)', textfgcolor: 'yellow', span: 50 } }] }));
+  let s = await screen(page);
+  assert.equal(s.aspect, Math.round((200 / 110) * 100) / 100, 'the shape of the screen: the text not stretched');
+  assert.deepEqual(s.corner, [0, 0, 255, 255], 'the background colour');
+  assert.deepEqual(s.corners, { 'left-top': [0, 1], 'right-top': [1, 1], 'left-bottom': [0, 0], 'right-bottom': [1, 0] }, 'readable from the room');
+  assert.equal(s.flipY, true);
+  assert.deepEqual(errors, []);
+  await page.close();
+
+  // Font and colours at the level of the entity, as the editor of 2.4 to 2.11.2 wrote them.
+  ({ page, errors } = await open(house({ entities: [{ ...text, textbgcolor: 'rgb(0, 0, 255)', textfgcolor: 'yellow', text: {} }] })));
+  s = await screen(page);
+  assert.deepEqual(s.corner, [0, 0, 255, 255], 'read from the text block they went into');
+  // A new state keeps them (_updatetext drew it with the defaults).
+  await page.evaluate(() => window.__setState('sensor.t_living', '23.5'));
+  assert.deepEqual((await screen(page)).corner, [0, 0, 255, 255]);
+  assert.deepEqual(errors, []);
+  await page.close();
+
+  // The same in a GLB, and mapping: model on the mapping of the model.
+  ({ page, errors } = await open(house({ objfile: 'home.glb', mtlfile: undefined, entities: [{ ...text, text: { textbgcolor: 'rgb(0, 0, 255)' } }] })));
+  s = await screen(page);
+  assert.deepEqual(s.corners, { 'left-top': [0, 1], 'right-top': [1, 1], 'left-bottom': [0, 0], 'right-bottom': [1, 0] });
+  assert.deepEqual(errors, []);
+  await page.close();
+  ({ page, errors } = await open(house({ objfile: 'home.glb', mtlfile: undefined, entities: [{ ...text, text: { mapping: 'model' } }] })));
+  s = await screen(page);
+  assert.deepEqual(s.corners, { 'left-top': [0, 0], 'right-top': [1, 0], 'left-bottom': [0, 1], 'right-bottom': [1, 1] }, 'the UV of the GLB');
+  assert.equal(s.flipY, false);
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+test('rotate: angle_entity turns the object to the angle of the sensor, the shorter way, and stops there', { timeout: TIMEOUT }, async () => {
+  const vane = { entity: 'sensor.wind', type3d: 'rotate', object_id: 'table', rotate: { axis: 'y', round_per_second: 1, angle_entity: 'sensor.direction' } };
+  const { page, errors } = await open(house({ entities: [vane] }), states({ 'sensor.wind': { state: '12', attributes: {} }, 'sensor.direction': { state: '90', attributes: { unit_of_measurement: '°' } } }));
+  const angle = (degrees) => ({ degrees });
+  const at = (degrees) =>
+    until(
+      page,
+      ({ degrees }) => {
+        const card = window.__card;
+        const r = card._scene.getObjectByName('table').rotation.y;
+        // Clockwise seen from above: minus; a whole turn looks the same.
+        const d = ((((-r * 180) / Math.PI - degrees) % 360) + 540) % 360 - 180;
+        return Math.abs(d) < 0.5 && !card._to_animate;
+      },
+      angle(degrees),
+      'turned to ' + degrees + ' and stopped',
+    );
+  await at(90);
+  // A new angle: it turns there in a moment (a quarter turn at 1 turn a second), then stops.
+  await page.evaluate(() => window.__setState('sensor.direction', '180'));
+  await at(180);
+  await page.evaluate(() => window.__setState('sensor.direction', '350'));
+  await at(350);
+  // From 350 to 10: through 0, never through 180.
+  await page.evaluate(() => {
+    window.__seen = [];
+    const card = window.__card;
+    const loop = () => {
+      window.__seen.push((-card._scene.getObjectByName('table').rotation.y * 180) / Math.PI);
+      if (window.__seen.length < 200) requestAnimationFrame(loop);
+    };
+    loop();
+    window.__setState('sensor.direction', '10');
+  });
+  await at(10);
+  const far = await page.evaluate(() => window.__seen.some((d) => {
+    const n = ((d % 360) + 360) % 360;
+    return n > 20 && n < 340;
+  }));
+  assert.equal(far, false, 'the shorter way');
+  // Unavailable: it stays where it is.
+  await page.evaluate(() => window.__setState('sensor.direction', 'unavailable'));
+  await at(10);
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+test('card editor: the objects of a group picked one after the other, without building the preview again; sent at the end', { timeout: TIMEOUT }, async () => {
+  const config = house({ object_groups: [{ object_group: 'furniture', objects: [] }] });
+  const { page, errors } = await open(config);
+  await page.evaluate(async () => {
+    const card = window.__card;
+    card.preview = true;
+    const ed = await card.constructor.getConfigElement();
+    ed.hass = window.__hass();
+    ed.setConfig(JSON.parse(JSON.stringify(card._config)));
+    window.__sent = [];
+    ed.addEventListener('config-changed', (ev) => window.__sent.push(ev.detail.config));
+    document.body.append(ed);
+    await new Promise((r) => setTimeout(r, 300));
+    ed._mode = 'ready';
+    ed._edit('object_groups', 0);
+    await ed.updateComplete;
+    ed._startPick({ path: ['object_groups', 0], add: true });
+    window.__ed = ed;
+  });
+  const objects = () => page.evaluate(() => (window.__ed._config.object_groups[0].objects || []).map((o) => o.object_id || o));
+  for (const [name, point] of [['table', [510, 80, 650]], ['bed', [950, 55, 550]]]) {
+    const [x, y] = await projected(page, point);
+    await page.mouse.click(x, y);
+    await until(page, (name) => (window.__ed._config.object_groups[0].objects || []).some((o) => (o.object_id || o) === name), name, name + ' added');
+  }
+  assert.deepEqual(await objects(), ['table', 'bed']);
+  // Longer than the delay of the editor (1 s): nothing sent, the preview as it was (Home Assistant
+  // would build it again, back at its first view).
+  await page.waitForTimeout(1300);
+  assert.deepEqual(await page.evaluate(() => window.__sent), []);
+  assert.deepEqual(await page.evaluate(() => window.__card._highlightHelpers.length), 2, 'the objects picked outlined');
+  // The end of the picking sends them.
+  await page.evaluate(() => window.__ed._startPick({ path: ['object_groups', 0], add: true }));
+  const sent = await page.evaluate(() => window.__sent);
+  assert.equal(sent.length, 1);
+  assert.deepEqual(sent[0].object_groups, [{ object_group: 'furniture', objects: ['table', 'bed'] }]);
   assert.deepEqual(errors, []);
   await page.close();
 });

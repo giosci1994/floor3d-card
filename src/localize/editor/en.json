@@ -91,8 +91,8 @@
     "speed_entity": "Speed sensor",
     "speed_multiplier": "Speed multiplier",
     "angle_entity": "Angle sensor",
-    "angle_min": "Minimum angle",
-    "angle_max": "Maximum angle",
+    "angle_min": "Smallest angle",
+    "angle_max": "Largest angle",
     "draco_decoder_path": "Draco decoder folder",
     "transparency": "Transparency",
     "elevation": "Height of the room",
@@ -198,7 +198,9 @@
     "ground": "Ground",
     "ground_floor_level": "Ground floor level",
     "moon_size": "Moon size",
-    "sky_clouds": "Clouds of the weather"
+    "sky_clouds": "Clouds of the weather",
+    "angle_offset": "Angle of the 0 of the sensor",
+    "mapping": "Text on the object"
   },
   "helpers": {
     "path": "For example /local/floor3d/",
@@ -227,11 +229,11 @@
     "light_object": "Empty: in the middle of all the objects",
     "round_per_second": "2 or less",
     "ramp": "Seconds to full speed or to stop. Default 1.5, 0 for none",
-    "speed_entity": "Numeric sensor controlling rotation speed (0-100)",
+    "speed_entity": "A sensor from 0 to 100: the fraction of round_per_second the object turns at",
     "speed_multiplier": "Multiply sensor value by this factor. Default 1",
-    "angle_entity": "Numeric sensor providing rotation angle in degrees",
-    "angle_min": "Minimum angle value for normalization. Default 0",
-    "angle_max": "Maximum angle value for normalization. Default 360",
+    "angle_entity": "A sensor in degrees (a wind direction, a valve): the object turns to that angle, clockwise seen from the positive end of the axis, at round_per_second. The speed sensor is then not used",
+    "angle_min": "The angle stays within these limits. Default 0",
+    "angle_max": "Default 360: a whole turn, and the object goes the shorter way",
     "objfile": "A .glb can be compressed with Draco or meshopt",
     "draco_decoder_path": "Only for .glb models compressed with Draco. Default: Google CDN",
     "span": "Of the object, in %",
@@ -283,9 +285,11 @@
     "moon_show": "The moon with its phase of today, from the sunset",
     "icon": "The icon on the map. Default mdi:cctv",
     "ground": "grass: a lawn, or a colour (#rrggbb): a surface under the house that takes the shadows of the sun. Empty: none",
-    "ground_floor_level": "Y offset for ground positioning in centimeters. Useful when the model includes a basement. Default 0",
+    "ground_floor_level": "How much higher than the bottom of the model the ground is, in the units of the model (cm for Sweet Home 3D): the height of the basement. The ground hides when only the levels under it are shown. Default 0",
     "moon_size": "Width of the moon in pixels. Default 30",
-    "sky_clouds": "Off: the sky ignores the clouds of the weather entity, and stars and moon always show"
+    "sky_clouds": "Off: the sky ignores the clouds of the weather entity, and stars and moon always show",
+    "angle_offset": "Added to the angle of the sensor, where its 0 is on the model. Default 0",
+    "mapping": "Flat: on the largest face of the object, readable from the front and the back. Model: on the mapping of the model, as before 2.11.3"
   },
   "options": {
     "language": {
@@ -408,6 +412,10 @@
     },
     "ground": {
       "grass": "Lawn"
+    },
+    "mapping": {
+      "flat": "Flat on the largest face",
+      "model": "Mapping of the model"
     }
   },
   "types": {

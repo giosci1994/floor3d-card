@@ -286,3 +286,30 @@ test('night sky and ground: moon_size written as a number, defaults left out, gr
   assert.equal(cleanConfig({ sky_clouds: false, entities: [] }).sky_clouds, 'no');
   assert.ok(!('moon_size' in cleanConfig({ moon_size: 30, entities: [] })), '30 is the default');
 });
+
+test('text and room: font and colours at the level of the entity go into their block, the block wins', () => {
+  const c = normalizeConfig({
+    entities: [
+      { entity: 'sensor.a', type3d: 'text', object_id: 'tv', font: 'verdana', span: '50', textfgcolor: 'red', textbgcolor: 'black', text: { attribute: 'x', textfgcolor: 'blue' } },
+      { entity: 'sensor.b', type3d: 'room', object_id: 'room_1', font: 'arial' },
+      { entity: 'sensor.c', type3d: 'info', object_id: 'panel', font: 'arial', info: { font: 'serif' } },
+    ],
+  });
+  const [text, room, info] = c.entities;
+  assert.deepEqual(text.text, { attribute: 'x', font: 'verdana', span: '50', textfgcolor: 'blue', textbgcolor: 'black' });
+  ['font', 'span', 'textfgcolor', 'textbgcolor'].forEach((key) => assert.ok(!(key in text), key + ' left the entity'));
+  assert.deepEqual(room.room, { font: 'arial' });
+  assert.equal(info.font, 'arial', 'the info type keeps its options as they are');
+  const clean = cleanConfig({ entities: [{ entity: 'sensor.a', type3d: 'text', object_id: 'tv', span: '50', text: {} }] });
+  assert.deepEqual(clean.entities[0].text, { span: 50 }, 'span written as a number in the block');
+});
+
+test('rotate and ground: angles and ground_floor_level written as numbers, 0 left out', () => {
+  const c = cleanConfig({
+    ground_floor_level: '270',
+    entities: [{ entity: 'sensor.wind', type3d: 'rotate', object_id: 'vane', rotate: { axis: 'y', angle_entity: 'sensor.dir', angle_offset: '90', angle_min: '0', angle_max: '360' } }],
+  });
+  assert.equal(c.ground_floor_level, 270);
+  assert.deepEqual(c.entities[0].rotate, { axis: 'y', angle_entity: 'sensor.dir', angle_offset: 90, angle_min: 0, angle_max: 360 });
+  assert.ok(!('ground_floor_level' in cleanConfig({ ground_floor_level: 0, entities: [] })), '0 is the default');
+});

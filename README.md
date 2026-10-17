@@ -43,7 +43,7 @@ If the original floor3d-card is installed, remove it from HACS first: both defin
 Copy all the `.js` files of the [latest release](https://github.com/giosci1994/floor3d-card/releases/latest) into a folder of `/config/www` and add `floor3d-card.js` as a resource (details in [FORK.md](FORK.md#installation)). It's **required** to load this card as `module`.
 
 ```yaml
-- url: /local/floor3d-card/floor3d-card.js?v=2.11.1 # the version: change it at every update
+- url: /local/floor3d-card/floor3d-card.js?v=2.11.3 # the version: change it at every update
   type: module
 ```
 
@@ -335,6 +335,7 @@ entities:
       textbgcolor: <background color for the text. ex: '#000000' or 'black'>
       textfgcolor: <foreground color for the text. ex: '#ffffff' or 'white'>
       attribute: the optional attribute of the entity you want to show on the object
+      mapping: <flat (default): on the largest face of the object, readable from both sides; model: on the UV mapping of the model>
       .......
 ```
 

@@ -6,7 +6,7 @@
     "interaction": "Interaktion",
     "colours": "Zustandsfarben und Raumkarten",
     "rendering": "Darstellung",
-    "boxes": "Infoboxen",
+    "boxes": "Anzeigen in den Ecken",
     "cameras": "Kameras im Haus"
   },
   "labels": {
@@ -88,8 +88,8 @@
     "speed_entity": "Geschwindigkeitssensor",
     "speed_multiplier": "Geschwindigkeitsmultiplikator",
     "angle_entity": "Winkelsensor",
-    "angle_min": "Minimaler Winkel",
-    "angle_max": "Maximaler Winkel",
+    "angle_min": "Kleinster Winkel",
+    "angle_max": "Größter Winkel",
     "draco_decoder_path": "Ordner des Draco-Decoders",
     "transparency": "Transparenz",
     "elevation": "Höhe des Raums",
@@ -195,7 +195,9 @@
     "ground": "Boden",
     "ground_floor_level": "Erdgeschossniveau",
     "moon_size": "Mondgröße",
-    "sky_clouds": "Wolken des Wetters"
+    "sky_clouds": "Wolken des Wetters",
+    "angle_offset": "Winkel der 0 des Sensors",
+    "mapping": "Text auf dem Objekt"
   },
   "helpers": {
     "path": "Zum Beispiel /local/floor3d/",
@@ -224,11 +226,11 @@
     "light_object": "Leer: in der Mitte aller Objekte",
     "round_per_second": "2 oder weniger",
     "ramp": "Sekunden bis zur vollen Geschwindigkeit oder bis zum Stillstand. Standard 1.5, 0 für keine",
-    "speed_entity": "Numerischer Sensor zur Steuerung der Rotationsgeschwindigkeit (0-100)",
+    "speed_entity": "Ein Sensor von 0 bis 100: der Anteil von round_per_second, mit dem sich das Objekt dreht",
     "speed_multiplier": "Multipliziert den Sensorwert mit diesem Faktor. Standard 1",
-    "angle_entity": "Numerischer Sensor, der den Rotationswinkel in Grad liefert",
-    "angle_min": "Minimaler Winkelwert für die Normalisierung. Standard 0",
-    "angle_max": "Maximaler Winkelwert für die Normalisierung. Standard 360",
+    "angle_entity": "Ein Sensor in Grad (Windrichtung, ein Ventil): das Objekt dreht sich auf diesen Winkel, im Uhrzeigersinn vom positiven Ende der Achse gesehen, mit round_per_second. Der Geschwindigkeitssensor wird dann nicht verwendet",
+    "angle_min": "Der Winkel bleibt in diesen Grenzen. Standard 0",
+    "angle_max": "Standard 360: eine ganze Umdrehung, und das Objekt nimmt den kürzeren Weg",
     "objfile": "Eine .glb kann mit Draco oder meshopt komprimiert werden",
     "draco_decoder_path": "Nur für mit Draco komprimierte .glb-Modelle. Standard: Google-CDN",
     "span": "Des Objekts, in %",
@@ -280,9 +282,11 @@
     "moon_show": "Der Mond mit seiner heutigen Phase, ab Sonnenuntergang",
     "icon": "Das Symbol auf der Karte. Standard mdi:cctv",
     "ground": "grass: eine Wiese, oder eine Farbe (#rrggbb): eine Fläche unter dem Haus, die die Schatten der Sonne aufnimmt. Leer: keine",
-    "ground_floor_level": "Y-Versatz für die Bodenpositionierung in Zentimetern. Nützlich wenn das Modell einen Keller enthält. Standard 0",
+    "ground_floor_level": "Wie viel höher als der Boden des Modells der Rasen liegt, in den Einheiten des Modells (cm bei Sweet Home 3D): die Höhe des Kellers. Der Rasen verschwindet, wenn nur die Etagen darunter gezeigt werden. Standard 0",
     "moon_size": "Breite des Mondes in Pixeln. Standard 30",
-    "sky_clouds": "Aus: der Himmel ignoriert die Wolken der Wetter-Entität, Sterne und Mond sind immer zu sehen"
+    "sky_clouds": "Aus: der Himmel ignoriert die Wolken der Wetter-Entität, Sterne und Mond sind immer zu sehen",
+    "angle_offset": "Wird zum Winkel des Sensors addiert: wo seine 0 am Modell liegt. Standard 0",
+    "mapping": "Flach: auf der größten Fläche des Objekts, von vorne und hinten lesbar. Modell: auf der Abbildung (UV) des Modells, wie vor 2.11.3"
   },
   "options": {
     "language": {
@@ -381,6 +385,10 @@
     },
     "ground": {
       "grass": "Wiese"
+    },
+    "mapping": {
+      "flat": "Flach auf der größten Fläche",
+      "model": "Abbildung des Modells"
     }
   },
   "types": {
