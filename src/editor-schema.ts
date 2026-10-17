@@ -408,7 +408,8 @@ export const typeSchema = (type: string, objects: string[], item: any = {}, part
               entity('speed_entity'),
               num('speed_multiplier', { min: 0 }),
               entity('angle_entity'),
-              row(num('angle_min'), num('angle_max')),
+              num('angle_offset', { unit_of_measurement: '°' }),
+              row(num('angle_min', { unit_of_measurement: '°' }), num('angle_max', { unit_of_measurement: '°' })),
             ],
           },
         ],
@@ -433,11 +434,14 @@ export const typeSchema = (type: string, objects: string[], item: any = {}, part
           },
         ],
         'label_text',
-        textStyle(),
+        textStyle('room'),
         'colorcondition',
       ];
     case 'text':
-      return [[{ name: 'text', type: 'grid', column_min_width: '140px', schema: [text('attribute')] }], textStyle()];
+      return [
+        [{ name: 'text', type: 'grid', column_min_width: '140px', schema: [text('attribute'), choice('mapping', ['flat', 'model'])] }],
+        textStyle('text'),
+      ];
     case 'color':
       return ['colorcondition'];
     case 'hide':
@@ -549,10 +553,14 @@ export const typeSchema = (type: string, objects: string[], item: any = {}, part
   }
 };
 
-// Font and colours of the text of the text and room types (at the level of the entity).
-const textStyle = (): Schema[] => [
-  row(text('font'), num('span', { min: 0, max: 100, unit_of_measurement: '%' })),
-  row(text('textfgcolor'), text('textbgcolor')),
+// Font and colours of the text of the text and room types, in their block (text:, room:).
+const textStyle = (block: string): Schema[] => [
+  {
+    name: block,
+    type: 'grid',
+    column_min_width: '140px',
+    schema: [text('font'), num('span', { min: 0, max: 100, unit_of_measurement: '%' }), text('textfgcolor'), text('textbgcolor')],
+  },
 ];
 
 export const groupSchema = (): Schema[] => [text('object_group')];

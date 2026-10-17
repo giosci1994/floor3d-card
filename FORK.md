@@ -21,7 +21,7 @@ If the original card is installed, remove it from HACS first: both define `custo
 ### By hand
 
 1. Download all the `.js` files of the [latest release](https://github.com/giosci1994/floor3d-card/releases/latest) (they are also in `dist/`) into a folder of `config/www`, for example `config/www/floor3d-card/`. There are six files: the card, its core (libraries and code shared with the editor), the editor, which is loaded only when you edit the card, the classic editor, which only old Home Assistant versions load, and the decoders of [compressed models](#compressed-models), loaded only by the models that need them.
-2. Add `/local/floor3d-card/floor3d-card.js?v=2.11.1` as a resource of type **module** (Settings › Dashboards › Resources). If the original card is installed too, remove it first.
+2. Add `/local/floor3d-card/floor3d-card.js?v=2.11.3` as a resource of type **module** (Settings › Dashboards › Resources). If the original card is installed too, remove it first.
 3. Reload the browser or the app.
 
 At every update copy the new files and change the `?v=` of the resource: Home Assistant serves `/local` with a 31-day cache, and so may a proxy in front of it, while a new query is a new address. The core and the editor have the hash of their content in the name, so they are new addresses too; the ones of older versions can be deleted.
@@ -29,13 +29,15 @@ At every update copy the new files and change the `?v=` of the resource: Home As
 ## Building
 
 ```bash
-npx --yes yarn@1.22.22 install --frozen-lockfile
+npx --yes yarn@1.22.22 install --frozen-lockfile # not npm install: see below
 npm run build        # = rollup -c rollup.config.mjs
 npm start            # rebuilds on every change and serves dist/ on port 5000
 npm test             # tests of src/config.ts and of the language files (Node 22 or newer)
 npm run test:browser # the built card in headless Chromium (after npm run build), see Browser tests
 npm run lint         # ESLint on src/*.ts
 ```
+
+The dependencies are installed with yarn 1 from `yarn.lock`, as the Build and Release workflows do. `npm install` used to rewrite `yarn.lock` in a form yarn 1 can't read (the `lit2` alias) and to add a `package-lock.json`, and the Build workflow then failed at its first step, before any test (2.11.x); `.npmrc` (`package-lock=false`) now stops npm from writing either. To change a dependency use `npx --yes yarn@1.22.22 add` (or `upgrade`), which updates `yarn.lock` as yarn reads it.
 
 `CARD_VERSION` in `src/const.ts` is shown in the card editor and in the console: keep it equal to `version` in `package.json` and to the tag of the release (see [Publishing a release](#publishing-a-release)). For test builds between releases add a suffix, for example `v2.0.1-dev.1`.
 
@@ -81,11 +83,15 @@ The Validate workflow runs the HACS checks at every push and every night; the Bu
 - **Ground** (2.10.1, `ground`): a lawn or a colour under the house, which takes the shadows of the sun and fades into the background at its edge. See [Sky and weather](#sky-and-weather).
 - **Moon size and clouds** (2.10.1): `moon_size` sets how big the moon is, and `sky_clouds: no` shows stars and moon whatever the weather. See [Sky and weather](#sky-and-weather).
 - **Boxes that fold** (2.10.1): the weather and the people fold to what matters most with a tap, and stay so on that device. On a phone, the boxes at the top left stay beside the menus when they fit. See [Boxes](#boxes).
-- **Ground floor level** (2.11.0, `ground_floor_level`): adjusts the Y position of the ground for models with basements. Set this to the height offset in centimeters where the real ground floor is. See [Sky and weather](#sky-and-weather).
-- **Sensor-controlled animations** (2.11.0): objects can now rotate based on numeric sensor values. `speed_entity` controls rotation speed (0-100), and `angle_entity` controls rotation angle in degrees. See [Fans](#fans).
-- **CCTV icon visibility fix** (2.11.0): camera icons are now correctly hidden when occluded by the model geometry, improving visibility at different zoom levels.
-- **InfoBox level visibility** (2.11.1): infoboxes now respect level visibility settings. When a level is hidden, infoboxes assigned to objects on that level are also hidden.
-- **Editor performance improvement** (2.11.1): picking objects for object groups no longer triggers a preview rebuild after each selection, making group creation much faster.
+- **Ground floor level** (2.11, `ground_floor_level`): the ground of a house with a basement at the floor of its ground floor, hidden when only the levels under it are shown. Read by the card since 2.11.3 (2.11.0 to 2.11.2 read the name of the option, always 0). See [Sky and weather](#sky-and-weather).
+- **Rotation from sensors** (2.11, `rotate.speed_entity`, `rotate.angle_entity`): a sensor from 0 to 100 sets the speed of a fan or a turbine; a sensor in degrees turns an object to that angle, as a weather vane, the shorter way (since 2.11.3: before, the angle set a speed). See [Fans](#fans).
+- **Fixes of issue #25** (2.11.3):
+  - The icons of the cameras show over the model also with `overlay: yes`: the model covered them, and they showed only where nothing of the model was drawn. They were hidden by a check added in 2.11.0, which wrongly looked for the model between the camera and the icon at every frame: removed.
+  - The info boxes (`type3d: info`) are placed over their object once the model is centred (they were half the house away), hide with the level of their object also when they have a `position`, and keep the font and colours of their `info` block from the first drawing.
+  - The text type takes `font`, `span`, `textfgcolor` and `textbgcolor` from its `text` block, as the README says (the room label from its `room` block): the editor wrote them on the entity, where nothing read them, and a configuration saved so is read as if they were in the block. The text lies flat on the object, readable and in its proportions (see [Text on objects](#text-on-objects)).
+  - Picking the objects of a group in the preview no longer builds the preview again after every object (back at its first view): the configuration goes to Home Assistant when the picking ends, or with a tap outside the preview (the Save button).
+  - The initial view (the button, or the views menu) centres the model as the loading does: a model whose bottom is not at 0 moved up or down.
+  - In German the boxes of the corners are "Anzeigen in den Ecken", no longer "Infoboxen" like the info type.
 - **Languages** (2.6): the card and its editor in English, Italian and German (the card also in Norwegian). Each user sees the language of their Home Assistant profile; the `language` option sets one for the card. See [Languages](#languages).
 - **Shadows in the editor** (2.6): the card editor says how many lights cast a shadow and how many the device can draw, and names the lights left without. See [Shadows](#shadows).
 - **Version label** at the top of the card editor and in the console banner.
@@ -321,11 +327,10 @@ tap_action:
 
 Rotating objects (`type3d: rotate`) speed up when they are switched on and slow down when they are switched off, instead of starting and stopping at once. `ramp` is the time from stopped to full speed, in seconds: 1.5 by default, `0` for the old behaviour. A fan with a `percentage` attribute turns at that fraction of `round_per_second`, and with `direction: reverse` the other way; a change of direction slows down and speeds up again. The idea comes from [Steven-D-Morgan/hass-3d-floorplan](https://github.com/Steven-D-Morgan/hass-3d-floorplan).
 
-**Sensor-controlled rotation** (2.11.0): rotation can now be controlled by numeric sensors instead of only on/off entities:
-- `speed_entity`: a numeric sensor (0-100) that controls the rotation speed. Use `speed_multiplier` to adjust the scale (default: 1).
-- `angle_entity`: a numeric sensor providing rotation angle in degrees. Use `angle_min` and `angle_max` to define the range (defaults: 0-360). The object rotates to match the sensor value.
+**Rotation from sensors** (2.11):
 
-These options are useful for things like anemometers controlling wind turbines, directional sensors controlling weather vanes, or any automation that outputs numeric rotation values.
+- `speed_entity`: a sensor from 0 to 100 (times `speed_multiplier`, 1 by default) is the fraction of `round_per_second` the object turns at, as an anemometer for a wind turbine.
+- `angle_entity`: a sensor in degrees, as the direction of the wind for a weather vane. The object turns to that angle around its `axis`, clockwise seen from the positive end of the axis (from above for `y`, as a compass), at `round_per_second` (0.5 by default), and stays there; when the card opens it is there at once. `angle_offset` (degrees, 0 by default) is added to the sensor: the direction of its 0 on the model. `angle_min` and `angle_max` (0 and 360 by default) keep the angle within them, for a valve or a barrier; over a whole turn the object goes the shorter way (from 350 to 10 through 0). While the sensor has no number (`unavailable`) the object stays where it is. With `angle_entity`, `speed_entity` and the state of the entity are not used. 2.11.0 to 2.11.2 took the angle for a speed: the object turned on and on.
 
 ```yaml
 - entity: fan.ceiling
@@ -337,25 +342,30 @@ These options are useful for things like anemometers controlling wind turbines, 
     ramp: 3
     hinge: Fan_hub
 
-# Sensor-controlled examples:
-- entity: sensor.wind_turbine_speed
+- entity: sensor.wind_speed
   type3d: rotate
   object_id: <Turbine>
   rotate:
-    axis: y
+    axis: z
     round_per_second: 2
     speed_entity: sensor.wind_speed
-    speed_multiplier: 0.8
+    speed_multiplier: 2 # 50 km/h: full speed
 
-- entity: sensor.weather_vane_direction
+- entity: sensor.wind_direction
   type3d: rotate
   object_id: <WeatherVane>
   rotate:
     axis: y
+    round_per_second: 0.25
     angle_entity: sensor.wind_direction
-    angle_min: 0
-    angle_max: 360
+    angle_offset: 90 # the vane of the model points east at 0
 ```
+
+### Text on objects
+
+The text type (`type3d: text`) writes the state of its entity on an object, as a TV screen or a panel. Its `font`, `span` (the share of the object the text takes, in %), `textfgcolor` and `textbgcolor` go in its `text` block, as in the README; those of the label of a room in its `room` block. The editor of 2.4 to 2.11.2 wrote them on the entity, where nothing read them: since 2.11.3 a configuration saved so is read as if they were in the block, and the editor writes them there.
+
+Since 2.11.3 the text lies flat on the largest face of the object and on the one opposite (`text.mapping: flat`, the default): readable from both sides and never mirrored, the right way up (on a floor or a table, the top away from the initial view), in the middle of the face with its proportions, on objects of several meshes too; the other faces take the background colour (`textbgcolor`, transparent by default). Before, the text followed the mapping (UV) of the model, which often wrote it mirrored, stretched, upside down, or on no face at all (a box of Sweet Home 3D, a mesh without UV): `text.mapping: model` keeps that.
 
 ### Object ids with *
 
@@ -526,7 +536,7 @@ A cover of the original card slides: the pane goes up (or down) into its box, an
   - `moon_size` (2.10.1): the width of the moon in pixels, 30 by default (22 before 2.10.1).
   - `sky_clouds: no` (2.10.1): the sky ignores the clouds of the weather entity: no grey, and stars and moon whatever the weather. The forecast box stays as it is.
 - `ground` (2.10.1): `grass` for a lawn drawn by the card, or a colour (`'#806040'`), under the house. It is two and a half times as wide as the house and fades into the background at its edge, so that the sky, its stars and its moon still show around the house. With `shadow: yes` it takes the shadows of the sun, which then covers one and a half times the model, for the long shadows of the evening. It isn't part of the model: taps go through it, and the camera, the views and the sun are fitted to the house as before. It takes no more texture units than a plain material, so the lamps keep their shadows (see [Shadows](#shadows)). A model with a ground of its own keeps it: the one of the card stays under it. The card draws no ground without this option, and the sand-coloured ground of the `sky: yes` of the original card is gone (see [Test page](#test-page)).
-  - `ground_floor_level` (2.11.0): Y offset in centimeters for positioning the ground. Useful when the model includes a basement: the card positions the ground at the bottom of the bounding box (which includes the basement), but you may want it at the real ground floor instead. Set this to a positive value to raise the ground, or a negative value to lower it. Default: 0 (no offset).
+  - `ground_floor_level` (2.11): how much higher than the bottom of the model the ground is, in the units of the model (centimetres for a model of Sweet Home 3D), 0 by default. With a basement the bottom of the model is the floor of the basement, and the house stood on the ground with its basement: set the height of the basement (for example `270`) and the ground is at the floor of the ground floor, with the basement under it. The ground hides when only levels under it are shown (a level whose top is not above the ground), so that the basement can be seen from above; it is there again with a level above it. A negative value lowers it. 2.11.0 to 2.11.2 had the option in the editor but the card read its name instead of its value: the ground did not move.
 - `weather: weather.home`: a box in a corner with the weather now and the next forecasts, in the language of the card. A tap opens the entity. Home Assistant sends the forecast as it changes (the same way as for its weather card), with nothing to set up.
   - `weather_position`: `bottom-left` (default), `bottom-right`, `top-left`, or `top-right` under the menus;
   - `weather_forecast`: `daily` (default), `hourly` or `twice_daily`; if the entity doesn't have it, the one it has;
@@ -643,7 +653,7 @@ Some of these were found and fixed first in other forks: [Steven-D-Morgan/hass-3
 
 ## Browser tests
 
-`test/browser/` runs the built card (`dist/`) in headless Chromium with software WebGL (SwiftShader), the same on every computer, on every pull request and push (`.github/workflows/build.yml`, about a minute). The test house is made by `model.mjs` when the tests start (OBJ + MTL, the same with the bedroom on a second level, the same with covers in the windows, GLB, and a GLB whose walls have a material with 10 texture units), and `server.mjs` serves it with the test page. The tests check that:
+`test/browser/` runs the built card (`dist/`) in headless Chromium with software WebGL (SwiftShader), the same on every computer, on every pull request and push (`.github/workflows/build.yml`, a few minutes). The test house is made by `model.mjs` when the tests start (OBJ + MTL, the same with the bedroom on a second level, the same with covers in the windows, GLB, and a GLB whose walls have a material with 10 texture units), and `server.mjs` serves it with the test page. The tests check that:
 
 - the model is drawn, with 30 lamps, the TV and the sun casting shadows, without errors in the page or in the shaders, in OBJ and GLB, and with the material with many textures; and that the shadow limit is the one of the GPU (see [Shadows](#shadows));
 - one light for a lamp of several objects goes in the middle of them, or on `light_object`;
@@ -662,7 +672,10 @@ Some of these were found and fixed first in other forks: [Steven-D-Morgan/hass-3
 - the sky follows the sun and turns grey with clouds; the forecast box shows the weather now and the next forecasts in the language of the card, asks for a forecast the entity has, opens the entity on a tap, and stops its subscription when the card goes away (2.8);
 - the status box counts what is on or open, outlines those objects on a tap and frames them; the energy, people, alarm panel and chips boxes show their entities, go to the room of a plug or of a person, and open their entities; every box stays in its corner without covering the others or the menus, also on a narrow card (2.9);
 - the icon of a camera stays over its point of the model as the view turns, hides with its level and opens the camera on a tap; its picture pops up when a sensor goes off or a doorbell event comes, gets a new picture every second, closes with the cross and goes away after the duration; the editor fills the place of a camera from a tap on the model, with its level; at night the stars and the moon come out over the sky, fewer with clouds (2.10);
-- the ground lies just under the house, wide, outside the model (not tapped, not listed), takes the shadows of the sun without lowering the limit of the shadows, and shows where the background showed before; a colour instead of the lawn; `moon_size` and `sky_clouds: no` change the moon and show the stars through the clouds; the weather and the people fold with their chevron, open with a tap and are remembered on the device; on a phone a narrow box at the top left stays beside the menus, and goes under them only when it meets them (2.10.1).
+- the ground lies just under the house, wide, outside the model (not tapped, not listed), takes the shadows of the sun without lowering the limit of the shadows, and shows where the background showed before; a colour instead of the lawn; `moon_size` and `sky_clouds: no` change the moon and show the stars through the clouds; the weather and the people fold with their chevron, open with a tap and are remembered on the device; on a phone a narrow box at the top left stays beside the menus, and goes under them only when it meets them (2.10.1);
+- `ground_floor_level` raises the ground, which hides when only the levels under it are shown; the icons of the cameras stay over the model with `overlay: yes`, under the menus, and a tap on one is not a tap on the model behind it; the info boxes are over their object once the model is centred, hide with its level and keep the colours of their block; the text takes the font and colours of its block (and those the editor wrote on the entity), lies flat on the screen readable from the room in its proportions, in OBJ and GLB, or on the UV of the model with `mapping: model`; `angle_entity` turns an object to its angle the shorter way and stops; the objects of a group are picked one after the other without the configuration going to Home Assistant until the end (2.11.3). Each of these fails on 2.11.2.
+
+The tests wait for what they check (an animation that ends, a camera that arrives, a new picture of a camera), not for a fixed time: a busy computer is slower, and a fixed wait long enough on one failed on another. They pass with every core of the computer busy with something else.
 
 To run them locally: `npx playwright install --only-shell chromium` once, then `npm run build` and `npm run test:browser`.
 

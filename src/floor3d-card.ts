@@ -33,7 +33,9 @@ import {
 import { localize, pickLanguage } from './localize/localize';
 import { findSlats, slatAngle, Slat, tiltSlats } from './slats';
 import { moonPhase, skyBackground, weatherClouds } from './sky';
-import { CameraItem, cameraList, cameraName, newPopupMemory, popupStep, snapshotUrl } from './cameras';
+import { fitText, textLayout } from './textmap';
+import { rotationAngle, turnToward } from './rotate';
+import { CameraItem, cameraList, cameraName, newPopupMemory, point, popupStep, snapshotUrl } from './cameras';
 import { grassTexture, groundAlpha, groundStyle } from './ground';
 import { forecastLabel, forecastType, ForecastType, formatDegrees, weatherIcon } from './weather';
 import {
@@ -317,6 +319,11 @@ export class Floor3dCard extends LitElement {
   private _rotation_speed: number[] = []; // speed now, on its way to the target (rotate.ramp)
   private _rotation_ramp: number[] = []; // seconds from stopped to full speed
   private _rotation_index: number[];
+  // angle_entity (rotate.ts): the angle to turn to, the angle turned to now (radians, null: none yet),
+  // and whether the range is a whole turn.
+  private _rotation_angle: (number | null)[] = [];
+  private _rotation_turned: (number | null)[] = [];
+  private _rotation_wrap: boolean[] = [];
   private _animated_transitions: any[];
   private _lastFrameTime?: number | null; // timestamp of the previous animation frame
   private _lastRenderTime = 0;
@@ -2155,6 +2162,7 @@ export class Floor3dCard extends LitElement {
       this._addInputListeners();
 
       this._setCamera();
+      this._placeInfoSprites();
 
       this._controls = new OrbitControls(this._camera, this._renderer.domElement);
 
@@ -2357,14 +2365,8 @@ export class Floor3dCard extends LitElement {
       element.visible = this._displaylevels[i];
     });
     this._updateRaycasting();
+    this._showWithLevels();
     render(this._getLevelBar(), this._levelbar);
-
-    // Update infobox visibility based on level changes
-    this._config.entities.forEach((entity, index) => {
-      if (entity.type3d === 'info') {
-        this._updateinfo(entity, this._info[index], this._unit_of_measurement[index], index);
-      }
-    });
   }
 
   private _toggleVisibleLevel(level: number): void {
@@ -2377,13 +2379,7 @@ export class Floor3dCard extends LitElement {
       element.visible = this._displaylevels[i];
     });
     this._updateRaycasting();
-
-    // Update infobox visibility based on level changes
-    this._config.entities.forEach((entity, index) => {
-      if (entity.type3d === 'info') {
-        this._updateinfo(entity, this._info[index], this._unit_of_measurement[index], index);
-      }
-    });
+    this._showWithLevels();
   }
 
   private _updateRaycasting() {
@@ -2767,7 +2763,9 @@ export class Floor3dCard extends LitElement {
   }
 
   private _setCamera(): void {
-    const box: THREE.Box3 = new THREE.Box3().setFromObject(this._bboxmodel);
+    // The box of the model in its own coordinates: the initial view centres it as the loading did,
+    // also once it is centred (the bottom was lifted again to the height it has in the file).
+    const box: THREE.Box3 = new THREE.Box3().setFromObject(this._bboxmodel).translate(this._bboxmodel.position.clone().negate());
 
     this._modelX = this._bboxmodel.position.x = -(box.max.x - box.min.x) / 2;
     this._modelY = this._bboxmodel.position.y = -box.min.y;
@@ -2887,6 +2885,9 @@ export class Floor3dCard extends LitElement {
         this._rotation_speed = [];
         this._rotation_ramp = [];
         this._rotation_index = [];
+        this._rotation_angle = [];
+        this._rotation_turned = [];
+        this._rotation_wrap = [];
         this._animated_transitions = [];
         this._pivot = [];
         this._axis_for_door = [];
@@ -2920,6 +2921,9 @@ export class Floor3dCard extends LitElement {
                 this._rotation_speed.push(0);
                 this._rotation_ramp.push(Math.max(0, this._num(entity.rotate.ramp, ROTATE_RAMP)));
                 this._rotation_index.push(i);
+                this._rotation_angle.push(null);
+                this._rotation_turned.push(null);
+                this._rotation_wrap.push(false);
                 let bbox: THREE.Box3;
                 let hinge: any;
                 if (entity.rotate.hinge) {
@@ -2935,6 +2939,7 @@ export class Floor3dCard extends LitElement {
                 this._object_ids[i].objects.forEach((element) => {
                   let _obj: any = this._scene.getObjectByName(element.object_id);
                   this._centerobjecttopivot(_obj, this._pivot[i]);
+                  _obj.userData.f3dRotationBase = _obj.rotation[entity.rotate.axis] || 0; // the angle 0 of angle_entity
                   _obj.geometry.applyMatrix4(
                     new THREE.Matrix4().makeTranslation(-this._pivot[i].x, -this._pivot[i].y, -this._pivot[i].z),
                   );
@@ -3242,35 +3247,23 @@ export class Floor3dCard extends LitElement {
                 const sprite = new THREE.Sprite();
                 sprite.name = entity.object_id + '_info';
                 this._sprites[i] = sprite.name;
+                // The font and the colours are in the info block, as in _updateinfo.
                 const info = entity.info || {};
-                this._canvas[i] = this._createTextCanvas(entity, this._info[i], this._unit_of_measurement[i]);
-                const size = entity.info && entity.info.size ? entity.info.size : 100;
+                this._canvas[i] = this._createTextCanvas(info, this._info[i], this._unit_of_measurement[i]);
+                const size = info.size ? info.size : 100;
                 const aspect = this._canvas[i].width / this._canvas[i].height;
                 sprite.scale.set(size * aspect, size, 1);
-
-                // Track the level of the associated object
-                let infoLevel: number | undefined;
-
-                if (entity.info && entity.info.position) {
-                  sprite.position.set(entity.info.position[0], entity.info.position[1], entity.info.position[2]);
-                } else if (entity.object_id) {
-                  const _foundobject = this._scene.getObjectByName(entity.object_id);
-                  if (_foundobject) {
-                    const box = new THREE.Box3().setFromObject(_foundobject);
-                    const center = new THREE.Vector3();
-                    box.getCenter(center);
-                    sprite.position.copy(center);
-                    sprite.position.y = box.max.y + size / 2 + 10;
-                    // Store the level from the associated object
-                    infoLevel = _foundobject.userData.level;
-                  }
+                // The box hides with the level of its object, also when it has a position of its own.
+                const object = entity.object_id ? this._scene.getObjectByName(entity.object_id) : undefined;
+                if (object && object.userData.level !== undefined) sprite.userData.level = object.userData.level;
+                const position = point(info.position);
+                if (position) {
+                  // A point of the scene, as the camera_position.
+                  sprite.position.set(...position);
+                } else if (object) {
+                  // Over its object once the model is centred (_placeInfoSprites): the model isn't yet.
+                  sprite.userData.above = object.name;
                 }
-
-                // Store the level in sprite's userData for visibility management
-                if (infoLevel !== undefined) {
-                  sprite.userData.level = infoLevel;
-                }
-
                 this._scene.add(sprite);
               }
               if (entity.type3d == 'shower') {
@@ -3331,7 +3324,7 @@ export class Floor3dCard extends LitElement {
             } else if (entity.type3d == 'door') {
               this._updatedoor(entity, i);
             } else if (entity.type3d == 'text') {
-              this._canvas[i] = this._createTextCanvas(entity, this._text[i], this._unit_of_measurement[i]);
+              this._canvas[i] = this._createTextCanvas(entity.text, this._text[i], this._unit_of_measurement[i]);
               this._updatetext(entity, this._text[i], this._canvas[i], this._unit_of_measurement[i]);
             } else if (entity.type3d == 'rotate') {
               this._rotatecalc(entity, i);
@@ -3578,13 +3571,40 @@ export class Floor3dCard extends LitElement {
       const size = item.info && item.info.size ? item.info.size : 100;
       const aspect = canvas.width / canvas.height;
       sprite.scale.set(size * aspect, size, 1);
+      sprite.visible = this._levelShown(sprite.userData.level);
+    }
+  }
 
-      // Hide infobox if its level is disabled
-      if (sprite.userData.level !== undefined && this._displaylevels && this._displaylevels[sprite.userData.level] === false) {
-        sprite.visible = false;
-      } else {
-        sprite.visible = true;
-      }
+  // A level shown now (undefined: no level, always shown).
+  private _levelShown(level: number | undefined): boolean {
+    return level === undefined || !this._displaylevels || this._displaylevels[level] !== false;
+  }
+
+  // The boxes of the info type without a position of their own: over the middle of their object, now
+  // that the model is centred (_setCamera), at size / 2 + 10 above its top.
+  private _placeInfoSprites(): void {
+    this._bboxmodel.updateMatrixWorld(true);
+    (this._sprites || []).forEach((name, i) => {
+      const sprite = name && this._config.entities[i] && this._config.entities[i].type3d == 'info' ? this._scene.getObjectByName(name) : undefined;
+      const object = sprite && sprite.userData.above ? this._scene.getObjectByName(sprite.userData.above) : undefined;
+      if (!object) return;
+      const box = new THREE.Box3().setFromObject(object);
+      if (box.isEmpty()) return;
+      box.getCenter(sprite.position);
+      sprite.position.y = box.max.y + sprite.scale.y / 2 + 10;
+    });
+  }
+
+  // What follows the levels shown: the boxes of the info type, and the ground, which hides when only
+  // levels under it are shown (a basement under ground_floor_level).
+  private _showWithLevels(): void {
+    (this._sprites || []).forEach((name, i) => {
+      const sprite = name && this._config.entities[i] && this._config.entities[i].type3d == 'info' ? this._scene.getObjectByName(name) : undefined;
+      if (sprite) sprite.visible = this._levelShown(sprite.userData.level);
+    });
+    if (this._ground) {
+      const tops: number[] = this._ground.userData.levelTops || [];
+      this._ground.visible = !tops.length || tops.some((top, level) => top > this._ground.position.y + 1 && this._levelShown(level));
     }
   }
 
@@ -3859,33 +3879,82 @@ export class Floor3dCard extends LitElement {
     ctx.fillText(text, width / 2, height / 2);
   }
 
-  private _applyTextCanvas(canvas: HTMLCanvasElement, object: THREE.Object3D) {
-    // put the canvas texture with the text on top of the generic object: consider merge with the applyTextCanvasSprite
-    const _foundobject: any = object;
-    let fileExt = this._config.objfile.split('?')[0].split('.').pop();
-
-    if (_foundobject instanceof THREE.Mesh) {
-      const texture = new THREE.CanvasTexture(canvas);
-      texture.colorSpace = THREE.SRGBColorSpace; // canvas colours are sRGB
-      texture.repeat.set(1, 1);
-
-      if (fileExt == 'glb') {
-        texture.flipY = false;
+  // The text on its object. mapping: flat (the default) lays it on the largest face of the object and
+  // on the one opposite, readable from both sides, in the middle of the face with its proportions,
+  // also on an object of several meshes; the rest of the object in the colour of the background (see
+  // textmap.ts). mapping: model uses the mapping (UV) of the model, as before 2.11.3: often mirrored,
+  // stretched, or nowhere.
+  private _applyTextCanvas(canvas: HTMLCanvasElement, object: THREE.Object3D, style: any = {}) {
+    if (style.mapping == 'model') {
+      if (object instanceof THREE.Mesh) {
+        const texture = new THREE.CanvasTexture(canvas);
+        if (this._config.objfile.split('?')[0].split('.').pop() == 'glb') texture.flipY = false;
+        this._setTextTexture(object, texture);
       }
-      if (((_foundobject as THREE.Mesh).material as THREE.MeshBasicMaterial).name.startsWith('f3dmat')) {
-        const material = (_foundobject as THREE.Mesh).material as THREE.MeshBasicMaterial;
-        // The texture of the previous text stays on the GPU until it is disposed: one per update.
-        if (material.map) material.map.dispose();
-        material.map = texture;
-      } else {
-        const material = new THREE.MeshBasicMaterial({
-          map: texture,
-          transparent: true,
+      return;
+    }
+    const meshes: THREE.Mesh[] = [];
+    object.traverse((o) => {
+      if (o instanceof THREE.Mesh) meshes.push(o);
+    });
+    if (!meshes.length) return;
+    if (object.userData.f3dTextAspect === undefined) {
+      // Once: the mapping of the text, from the triangles of all its meshes in the scene.
+      object.updateWorldMatrix(true, true);
+      const v = new THREE.Vector3();
+      const parts = meshes.map((mesh) => {
+        const geometry = mesh.geometry.index ? mesh.geometry.toNonIndexed() : mesh.geometry.clone();
+        const position = geometry.getAttribute('position');
+        const world = new Float32Array(position.count * 3);
+        for (let k = 0; k < position.count; k++) {
+          v.fromBufferAttribute(position, k).applyMatrix4(mesh.matrixWorld);
+          world.set([v.x, v.y, v.z], k * 3);
+        }
+        return { mesh, geometry, world };
+      });
+      const all = new Float32Array(parts.reduce((n, p) => n + p.world.length, 0));
+      let at = 0;
+      parts.forEach((p) => {
+        all.set(p.world, at);
+        at += p.world.length;
+      });
+      const layout = textLayout(all);
+      object.userData.f3dTextAspect = layout ? layout.width / layout.height : null;
+      if (layout) {
+        at = 0;
+        parts.forEach(({ mesh, geometry, world }) => {
+          // A copy of the geometry: another object may share it.
+          geometry.setAttribute('uv', new THREE.BufferAttribute(layout.uv.slice((at / 3) * 2, ((at + world.length) / 3) * 2), 2));
+          at += world.length;
+          mesh.geometry = geometry;
         });
-        material.name = 'f3dmat' + _foundobject.name;
-
-        (_foundobject as THREE.Mesh).material = material;
       }
+    }
+    const aspect = object.userData.f3dTextAspect;
+    const fit = fitText(canvas.width, canvas.height, aspect || canvas.width / Math.max(canvas.height, 1));
+    const picture = document.createElement('canvas');
+    picture.width = fit.width;
+    picture.height = fit.height;
+    const ctx = picture.getContext('2d');
+    ctx.fillStyle = style.textbgcolor ? style.textbgcolor : 'transparent';
+    ctx.fillRect(0, 0, fit.width, fit.height);
+    if (canvas.width > 0 && canvas.height > 0) ctx.drawImage(canvas, fit.x, fit.y, canvas.width * fit.scale, canvas.height * fit.scale);
+    const texture = new THREE.CanvasTexture(picture);
+    meshes.forEach((mesh) => this._setTextTexture(mesh, texture));
+  }
+
+  // The picture of a text as the material of a mesh: a material of the card (f3dmat), made once.
+  private _setTextTexture(mesh: THREE.Mesh, texture: THREE.Texture): void {
+    texture.colorSpace = THREE.SRGBColorSpace; // canvas colours are sRGB
+    const material = mesh.material as THREE.MeshBasicMaterial;
+    if (!Array.isArray(material) && material.name.startsWith('f3dmat')) {
+      // The texture of the previous text stays on the GPU until it is disposed: one per update.
+      if (material.map && material.map !== texture) material.map.dispose();
+      material.map = texture;
+    } else {
+      const own = new THREE.MeshBasicMaterial({ map: texture, transparent: true });
+      own.name = 'f3dmat' + mesh.name;
+      mesh.material = own;
     }
   }
 
@@ -3972,7 +4041,7 @@ export class Floor3dCard extends LitElement {
 
     if (_foundobject) {
       this._updateTextCanvas(entity.text, canvas, state + uom);
-      this._applyTextCanvas(canvas, _foundobject);
+      this._applyTextCanvas(canvas, _foundobject, entity.text);
     }
   }
 
@@ -4643,7 +4712,9 @@ export class Floor3dCard extends LitElement {
       colors.set([1, 1, 1, groundAlpha(Math.hypot(position.getX(i), position.getZ(i)), R)], i * 4);
     }
     geometry.setAttribute('color', new THREE.BufferAttribute(colors, 4));
-    const material = new THREE.MeshLambertMaterial({ vertexColors: true, transparent: true, depthWrite: false });
+    // It writes its depth (what is under it stays under it, the glass of a basement too), except where
+    // it has faded away.
+    const material = new THREE.MeshLambertMaterial({ vertexColors: true, transparent: true, alphaTest: 0.01 });
     material.name = 'f3d_ground';
     if (style.kind === 'grass') {
       const size = 256;
@@ -4662,10 +4733,11 @@ export class Floor3dCard extends LitElement {
     }
     const ground = new THREE.Mesh(geometry, material);
     ground.name = 'f3d_ground';
+    // Under the model, or ground_floor_level higher (in the units of the model): at the floor of the
+    // ground floor of a house with a basement. The top of each level, to hide it with them.
     const bottom = new THREE.Box3().setFromObject(this._bboxmodel).min.y;
-    // Apply ground_floor_level offset for basements
-    const groundOffset = this._num('ground_floor_level', 0);
-    ground.position.set(this._modelCenter.x, bottom - 0.5 + groundOffset, this._modelCenter.z);
+    ground.position.set(this._modelCenter.x, bottom - 0.5 + this._num(this._config.ground_floor_level, 0), this._modelCenter.z);
+    ground.userData.levelTops = this._levels.map((level) => (level ? new THREE.Box3().setFromObject(level).max.y : -Infinity));
     ground.receiveShadow = this._config.shadow == 'yes';
     ground.castShadow = false;
     ground.renderOrder = -1; // before the glass of the windows, which shows it through
@@ -5406,13 +5478,17 @@ export class Floor3dCard extends LitElement {
       return;
     }
     if (!this._pinsEl) {
-      // Before the model in the card: the menus and the bars of the levels and of the views go over
-      // the icons, the icons over the model.
       this._pinsEl = document.createElement('div');
       this._pinsEl.className = 'f3d-pins';
       this._pinsEl.classList.toggle('picking', !!this._pickMode);
-      this._card.insertBefore(this._pinsEl, this._content && this._content.parentNode === this._card ? this._content : this._card.firstChild);
+      // A tap on an icon is for the icon: not a tap on the model behind it (the box listens to them).
+      ['pointerdown', 'dblclick', 'keydown'].forEach((type) => this._pinsEl.addEventListener(type, (ev) => ev.stopPropagation()));
     }
+    // First in the box of the model: over the model, also when the box is positioned (overlay: yes
+    // makes it so: in the card, before it, the model covered the icons), under the menus and the bars
+    // of the levels and of the views that come after. Again after a reload, which empties the box.
+    const parent = this._content || this._card;
+    if (this._pinsEl.parentNode !== parent) parent.insertBefore(this._pinsEl, parent.firstChild);
     render(
       html`${placed.map((c) => {
         const stateObj = states[c.entity];
@@ -5450,7 +5526,6 @@ export class Floor3dCard extends LitElement {
     const top = canvas.top - layer.top;
     const point = new THREE.Vector3();
     const view = new THREE.Vector3();
-    const raycaster = new THREE.Raycaster();
     this._pins.forEach(({ el, camera }) => {
       const p = camera.position;
       let shown = !!p && width > 0 && height > 0;
@@ -5460,24 +5535,6 @@ export class Floor3dCard extends LitElement {
         view.copy(point).applyMatrix4(this._camera.matrixWorldInverse);
         point.project(this._camera);
         shown = view.z < 0 && Math.abs(point.x) <= 1 && Math.abs(point.y) <= 1;
-
-        // Check for occlusion: raycast from camera to pin position
-        if (shown) {
-          const direction = view.clone().normalize();
-          const distance = this._camera.position.distanceTo(point);
-          raycaster.set(this._camera.position, direction);
-          raycaster.far = distance * 0.95; // Slightly before the pin
-
-          // Only intersect with the model, exclude ground, overlays, and room colors
-          const intersects = raycaster.intersectObjects(this._bboxmodel.children, true).filter(
-            (hit) => !hit.object.name.includes('f3d_') && !hit.object.name.includes('_room_color')
-          );
-
-          // If there's an intersection, the icon is occluded
-          if (intersects.length > 0) {
-            shown = false;
-          }
-        }
       }
       if (shown) {
         const x = left + ((point.x + 1) / 2) * width;
@@ -6385,33 +6442,28 @@ export class Floor3dCard extends LitElement {
   private _rotatecalc(entity: Floor3dCardConfig, i: number) {
     let j = this._rotation_index.indexOf(i);
 
-    // Check for speed_entity: numeric sensor controlling rotation speed
-    if (entity.rotate.speed_entity) {
-      const speedState = this._hass.states[entity.rotate.speed_entity];
-      if (speedState && speedState.state !== 'unavailable' && speedState.state !== 'unknown') {
-        const speed = parseFloat(speedState.state);
-        if (!isNaN(speed)) {
-          const multiplier = entity.rotate.speed_multiplier || 1;
-          this._rotation_state[j] = (speed * multiplier) / 100; // Normalize to 0-1
-          this._startOrStopAnimationLoop();
-          return;
-        }
+    // angle_entity: turns to the angle of the sensor, and stays there while it has none.
+    if (entity.rotate.angle_entity) {
+      const stateObj = this._hass.states[entity.rotate.angle_entity];
+      const turn = rotationAngle(stateObj && stateObj.state, entity.rotate.angle_min, entity.rotate.angle_max, entity.rotate.angle_offset);
+      if (turn) {
+        this._rotation_angle[j] = turn.angle;
+        this._rotation_wrap[j] = turn.wrap;
       }
+      this._rotation_state[j] = 0;
+      this._startOrStopAnimationLoop();
+      return;
     }
 
-    // Check for angle_entity: numeric sensor controlling rotation angle
-    if (entity.rotate.angle_entity) {
-      const angleState = this._hass.states[entity.rotate.angle_entity];
-      if (angleState && angleState.state !== 'unavailable' && angleState.state !== 'unknown') {
-        const angle = parseFloat(angleState.state);
-        if (!isNaN(angle)) {
-          const min = entity.rotate.angle_min !== undefined ? Number(entity.rotate.angle_min) : 0;
-          const max = entity.rotate.angle_max !== undefined ? Number(entity.rotate.angle_max) : 360;
-          // Normalize angle to 0-1 range
-          this._rotation_state[j] = Math.max(0, Math.min(1, (angle - min) / (max - min)));
-          this._startOrStopAnimationLoop();
-          return;
-        }
+    // speed_entity: a sensor from 0 to 100 (times speed_multiplier) is the fraction of round_per_second.
+    if (entity.rotate.speed_entity) {
+      const speedState = this._hass.states[entity.rotate.speed_entity];
+      const speed = speedState ? parseFloat(speedState.state) : NaN;
+      if (!isNaN(speed)) {
+        const multiplier = entity.rotate.speed_multiplier || 1;
+        this._rotation_state[j] = (speed * multiplier) / 100;
+        this._startOrStopAnimationLoop();
+        return;
       }
     }
 
@@ -6436,11 +6488,12 @@ export class Floor3dCard extends LitElement {
     this._startOrStopAnimationLoop();
   }
 
-  // A fan turning, or still speeding up or slowing down.
+  // A fan turning, or still speeding up or slowing down; an object still turning to its angle.
   private _rotating(): boolean {
     return (
       !!(this._rotation_state && this._rotation_state.some((s) => s !== 0)) ||
-      this._rotation_speed.some((s) => s !== 0)
+      this._rotation_speed.some((s) => s !== 0) ||
+      this._rotation_angle.some((angle, index) => angle !== null && this._rotation_turned[index] !== angle)
     );
   }
 
@@ -6515,6 +6568,21 @@ export class Floor3dCard extends LitElement {
               break;
           }
         }
+      });
+    });
+
+    // angle_entity: towards the angle at round_per_second (0.5 by default), at once the first time.
+    this._rotation_angle.forEach((target, index) => {
+      const current = this._rotation_turned[index];
+      if (target === null || current === target) return;
+      const step = Math.abs(this._num(this._round_per_seconds[index], 0.5)) * rotateBy;
+      const turned = current === null ? target : turnToward(current, target, step || Infinity, this._rotation_wrap[index]);
+      this._rotation_turned[index] = turned;
+      const axis = this._axis_to_rotate[index];
+      this._object_ids[this._rotation_index[index]].objects.forEach((element) => {
+        const _obj = this._scene.getObjectByName(element.object_id);
+        // Clockwise seen from the positive end of the axis (from above for y), as a compass.
+        if (_obj && (axis == 'x' || axis == 'y' || axis == 'z')) _obj.rotation[axis] = (_obj.userData.f3dRotationBase || 0) - turned;
       });
     });
 

@@ -209,9 +209,19 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
   private _held?: string;
   private _pending?: any; // config waiting to be sent to Home Assistant
   private _timer?: number;
-  private _flushListener = (): void => {
+  private _flushListener = (ev?: Event): void => {
+    // While the objects of a group are being picked, a tap on the preview adds one: the config waits
+    // (Home Assistant would build the preview again, back at its first view, after every object), and
+    // so does leaving a field for the preview. It goes when the picking ends, as a tap elsewhere (the
+    // Save button) sends it.
+    if (this._picking && this._picking.add && ev && (ev.type === 'focusout' || this._inPreview(ev))) return;
     this._flush();
   };
+
+  // A tap on the card next to the editor (the preview).
+  private _inPreview(ev: Event): boolean {
+    return ev.composedPath().some((el) => (el as Element).localName === 'floor3d-card');
+  }
   private _internal?: any;
   private _classic?: any;
   private _keys = new WeakMap<Record<string, unknown>, string>();
@@ -283,7 +293,8 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
     this._internal = normalizeConfig(config);
     this._pending = cleanConfig(config);
     window.clearTimeout(this._timer);
-    this._timer = window.setTimeout(() => this._flush(), CONFIG_DELAY_MS);
+    // While the objects of a group are being picked the config waits for the end (see _flushListener).
+    if (!(this._picking && this._picking.add)) this._timer = window.setTimeout(() => this._flush(), CONFIG_DELAY_MS);
   }
 
   // Sends the config waiting, if any: true when Home Assistant got a new one (and so builds the
@@ -409,7 +420,10 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
 
   private _startPick(target: PickTarget): void {
     const same = this._picking && JSON.stringify(this._picking) === JSON.stringify(target);
+    const adding = this._picking && this._picking.add;
     this._picking = same ? undefined : target;
+    // The objects picked for a group, waiting until now.
+    if (adding) this._flush();
     // Objects are picked in the model: a paused preview showing its picture loads it, and the
     // pause stays (before, picking resumed the preview, which went back to the initial view).
     if (!same && this._paused) this._toPreview({ request: 'live' });
@@ -439,18 +453,8 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
       if (at >= 0) objects.splice(at, 1);
       else objects.push({ object_id: name });
 
-      // Update config without triggering preview rebuild while picking
-      const config = copy(this._config);
-      const list_array = config[list].slice();
-      list_array[index] = { ...group, objects };
-      config[list] = list_array;
-      this._config = config;
-      this._internal = normalizeConfig(config);
-      this._pending = cleanConfig(config);
-      // Don't flush immediately - keep picking without rerendering
-      // The config will be sent when picking ends or after delay
-      window.clearTimeout(this._timer);
-      this._timer = window.setTimeout(() => this._flush(), CONFIG_DELAY_MS);
+      this._setItem(list, index, { ...group, objects });
+      this._highlightCurrent(); // the preview stays as it is (see _flushListener): it shows them now
     } else {
       this._picking = undefined;
       this._toPreview({ pick: false });

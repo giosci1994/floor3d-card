@@ -74,6 +74,10 @@ const BLOCK_SWITCHES: [string, string][] = [
 // Types whose options block the card reads without checking that it exists.
 const REQUIRED_BLOCKS = ['light', 'door', 'cover', 'rotate', 'room', 'text', 'gesture', 'hide', 'show'];
 
+// The font and colours of the text and room types, in their block (text:, room:) as the card reads
+// them. The editor of 2.4 to 2.11.2 wrote them at the level of the entity, where they did nothing.
+const TEXT_STYLE = ['font', 'span', 'textfgcolor', 'textbgcolor'];
+
 // Numbers the editor used to save as text ('700'), or typed in a field that also takes the id of a
 // sensor (the light powers): written as numbers. A sensor id stays as it is.
 const TOP_NUMBERS = [
@@ -86,14 +90,16 @@ const TOP_NUMBERS = [
   'energy_top',
   'camera_popup_duration',
   'moon_size',
+  'ground_floor_level',
 ];
 const BLOCK_NUMBERS: { [block: string]: string[] } = {
   light: ['lumens', 'decay', 'distance', 'angle'],
   door: ['degrees', 'percentage'],
   cover: ['tilt_closed', 'tilt_open'],
-  room: ['transparency', 'elevation', 'width', 'height'],
+  room: ['transparency', 'elevation', 'width', 'height', 'span'],
+  text: ['span'],
   image: ['rotate', 'lumens', 'lighting_lumens'],
-  rotate: ['round_per_second', 'ramp', 'speed_multiplier', 'angle_min', 'angle_max'],
+  rotate: ['round_per_second', 'ramp', 'speed_multiplier', 'angle_min', 'angle_max', 'angle_offset'],
   tracker: ['sensor_rotation', 'scale', 'height', 'size'],
   info: ['size'],
   shower: ['velocity', 'count', 'size', 'height', 'width'],
@@ -132,6 +138,14 @@ export function normalizeConfig<T>(config: T): T {
       });
       if (REQUIRED_BLOCKS.includes(entity.type3d) && entity[entity.type3d] == null) {
         entity[entity.type3d] = {};
+      }
+      if ((entity.type3d === 'text' || entity.type3d === 'room') && isObject(entity[entity.type3d])) {
+        // What the block has wins over what is at the level of the entity.
+        TEXT_STYLE.forEach((key) => {
+          if (entity[key] === undefined) return;
+          if (entity[entity.type3d][key] === undefined) entity[entity.type3d][key] = entity[key];
+          delete entity[key];
+        });
       }
     });
   }
