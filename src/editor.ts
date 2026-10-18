@@ -26,7 +26,7 @@ import {
   mdiPlus,
   mdiRefresh,
 } from '@mdi/js';
-import { cleanConfig, matchObjects, normalizeConfig, objectPattern } from './config';
+import { cleanConfig, matchObjects, normalizeConfig, objectPattern, valueDefaults } from './config';
 import { CARD_VERSION, EDITOR_EVENT, PREVIEW_EVENT } from './const';
 import { previewState } from './preview';
 import {
@@ -102,10 +102,14 @@ function switchesFromForm(data: any, original: any, switches: { [key: string]: '
   return object;
 }
 
-// The top-level options in the form: switches as toggles, and the language menu on "of your profile"
-// while the card has none (cleanConfig leaves out language: auto).
+// The top-level options in the form: switches as toggles, and the values left out because they are
+// the default (language: auto, camera_popup_duration: 20...) shown as they are used.
 function topToForm(config: any): any {
-  return { ...switchesToForm(config, SWITCHES), language: config.language || 'auto' };
+  const data = { ...valueDefaults(), ...switchesToForm(config, SWITCHES) };
+  Object.entries(valueDefaults()).forEach(([key, value]) => {
+    if (data[key] === undefined || data[key] === null || data[key] === '') data[key] = value;
+  });
+  return data;
 }
 
 // Values cleared in a form: removed from the config.
@@ -210,17 +214,23 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
   private _pending?: any; // config waiting to be sent to Home Assistant
   private _timer?: number;
   private _flushListener = (ev?: Event): void => {
-    // While the objects of a group are being picked, a tap on the preview adds one: the config waits
-    // (Home Assistant would build the preview again, back at its first view, after every object), and
-    // so does leaving a field for the preview. It goes when the picking ends, as a tap elsewhere (the
-    // Save button) sends it.
-    if (this._picking && this._picking.add && ev && (ev.type === 'focusout' || this._inPreview(ev))) return;
+    // While an object group is open its objects come one after the other (picked in the preview,
+    // chosen in the menu, taken out): Home Assistant would build the preview again after each of
+    // them, back at its first view. So the config waits: leaving a field, a tap on the editor or on
+    // the preview don't send it. It goes when the group is closed; a tap elsewhere (the Save button of
+    // the dialog) still sends it.
+    if (this._groupOpen && ev && (ev.type === 'focusout' || this._inPreview(ev) || ev.composedPath().includes(this))) return;
     this._flush();
   };
 
   // A tap on the card next to the editor (the preview).
   private _inPreview(ev: Event): boolean {
     return ev.composedPath().some((el) => (el as Element).localName === 'floor3d-card');
+  }
+
+  // An object group open in the editor (see _flushListener).
+  private get _groupOpen(): boolean {
+    return this._view.list === 'object_groups' && this._view.index !== undefined;
   }
   private _internal?: any;
   private _classic?: any;
@@ -293,8 +303,13 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
     this._internal = normalizeConfig(config);
     this._pending = cleanConfig(config);
     window.clearTimeout(this._timer);
-    // While the objects of a group are being picked the config waits for the end (see _flushListener).
-    if (!(this._picking && this._picking.add)) this._timer = window.setTimeout(() => this._flush(), CONFIG_DELAY_MS);
+    if (this._groupOpen) {
+      // The config waits until the group is closed (see _flushListener); the preview outlines its
+      // objects now.
+      this._highlightCurrent();
+    } else {
+      this._timer = window.setTimeout(() => this._flush(), CONFIG_DELAY_MS);
+    }
   }
 
   // Sends the config waiting, if any: true when Home Assistant got a new one (and so builds the
@@ -420,10 +435,7 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
 
   private _startPick(target: PickTarget): void {
     const same = this._picking && JSON.stringify(this._picking) === JSON.stringify(target);
-    const adding = this._picking && this._picking.add;
     this._picking = same ? undefined : target;
-    // The objects picked for a group, waiting until now.
-    if (adding) this._flush();
     // Objects are picked in the model: a paused preview showing its picture loads it, and the
     // pause stays (before, picking resumed the preview, which went back to the initial view).
     if (!same && this._paused) this._toPreview({ request: 'live' });
@@ -454,7 +466,6 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
       else objects.push({ object_id: name });
 
       this._setItem(list, index, { ...group, objects });
-      this._highlightCurrent(); // the preview stays as it is (see _flushListener): it shows them now
     } else {
       this._picking = undefined;
       this._toPreview({ pick: false });
@@ -530,7 +541,12 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
 
   protected updated(changed: Map<string, any>): void {
     if (changed.has('hass') && this._classic) this._classic.hass = this.hass;
-    if (changed.has('_view')) this._highlightCurrent();
+    if (changed.has('_view')) {
+      this._highlightCurrent();
+      // An object group closed: what changed in it goes now (see _flushListener).
+      const before = changed.get('_view');
+      if (before && before.list === 'object_groups' && before.index !== undefined && !this._groupOpen) this._flush();
+    }
   }
 
   // --- Rendering ---------------------------------------------------------------------------------

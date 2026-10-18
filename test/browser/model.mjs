@@ -86,16 +86,31 @@ export function mtlFile() {
     .join('');
 }
 
+// A basement under the house (objFile({ basement: true })): on level 0, 270 cm deep, with stairs that
+// go up through the floor of the ground floor, as in a model of Sweet Home 3D; the house on level 1.
+export const BASEMENT = 270;
+const basementBoxes = [
+  ['basement_floor', 'floor', 300, 1100, 0, 4, 400, 1000],
+  ['basement_wall_n', 'wall', 300, 1100, 4, 262, 400, 420],
+  ['basement_wall_s', 'wall', 300, 1100, 4, 262, 980, 1000],
+  ['basement_wall_w', 'wall', 300, 320, 4, 262, 420, 980],
+  ['basement_wall_e', 'wall', 1080, 1100, 4, 262, 420, 980],
+  ['basement_stairs', 'wood', 330, 400, 4, 290, 430, 520],
+];
+
 // Names with lvl000 or lvl001 in front, as the ExportToHASS plugin of Sweet Home 3D writes the levels.
 // Boxes one after the other with the same name are one object.
-export function objFile({ level1 = [], covers = false } = {}) {
-  const level = (name) => (level1.length ? (level1.includes(name) ? 'lvl001' : 'lvl000') : '') + name;
+export function objFile({ level1 = [], covers = false, basement = false } = {}) {
+  const level = (name) =>
+    (basement ? (basementBoxes.some((b) => b[0] === name) ? 'lvl000' : 'lvl001') : level1.length ? (level1.includes(name) ? 'lvl001' : 'lvl000') : '') + name;
+  const lift = (b) => (basement ? [b[0], b[1], b[2], b[3], b[4] + BASEMENT, b[5] + BASEMENT, b[6], b[7]] : b);
   const lines = ['mtllib home.mtl'];
   [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]].forEach((n) => lines.push('vn ' + n.join(' ')));
   [[0, 0], [1, 0], [1, 1], [0, 1]].forEach((t) => lines.push('vt ' + t.join(' ')));
   let vi = 0;
   let previous = null;
-  for (const [name, mat, x0, x1, y0, y1, z0, z1] of covers ? [...boxes, ...coverBoxes] : boxes) {
+  const all = [...(basement ? basementBoxes : []), ...(covers ? [...boxes, ...coverBoxes] : boxes).map(lift)];
+  for (const [name, mat, x0, x1, y0, y1, z0, z1] of all) {
     if (name !== previous) lines.push(`o ${level(name)}`);
     lines.push(`usemtl ${mat}`);
     previous = name;
@@ -198,6 +213,18 @@ export function glbFile(rich = false) {
     const i = add(Buffer.from(new Uint16Array(idx).buffer), 34963, idx.length, 5123, 'SCALAR');
     meshes.push({ name, primitives: [{ attributes: { POSITION: p, NORMAL: q, TEXCOORD_0: t }, indices: i, material: names.indexOf(mat) }] });
     nodes.push({ name, mesh: meshes.length - 1 });
+  }
+  // Two fan blades that share one mesh, each at a position of its own (a node with a translation), as
+  // a GLB has identical objects: the geometry is around its own origin, not where the blade is.
+  {
+    const [x0, x1, y0, y1, z0, z1] = [-40, 40, 0, 2, -5, 5];
+    const pos = [x0, y0, z0, x1, y0, z0, x1, y1, z0, x0, y1, z0, x0, y0, z1, x1, y0, z1, x1, y1, z1, x0, y1, z1];
+    const idx = [0, 1, 2, 0, 2, 3, 4, 6, 5, 4, 7, 6, 3, 2, 6, 3, 6, 7, 0, 5, 1, 0, 4, 5, 0, 3, 7, 0, 7, 4, 1, 5, 6, 1, 6, 2];
+    const p = add(f32(pos), 34962, 8, 5126, 'VEC3', [x0, y0, z0], [x1, y1, z1]);
+    const i = add(Buffer.from(new Uint16Array(idx).buffer), 34963, idx.length, 5123, 'SCALAR');
+    meshes.push({ name: 'fan', primitives: [{ attributes: { POSITION: p }, indices: i, material: names.indexOf('wood') }] });
+    nodes.push({ name: 'fan_a', mesh: meshes.length - 1, translation: [500, 240, 700] });
+    nodes.push({ name: 'fan_b', mesh: meshes.length - 1, translation: [900, 240, 700] });
   }
   const gltf = { asset: { version: '2.0' }, scene: 0, scenes: [{ nodes: nodes.map((_, k) => k) }], nodes, meshes, materials, accessors, bufferViews: views };
   if (rich) {

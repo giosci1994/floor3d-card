@@ -1524,14 +1524,15 @@ test('ground_floor_level: the ground at the floor of the ground floor, hidden wh
       const g = window.__card._scene.getObjectByName('f3d_ground');
       return { y: Math.round(g.position.y * 10) / 10, visible: g.visible };
     });
-  // The bedroom of levels.obj (level 1) is lower than the walls of level 0: under a ground at 230.
-  let { page, errors } = await open(house({ objfile: 'levels.obj', ground: 'grass', ground_floor_level: '230' }));
-  assert.deepEqual(await ground(page), { y: 229.5, visible: true }, 'the value of the option, not its name');
-  await page.evaluate(() => window.__card._setVisibleLevel(1));
-  assert.equal((await ground(page)).visible, false, 'only the level under the ground: no ground over it');
+  // basement.obj: the basement on level 0, 270 deep, its stairs up through the ground floor (290);
+  // the house on level 1.
+  let { page, errors } = await open(house({ objfile: 'basement.obj', ground: 'grass', ground_floor_level: '270' }));
+  assert.deepEqual(await ground(page), { y: 269.5, visible: true }, 'the value of the option, not its name');
   await page.evaluate(() => window.__card._setVisibleLevel(0));
+  assert.equal((await ground(page)).visible, false, 'only the basement: no ground over it, though its stairs reach above it');
+  await page.evaluate(() => window.__card._setVisibleLevel(1));
   assert.equal((await ground(page)).visible, true);
-  await page.evaluate(() => window.__card._toggleVisibleLevel(0));
+  await page.evaluate(() => window.__card._toggleVisibleLevel(1));
   assert.equal((await ground(page)).visible, false, 'the buttons of the levels too');
   await page.evaluate(() => window.__card._setVisibleLevel(-1));
   assert.equal((await ground(page)).visible, true);
@@ -1737,7 +1738,7 @@ test('rotate: angle_entity turns the object to the angle of the sensor, the shor
   await page.close();
 });
 
-test('card editor: the objects of a group picked one after the other, without building the preview again; sent at the end', { timeout: TIMEOUT }, async () => {
+test('card editor: while an object group is open nothing goes to Home Assistant (picked, chosen in the menu, a tap on the editor); it goes when it is closed, or with a tap elsewhere', { timeout: TIMEOUT }, async () => {
   const config = house({ object_groups: [{ object_group: 'furniture', objects: [] }] });
   const { page, errors } = await open(config);
   await page.evaluate(async () => {
@@ -1753,7 +1754,7 @@ test('card editor: the objects of a group picked one after the other, without bu
     ed._mode = 'ready';
     ed._edit('object_groups', 0);
     await ed.updateComplete;
-    ed._startPick({ path: ['object_groups', 0], add: true });
+    ed._startPick({ path: ['object_groups', 0, 'objects'], add: true });
     window.__ed = ed;
   });
   const objects = () => page.evaluate(() => (window.__ed._config.object_groups[0].objects || []).map((o) => o.object_id || o));
@@ -1762,17 +1763,208 @@ test('card editor: the objects of a group picked one after the other, without bu
     await page.mouse.click(x, y);
     await until(page, (name) => (window.__ed._config.object_groups[0].objects || []).some((o) => (o.object_id || o) === name), name, name + ' added');
   }
-  assert.deepEqual(await objects(), ['table', 'bed']);
-  // Longer than the delay of the editor (1 s): nothing sent, the preview as it was (Home Assistant
-  // would build it again, back at its first view).
+  // The end of the picking, one more from the menu, a tap on the editor, leaving a field.
+  await page.evaluate(async () => {
+    const ed = window.__ed;
+    ed._startPick({ path: ['object_groups', 0, 'objects'], add: true });
+    const group = ed._config.object_groups[0];
+    ed._setItem('object_groups', 0, { ...group, objects: [...group.objects, { object_id: 'sofa' }] });
+    ed.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, composed: true }));
+    ed.dispatchEvent(new FocusEvent('focusout', { bubbles: true, composed: true }));
+    await ed.updateComplete;
+  });
+  assert.deepEqual(await objects(), ['table', 'bed', 'sofa']);
+  // Longer than the delay of the editor (1 s): nothing sent, the preview as it was.
   await page.waitForTimeout(1300);
   assert.deepEqual(await page.evaluate(() => window.__sent), []);
-  assert.deepEqual(await page.evaluate(() => window.__card._highlightHelpers.length), 2, 'the objects picked outlined');
-  // The end of the picking sends them.
-  await page.evaluate(() => window.__ed._startPick({ path: ['object_groups', 0], add: true }));
-  const sent = await page.evaluate(() => window.__sent);
+  assert.deepEqual(await page.evaluate(() => window.__card._highlightHelpers.length), 3, 'the objects of the group outlined');
+  // Closed: it goes, once.
+  await page.evaluate(async () => {
+    window.__ed._back();
+    await window.__ed.updateComplete;
+  });
+  let sent = await page.evaluate(() => window.__sent);
   assert.equal(sent.length, 1);
-  assert.deepEqual(sent[0].object_groups, [{ object_group: 'furniture', objects: ['table', 'bed'] }]);
+  assert.deepEqual(sent[0].object_groups, [{ object_group: 'furniture', objects: ['table', 'bed', 'sofa'] }]);
+  // Open again: a tap outside the editor and the preview (the Save button of the dialog) sends it.
+  await page.evaluate(async () => {
+    const ed = window.__ed;
+    ed._edit('object_groups', 0);
+    await ed.updateComplete;
+    const group = ed._config.object_groups[0];
+    ed._setItem('object_groups', 0, { ...group, objects: group.objects.slice(0, 1) });
+    document.body.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, composed: true }));
+  });
+  sent = await page.evaluate(() => window.__sent);
+  assert.equal(sent.length, 2);
+  assert.deepEqual(sent[1].object_groups, [{ object_group: 'furniture', objects: ['table'] }]);
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+// --- 2.11.4: issue #25 again ---------------------------------------------------------------------
+
+test('info boxes: their text follows the state (it kept the first one); info.text with $entity or a template', { timeout: TIMEOUT }, async () => {
+  const config = house({
+    entities: [
+      { entity: 'sensor.t_living', type3d: 'info', object_id: 'table' },
+      { entity: 'sensor.t_living', type3d: 'info', object_id: 'sofa', info: { text: 'Living $entity' } },
+      { entity: 'sensor.t_living', type3d: 'info', object_id: 'bed', info: { text: '[[[ $entity > 22 ? "warm" : "cool" ]]]' } },
+    ],
+  });
+  const { page, errors } = await open(config);
+  const boxes = () =>
+    page.evaluate(() => {
+      const card = window.__card;
+      return card._sprites.map((name, i) => ({ text: card._info[i] + card._unit_of_measurement[i], picture: card._scene.getObjectByName(name).material.map.image.toDataURL() }));
+    });
+  const before = await boxes();
+  assert.deepEqual(before.map((b) => b.text), ['21.5°C', 'Living 21.5', 'cool']);
+  await page.evaluate(() => window.__setState('sensor.t_living', '23.5'));
+  const after = await boxes();
+  assert.deepEqual(after.map((b) => b.text), ['23.5°C', 'Living 23.5', 'warm']);
+  after.forEach((b, i) => assert.notEqual(b.picture, before[i].picture, 'drawn again: ' + b.text));
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+test('card editor: an option at its default shows its value in its field, though the YAML leaves it out', { timeout: TIMEOUT }, async () => {
+  const config = house({ cameras: [{ entity: 'camera.door', position: [510, 240, 990] }], camera_popup_duration: 20, moon_size: 45 });
+  const { page, errors } = await open(config, cameraStates());
+  const data = await page.evaluate(async () => {
+    const card = window.__card;
+    const ed = await card.constructor.getConfigElement();
+    ed.hass = window.__hass();
+    ed.setConfig(JSON.parse(JSON.stringify(card._config)));
+    document.body.append(ed);
+    await new Promise((r) => setTimeout(r, 200));
+    ed._mode = 'ready';
+    ed._expanded = ['cameras'];
+    await ed.updateComplete;
+    // The data of the forms of the section (the test page has no ha-form: its data is still set).
+    return Object.assign({}, ...[...ed.shadowRoot.querySelectorAll('ha-form')].map((f) => f.data || {}));
+  });
+  assert.equal(data.camera_popup_position, 'bottom-right', 'the corner it is in');
+  assert.equal(data.camera_popup_duration, 20);
+  assert.equal(data.moon_size, 45, 'a value set stays');
+  assert.equal(data.cameras_button, true);
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+test('rotate: round_per_second empty, the entity a number (its speed), a speed with a comma, an angle with its unit', { timeout: TIMEOUT }, async () => {
+  const fan = (object_id, rotate, entity = 'sensor.wind') => ({ entity, type3d: 'rotate', object_id, rotate: { axis: 'y', ramp: 0, ...rotate } });
+  const config = house({
+    entities: [
+      fan('table', {}), // the entity is a number: its speed, at round_per_second 1 (empty)
+      fan('sofa', { speed_entity: 'sensor.gust' }), // '12,5'
+      fan('bed', { angle_entity: 'sensor.direction' }), // '90 °'
+      fan('wardrobe', { round_per_second: 1 }, 'light.lamp_3'), // on: full speed
+    ],
+  });
+  const { page, errors } = await open(
+    config,
+    states({
+      'sensor.wind': { state: '50', attributes: { unit_of_measurement: '%' } },
+      'sensor.gust': { state: '12,5', attributes: {} },
+      'sensor.direction': { state: '90 °', attributes: {} },
+    }),
+  );
+  const turns = () =>
+    page.evaluate(() => ['table', 'sofa', 'bed', 'wardrobe'].map((name) => window.__card._scene.getObjectByName(name).rotation.y));
+  await until(page, () => Math.abs(window.__card._scene.getObjectByName('bed').rotation.y + Math.PI / 2) < 0.01, null, 'the bed turned to 90');
+  const first = await turns();
+  first.forEach((r, i) => assert.ok(isFinite(r), 'a number, not NaN (the object vanished): ' + i));
+  await page.waitForTimeout(400);
+  const later = await turns();
+  assert.ok(later[0] !== first[0], 'the sensor itself sets the speed');
+  assert.ok(later[1] !== first[1], '12,5 is a speed');
+  assert.ok(Math.abs(later[1] - first[1]) < Math.abs(later[0] - first[0]), 'slower than 50');
+  assert.ok(later[3] !== first[3], 'on: turning');
+  const speed = await page.evaluate(() => window.__card._rotation_state.slice());
+  assert.deepEqual(speed, [0.5, 0.125, 0, 1]);
+  await page.evaluate(() => window.__setState('sensor.wind', '0'));
+  assert.equal(await page.evaluate(() => window.__card._rotation_state[0]), 0, '0: stopped');
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+test('rotate: an object of a GLB with a position of its own and a mesh shared with another turns around its middle, the other stays', { timeout: TIMEOUT }, async () => {
+  const blade = { entity: 'light.lamp_1', type3d: 'rotate', object_id: 'fan_a', rotate: { axis: 'y', round_per_second: 1, ramp: 0 } };
+  const { page, errors } = await open(house({ objfile: 'home.glb', mtlfile: undefined, entities: [blade, { ...blade, entity: 'sensor.direction', rotate: { axis: 'y', angle_entity: 'sensor.direction' } }] }), states({ 'sensor.direction': { state: '10', attributes: {} } }));
+  const middle = async (name) => {
+    const [min, max] = await worldBox(page, name);
+    return min.map((v, i) => Math.round((v + max[i]) / 2));
+  };
+  // Centred by the card: 1400 / 2 off; the blades at 500 and 900, 240 to 242 high.
+  const a = await middle('fan_a');
+  const b = await middle('fan_b');
+  assert.deepEqual(a, [500 - 700, 241, 700 - 700], 'fan_a where it is in the model (it jumped away)');
+  assert.deepEqual(b, [900 - 700, 241, 700 - 700], 'fan_b stays where it is (it moved with the shared mesh)');
+  await page.waitForTimeout(500);
+  assert.deepEqual(await middle('fan_a'), a, 'turning around its middle');
+  assert.deepEqual(await middle('fan_b'), b);
+  assert.ok(Math.abs(await page.evaluate(() => window.__card._scene.getObjectByName('fan_b').rotation.y)) < 1e-9, 'fan_b does not turn');
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+test('cameras: a button by the menus hides their icons and shows them again, remembered on the device; cameras_button: no', { timeout: TIMEOUT }, async () => {
+  const config = house({ cameras: [{ entity: 'camera.door', position: [510, 240, 990] }] });
+  let { page, errors } = await open(config, cameraStates());
+  const button = () =>
+    page.evaluate(() => {
+      const b = window.__card._zoommenu.querySelector('.f3d-menu-button');
+      return b && { pressed: b.getAttribute('aria-pressed'), icon: b.querySelector('ha-icon').getAttribute('icon'), label: b.getAttribute('aria-label') };
+    });
+  assert.deepEqual(await button(), { pressed: 'true', icon: 'mdi:cctv', label: 'Camera icons' });
+  assert.equal((await pinsOf(page)).length, 1);
+  await page.evaluate(() => window.__card._zoommenu.querySelector('.f3d-menu-button').click());
+  assert.deepEqual(await pinsOf(page), [], 'hidden');
+  assert.deepEqual(await button(), { pressed: 'false', icon: 'mdi:cctv-off', label: 'Camera icons' });
+  // Remembered: read again, as a new card on this device does.
+  await page.evaluate(() => {
+    window.__card._collapsed = undefined;
+    window.__card._renderBoxes(true);
+  });
+  assert.deepEqual(await pinsOf(page), []);
+  await page.evaluate(() => window.__card._zoommenu.querySelector('.f3d-menu-button').click());
+  assert.equal((await pinsOf(page)).length, 1, 'shown again');
+  assert.deepEqual(errors, []);
+  await page.close();
+
+  ({ page, errors } = await open({ ...config, cameras_button: 'no' }, cameraStates()));
+  assert.equal(await button(), null);
+  assert.equal((await pinsOf(page)).length, 1);
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+test('text: two text entities on one object, one under the other; each updates its line', { timeout: TIMEOUT }, async () => {
+  const text = (entity) => ({ entity, type3d: 'text', object_id: 'tv_screen', text: { textbgcolor: 'rgb(0, 0, 255)', textfgcolor: 'rgb(255, 255, 0)' } });
+  const { page, errors } = await open(house({ entities: [text('sensor.t_living'), text('sensor.t_bed')] }), states({ 'sensor.t_bed': { state: '18.0', attributes: { unit_of_measurement: '°C' } } }));
+  // How many yellow pixels each row of the picture on the screen has, at a quarter, half and three
+  // quarters of its height: the two lines, and the gap between them.
+  const rows = () =>
+    page.evaluate(() => {
+      const picture = window.__card._scene.getObjectByName('tv_screen').material.map.image;
+      const ctx = picture.getContext('2d');
+      const yellow = (y) => {
+        const d = ctx.getImageData(0, Math.round(y), picture.width, 1).data;
+        let n = 0;
+        for (let i = 0; i < d.length; i += 4) if (d[i] > 150 && d[i + 1] > 150 && d[i + 2] < 100) n++;
+        return n;
+      };
+      return { top: yellow(picture.height * 0.25), middle: yellow(picture.height * 0.5), bottom: yellow(picture.height * 0.75), picture: picture.toDataURL() };
+    });
+  let r = await rows();
+  assert.ok(r.top > 0 && r.bottom > 0, 'two lines: ' + JSON.stringify({ top: r.top, bottom: r.bottom }));
+  assert.equal(r.middle, 0, 'the gap between them');
+  const before = r.picture;
+  await page.evaluate(() => window.__setState('sensor.t_bed', '19.5'));
+  r = await rows();
+  assert.notEqual(r.picture, before, 'the second line updated');
+  assert.ok(r.top > 0 && r.bottom > 0 && r.middle === 0, 'still both');
   assert.deepEqual(errors, []);
   await page.close();
 });

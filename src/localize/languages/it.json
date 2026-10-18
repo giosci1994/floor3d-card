@@ -70,6 +70,7 @@
     "panel_triggered": "Allarme",
     "camera_popup": "Telecamera",
     "camera_close": "Chiudi",
-    "box_collapse": "Riduci"
+    "box_collapse": "Riduci",
+    "camera_icons": "Icone delle telecamere"
   }
 }

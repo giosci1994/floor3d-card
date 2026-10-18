@@ -1,6 +1,15 @@
 // Objects of the rotate type that turn to the angle of a sensor (rotate.angle_entity), as a weather
 // vane to the direction of the wind. No three.js: the tests run in Node.
 
+// The number at the start of a state: '12.5', '12,5' (a comma, as some integrations and templates
+// write it), '12.5 °' or '30 km/h' (a unit in the state); null without one (unavailable, unknown, on).
+export function sensorNumber(state: unknown): number | null {
+  if (typeof state === 'number') return isFinite(state) ? state : null;
+  if (typeof state !== 'string') return null;
+  const match = /^\s*([-+]?(?:\d+(?:[.,]\d+)?|[.,]\d+))/.exec(state);
+  return match ? Number(match[1].replace(',', '.')) : null;
+}
+
 const number = (value: unknown, fallback: number): number => {
   const n = value === undefined || value === null || value === '' ? NaN : Number(value);
   return isFinite(n) ? n : fallback;
@@ -11,8 +20,8 @@ const number = (value: unknown, fallback: number): number => {
 // range is a whole turn, so the object goes the shorter way (from 350 to 10 through 0). null: the
 // state is not a number (unavailable, unknown).
 export function rotationAngle(state: unknown, min?: unknown, max?: unknown, offset?: unknown): { angle: number; wrap: boolean } | null {
-  const value = state === undefined || state === null || String(state).trim() === '' ? NaN : Number(state);
-  if (!isFinite(value)) return null;
+  const value = sensorNumber(state);
+  if (value === null) return null;
   let low = number(min, 0);
   let high = number(max, 360);
   if (low > high) [low, high] = [high, low];

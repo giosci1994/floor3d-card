@@ -51,6 +51,7 @@ export interface Floor3dCardConfig {
   // Cameras (cameras.ts): ids, or { entity, position, level, name, icon, popup_on }.
   cameras?: any;
   cameras_show?: string | boolean; // their icons on the map
+  cameras_button?: string | boolean; // a button by the menus that hides and shows them, on the device
   camera_popup_show?: string | boolean; // their picture when a sensor goes off
   camera_popup_position?: string; // bottom-right by default
   camera_popup_duration?: number | string; // seconds after the sensor is off again, 20 by default

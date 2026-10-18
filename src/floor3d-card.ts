@@ -34,7 +34,7 @@ import { localize, pickLanguage } from './localize/localize';
 import { findSlats, slatAngle, Slat, tiltSlats } from './slats';
 import { moonPhase, skyBackground, weatherClouds } from './sky';
 import { fitText, textLayout } from './textmap';
-import { rotationAngle, turnToward } from './rotate';
+import { rotationAngle, sensorNumber, turnToward } from './rotate';
 import { CameraItem, cameraList, cameraName, newPopupMemory, point, popupStep, snapshotUrl } from './cameras';
 import { grassTexture, groundAlpha, groundStyle } from './ground';
 import { forecastLabel, forecastType, ForecastType, formatDegrees, weatherIcon } from './weather';
@@ -228,6 +228,22 @@ console.info(
 class ModelSource {
   public static OBJ = 0;
   public static GLB = 1;
+}
+
+// The pictures of several texts in one, one under the other, each in the middle of the line.
+function stackCanvases(canvases: HTMLCanvasElement[], background?: string): HTMLCanvasElement {
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.max(1, ...canvases.map((c) => c.width));
+  canvas.height = Math.max(1, canvases.reduce((h, c) => h + c.height, 0));
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = background || 'transparent';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  let y = 0;
+  canvases.forEach((c) => {
+    if (c.width > 0 && c.height > 0) ctx.drawImage(c, (canvas.width - c.width) / 2, y);
+    y += c.height;
+  });
+  return canvas;
 }
 
 // TODO Name your custom element
@@ -1488,6 +1504,16 @@ export class Floor3dCard extends LitElement {
     }
   }
 
+  // The text of an info box: the state (with entity_template), or info.text, a template [[[ ]]] as
+  // entity_template or a text where $entity is the state.
+  private _infoText(entity: Floor3dCardConfig): string {
+    const own = entity.info && entity.info.text ? String(entity.info.text).trim() : '';
+    if (!own) return this._statewithtemplate(entity);
+    if (own.startsWith('[[[') && own.endsWith(']]]')) return this._statewithtemplate({ ...entity, entity_template: own });
+    const stateObj = this._hass.states[entity.entity];
+    return own.replace(/\$entity/g, stateObj ? stateObj.state : '');
+  }
+
   public set hass(hass: HomeAssistant) {
     try {
       //called by Home Assistant Lovelace when a change of state is detected in entities
@@ -1560,7 +1586,9 @@ export class Floor3dCard extends LitElement {
                 this._sprites.push('');
               }
               if (entity.type3d == 'info') {
-                this._info.push(this._statewithtemplate(entity));
+                this._info.push(this._infoText(entity));
+                // A text of its own (info.text) has its unit in it, if it wants one.
+                if (entity.info && entity.info.text) this._unit_of_measurement[this._unit_of_measurement.length - 1] = '';
               } else {
                 this._info.push('');
               }
@@ -1699,6 +1727,18 @@ export class Floor3dCard extends LitElement {
                 }
                 if (this._canvas[i] && toupdate) {
                   this._updatetext(entity, this._text[i], this._canvas[i], this._unit_of_measurement[i]);
+                  torerender = true;
+                }
+              } else if (entity.type3d == 'info') {
+                // The box follows the state (before 2.11.4 it kept the one of the opening of the card).
+                this._states[i] = state;
+                const text = this._infoText(entity);
+                const own = entity.info && entity.info.text;
+                const uom = own ? '' : String(hass.states[entity.entity].attributes['unit_of_measurement'] || '');
+                if (text !== this._info[i] || uom !== this._unit_of_measurement[i]) {
+                  this._info[i] = text;
+                  this._unit_of_measurement[i] = uom;
+                  this._updateinfo(entity, text, uom, i);
                   torerender = true;
                 }
               } else if (entity.type3d == 'rotate') {
@@ -2915,7 +2955,8 @@ export class Floor3dCard extends LitElement {
             this._slidingdoorposition.push([]);
             if (this._hass.states[entity.entity]) {
               if (entity.type3d == 'rotate') {
-                this._round_per_seconds.push(entity.rotate.round_per_second);
+                // Empty (only a sensor sets the speed): 1, as NaN made the object vanish.
+                this._round_per_seconds.push(this._num(entity.rotate.round_per_second, 1));
                 this._axis_to_rotate.push(entity.rotate.axis);
                 this._rotation_state.push(0);
                 this._rotation_speed.push(0);
@@ -2937,12 +2978,10 @@ export class Floor3dCard extends LitElement {
                 this._pivot[i].add(bbox.min);
 
                 this._object_ids[i].objects.forEach((element) => {
-                  let _obj: any = this._scene.getObjectByName(element.object_id);
-                  this._centerobjecttopivot(_obj, this._pivot[i]);
+                  const _obj: any = this._scene.getObjectByName(element.object_id);
+                  if (!_obj) return;
+                  this._pivotObject(_obj, this._pivot[i]);
                   _obj.userData.f3dRotationBase = _obj.rotation[entity.rotate.axis] || 0; // the angle 0 of angle_entity
-                  _obj.geometry.applyMatrix4(
-                    new THREE.Matrix4().makeTranslation(-this._pivot[i].x, -this._pivot[i].y, -this._pivot[i].z),
-                  );
                 });
               }
               if (entity.type3d == 'door') {
@@ -3596,15 +3635,17 @@ export class Floor3dCard extends LitElement {
   }
 
   // What follows the levels shown: the boxes of the info type, and the ground, which hides when only
-  // levels under it are shown (a basement under ground_floor_level).
+  // levels under it are shown (a basement under ground_floor_level), so that they can be seen. A level
+  // is under the ground when the middle of its height is: in 2.11.3 its top had to be, and the stairs
+  // or the walls of a basement that reach a little above the ground kept the ground over it.
   private _showWithLevels(): void {
     (this._sprites || []).forEach((name, i) => {
       const sprite = name && this._config.entities[i] && this._config.entities[i].type3d == 'info' ? this._scene.getObjectByName(name) : undefined;
       if (sprite) sprite.visible = this._levelShown(sprite.userData.level);
     });
     if (this._ground) {
-      const tops: number[] = this._ground.userData.levelTops || [];
-      this._ground.visible = !tops.length || tops.some((top, level) => top > this._ground.position.y + 1 && this._levelShown(level));
+      const middles: number[] = this._ground.userData.levelMiddles || [];
+      this._ground.visible = !middles.length || middles.some((middle, level) => middle > this._ground.position.y && this._levelShown(level));
     }
   }
 
@@ -4041,7 +4082,17 @@ export class Floor3dCard extends LitElement {
 
     if (_foundobject) {
       this._updateTextCanvas(entity.text, canvas, state + uom);
-      this._applyTextCanvas(canvas, _foundobject, entity.text);
+      // Several text entities on one object: their texts one under the other, in the order of the
+      // configuration, laid as the first of them says (before, only the last one updated showed).
+      const same = this._config.entities
+        .map((e, k) => (e.type3d == 'text' && e.object_id == entity.object_id && this._canvas[k] ? k : -1))
+        .filter((k) => k >= 0);
+      if (same.length > 1) {
+        const first = this._config.entities[same[0]].text || {};
+        this._applyTextCanvas(stackCanvases(same.map((k) => this._canvas[k]), first.textbgcolor), _foundobject, first);
+      } else {
+        this._applyTextCanvas(canvas, _foundobject, entity.text);
+      }
     }
   }
 
@@ -4734,10 +4785,14 @@ export class Floor3dCard extends LitElement {
     const ground = new THREE.Mesh(geometry, material);
     ground.name = 'f3d_ground';
     // Under the model, or ground_floor_level higher (in the units of the model): at the floor of the
-    // ground floor of a house with a basement. The top of each level, to hide it with them.
+    // ground floor of a house with a basement. The middle of the height of each level, to hide it with
+    // the levels under it (see _showWithLevels).
     const bottom = new THREE.Box3().setFromObject(this._bboxmodel).min.y;
     ground.position.set(this._modelCenter.x, bottom - 0.5 + this._num(this._config.ground_floor_level, 0), this._modelCenter.z);
-    ground.userData.levelTops = this._levels.map((level) => (level ? new THREE.Box3().setFromObject(level).max.y : -Infinity));
+    ground.userData.levelMiddles = this._levels.map((level) => {
+      const box = level ? new THREE.Box3().setFromObject(level) : null;
+      return box && !box.isEmpty() ? (box.min.y + box.max.y) / 2 : -Infinity;
+    });
     ground.receiveShadow = this._config.shadow == 'yes';
     ground.castShadow = false;
     ground.renderOrder = -1; // before the glass of the windows, which shows it through
@@ -5463,7 +5518,8 @@ export class Floor3dCard extends LitElement {
   // cameras_show: the icon of each camera with a position, over its point of the model; a tap opens
   // the camera. It blinks while its picture pops up.
   private _renderPins(cameras: CameraItem[], force: boolean): void {
-    const placed = this._shown('cameras_show', true) ? cameras.filter((c) => c.position) : [];
+    // Hidden on this device with the button by the menus (cameras_button).
+    const placed = this._shown('cameras_show', true) && !this._isCollapsed('cameras') ? cameras.filter((c) => c.position) : [];
     const states = this._hass.states;
     const alert = new Set(this._popupShowing.map((s) => s.entity));
     const key = JSON.stringify(
@@ -5736,8 +5792,29 @@ export class Floor3dCard extends LitElement {
 
   // Menus at the top right: views and, with rooms configured, the room colours.
   private _renderMenus(): void {
-    if (this._zoommenu) render(html`${this._getZoomMenu()}${this._getMapMenu()}`, this._zoommenu);
+    if (this._zoommenu) render(html`${this._getZoomMenu()}${this._getMapMenu()}${this._getCamerasButton()}`, this._zoommenu);
     this._placeCorners();
+  }
+
+  // cameras_button: next to the menus, a button that hides the icons of the cameras and shows them
+  // again, on this device (remembered as the folded boxes are). Only with icons to show.
+  private _getCamerasButton(): TemplateResult {
+    const placed = cameraList(this._config.cameras).some((c) => c.position);
+    if (!placed || !this._shown('cameras_show', true) || !this._shown('cameras_button', true)) return html``;
+    const hidden = this._isCollapsed('cameras');
+    return html`<button
+      class="f3d-menu-button ${hidden ? 'off' : ''}"
+      aria-label=${this._t('camera_icons')}
+      aria-pressed=${hidden ? 'false' : 'true'}
+      title=${this._t('camera_icons')}
+      @click=${(ev: Event) => {
+        ev.stopPropagation();
+        this._setCollapsed('cameras', !hidden);
+        this._renderMenus();
+      }}
+    >
+      <ha-icon icon=${hidden ? 'mdi:cctv-off' : 'mdi:cctv'}></ha-icon>
+    </button>`;
   }
 
   // The maps of the Map menu: temperature, presence and illuminance, then the sensor maps that a
@@ -6196,6 +6273,28 @@ export class Floor3dCard extends LitElement {
     });
   }
 
+  // An object of a rotate entity turns around pivot, a point of the scene: its geometry moves so that the
+  // pivot is its origin, and the object moves to the pivot, so that it stays where it is. In the frame
+  // of the object: a mesh of a GLB has a position (and a rotation) of its own, and the pivot is worked
+  // out on the object as it is in the scene; before, the object jumped away and turned around a corner.
+  // A copy of the geometry: identical objects may share it, and they moved with it. An object of
+  // several meshes (a group) moves its children. Once per object: a second rotate entity on it turns it
+  // around the same pivot (before, it jumped again).
+  private _pivotObject(object: THREE.Object3D, pivot: THREE.Vector3): void {
+    if (object.userData.f3dPivoted) return;
+    object.userData.f3dPivoted = true;
+    object.updateWorldMatrix(true, false);
+    const local = object.worldToLocal(pivot.clone());
+    const mesh = object as THREE.Mesh;
+    if (mesh.geometry) {
+      mesh.geometry = mesh.geometry.clone();
+      mesh.geometry.translate(-local.x, -local.y, -local.z);
+    } else {
+      object.children.forEach((child) => child.position.sub(local));
+    }
+    object.position.copy(local.applyMatrix4(object.matrix));
+  }
+
   private _centerobjecttopivot(object: THREE.Mesh, pivot: THREE.Vector3) {
     //Center a Mesh  along is defined pivot point
 
@@ -6455,16 +6554,22 @@ export class Floor3dCard extends LitElement {
       return;
     }
 
-    // speed_entity: a sensor from 0 to 100 (times speed_multiplier) is the fraction of round_per_second.
+    // speed_entity: a sensor from 0 to 100 (times speed_multiplier) is the fraction of round_per_second;
+    // without one, the entity itself when its state is a number (a sensor, an input_number), not on
+    // or off. Negative: the other way.
+    const speedState = this._hass.states[entity.rotate.speed_entity || entity.entity];
+    const speed = speedState ? sensorNumber(speedState.state) : null;
+    if (speed !== null) {
+      const multiplier = this._num(entity.rotate.speed_multiplier, 1) || 1;
+      this._rotation_state[j] = (speed * multiplier) / 100;
+      this._startOrStopAnimationLoop();
+      return;
+    }
     if (entity.rotate.speed_entity) {
-      const speedState = this._hass.states[entity.rotate.speed_entity];
-      const speed = speedState ? parseFloat(speedState.state) : NaN;
-      if (!isNaN(speed)) {
-        const multiplier = entity.rotate.speed_multiplier || 1;
-        this._rotation_state[j] = (speed * multiplier) / 100;
-        this._startOrStopAnimationLoop();
-        return;
-      }
+      // Its sensor has no number (unavailable): stopped.
+      this._rotation_state[j] = 0;
+      this._startOrStopAnimationLoop();
+      return;
     }
 
     //1 if the entity is on, 0 if the entity is off
@@ -6957,6 +7062,29 @@ export class Floor3dCard extends LitElement {
           opacity: 0;
           transform: scale(0.92);
         }
+      }
+      .f3d-menu-button {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        box-sizing: border-box;
+        height: 32px;
+        min-width: 36px;
+        margin: 0;
+        padding: 0 8px;
+        border-radius: 8px;
+        border: 1px solid rgba(255, 255, 255, 0.6);
+        background: rgba(0, 0, 0, 0.55);
+        color: white;
+        cursor: pointer;
+        --mdc-icon-size: 20px;
+      }
+      .f3d-menu-button.off {
+        opacity: 0.7;
+      }
+      .f3d-menu-button:focus-visible {
+        outline: none;
+        box-shadow: 0 0 0 2px var(--primary-color, #03a9f4);
       }
       .f3d-pins {
         position: absolute;

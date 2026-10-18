@@ -32,6 +32,7 @@ const SWITCH_DEFAULTS: { [key: string]: 'yes' | 'no' } = {
   alarm_panel_show: 'yes',
   chips_show: 'yes',
   cameras_show: 'yes',
+  cameras_button: 'yes',
   camera_popup_show: 'yes',
   stars_show: 'yes',
   moon_show: 'yes',
@@ -60,6 +61,10 @@ const VALUE_DEFAULTS: { [key: string]: string | number } = {
   moon_size: 30,
   ground_floor_level: 0,
 };
+
+// The values used when an option is missing: the editor shows them in its fields (cleanConfig leaves
+// them out of the YAML, so a field set to its default came back empty).
+export const valueDefaults = (): { [key: string]: string | number } => ({ ...VALUE_DEFAULTS });
 
 // Switches inside the options block of an entity. They have no default: the card reads a missing
 // value differently from 'no' (light.shadow, for example), so they are never removed.
