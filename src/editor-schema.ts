@@ -72,6 +72,7 @@ export const SWITCHES: { [key: string]: 'yes' | 'no' } = {
   alarm_panel_show: 'yes',
   chips_show: 'yes',
   cameras_show: 'yes',
+  cameras_button: 'yes',
   camera_popup_show: 'yes',
   stars_show: 'yes',
   moon_show: 'yes',
@@ -207,7 +208,7 @@ export const SECTIONS: Section[] = [
     key: 'cameras',
     icon: 'mdi:cctv',
     content: () => [
-      [show('cameras_show')],
+      [row(show('cameras_show'), bool('cameras_button'))],
       'cameras_list',
       'camera_popup',
       [
@@ -398,19 +399,16 @@ export const typeSchema = (type: string, objects: string[], item: any = {}, part
             ],
           },
         ],
+        // A row each: the speed sensor and its multiplier, the angle sensor and its offset, the limits.
         'sensor_control',
+        [{ name: 'rotate', type: 'grid', column_min_width: '140px', schema: [entity('speed_entity'), num('speed_multiplier', { min: 0 })] }],
+        [{ name: 'rotate', type: 'grid', column_min_width: '140px', schema: [entity('angle_entity'), num('angle_offset', { unit_of_measurement: '°' })] }],
         [
           {
             name: 'rotate',
             type: 'grid',
             column_min_width: '140px',
-            schema: [
-              entity('speed_entity'),
-              num('speed_multiplier', { min: 0 }),
-              entity('angle_entity'),
-              num('angle_offset', { unit_of_measurement: '°' }),
-              row(num('angle_min', { unit_of_measurement: '°' }), num('angle_max', { unit_of_measurement: '°' })),
-            ],
+            schema: [num('angle_min', { unit_of_measurement: '°' }), num('angle_max', { unit_of_measurement: '°' })],
           },
         ],
       ];

@@ -197,7 +197,8 @@
     "moon_size": "Grandezza della luna",
     "sky_clouds": "Nuvole del meteo",
     "angle_offset": "Angolo dello 0 del sensore",
-    "mapping": "Testo sull'oggetto"
+    "mapping": "Testo sull'oggetto",
+    "cameras_button": "Pulsante per nasconderle"
   },
   "helpers": {
     "path": "Per esempio /local/floor3d/",
@@ -224,9 +225,9 @@
     "distance": "Predefinito 600 cm",
     "single": "Per una lampada fatta di più oggetti: meno luci e meno ombre",
     "light_object": "Vuoto: al centro di tutti gli oggetti",
-    "round_per_second": "2 o meno",
+    "round_per_second": "Giri al secondo alla velocità piena. Predefinito 1, 2 o meno",
     "ramp": "Secondi per arrivare a piena velocità o per fermarsi. Predefinito 1.5, 0 per nessuno",
-    "speed_entity": "Un sensore da 0 a 100: la frazione di round_per_second a cui gira l'oggetto",
+    "speed_entity": "Un sensore da 0 a 100: la frazione di round_per_second a cui gira l'oggetto. Vuoto: l'entità stessa, quando il suo stato è un numero",
     "speed_multiplier": "Moltiplica il valore del sensore per questo fattore. Predefinito 1",
     "angle_entity": "Un sensore in gradi (direzione del vento, una valvola): l'oggetto gira fino a quell'angolo, in senso orario visto dall'estremo positivo dell'asse, a round_per_second. Il sensore di velocità non viene più usato",
     "angle_min": "L'angolo resta entro questi limiti. Predefinito 0",
@@ -236,7 +237,7 @@
     "span": "Dell'oggetto, in %",
     "lighting_off_state": "Predefiniti off, standby, unavailable, unknown",
     "scale": "Predefinito 0.001",
-    "text": "Un testo o un template",
+    "text": "Un testo, dove $entity è lo stato, oppure un template [[[ ]]] come entity_template. Vuoto: lo stato con la sua unità",
     "url_zoom": "Il nome di un parametro, per esempio area: ?area=cucina mostra la vista cucina",
     "initialLevel": "Mostrato all'apertura della card e con la vista iniziale. Vuoto: tutti i piani",
     "level": "La vista mostra solo questo piano. Vuoto: tutti i piani",
@@ -286,7 +287,8 @@
     "moon_size": "Larghezza della luna in pixel. Predefinita 30",
     "sky_clouds": "Spento: il cielo ignora le nuvole dell'entità meteo, e stelle e luna si vedono sempre",
     "angle_offset": "Aggiunto all'angolo del sensore: dov'è il suo 0 sul modello. Predefinito 0",
-    "mapping": "Piatto: sulla faccia più grande dell'oggetto, leggibile davanti e dietro. Modello: sulla mappatura del modello, come prima della 2.11.3"
+    "mapping": "Piatto: sulla faccia più grande dell'oggetto, leggibile davanti e dietro. Modello: sulla mappatura del modello, come prima della 2.11.3",
+    "cameras_button": "Un pulsante accanto ai menu nasconde le icone e le mostra di nuovo, su ogni dispositivo"
   },
   "options": {
     "language": {

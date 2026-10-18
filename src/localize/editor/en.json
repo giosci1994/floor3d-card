@@ -200,7 +200,8 @@
     "moon_size": "Moon size",
     "sky_clouds": "Clouds of the weather",
     "angle_offset": "Angle of the 0 of the sensor",
-    "mapping": "Text on the object"
+    "mapping": "Text on the object",
+    "cameras_button": "Button to hide them"
   },
   "helpers": {
     "path": "For example /local/floor3d/",
@@ -227,9 +228,9 @@
     "distance": "Default 600 cm",
     "single": "For a lamp made of several objects: fewer lights and shadows",
     "light_object": "Empty: in the middle of all the objects",
-    "round_per_second": "2 or less",
+    "round_per_second": "Turns per second at full speed. Default 1, 2 or less",
     "ramp": "Seconds to full speed or to stop. Default 1.5, 0 for none",
-    "speed_entity": "A sensor from 0 to 100: the fraction of round_per_second the object turns at",
+    "speed_entity": "A sensor from 0 to 100: the share of round_per_second the object turns at. Empty: the entity itself, when its state is a number",
     "speed_multiplier": "Multiply sensor value by this factor. Default 1",
     "angle_entity": "A sensor in degrees (a wind direction, a valve): the object turns to that angle, clockwise seen from the positive end of the axis, at round_per_second. The speed sensor is then not used",
     "angle_min": "The angle stays within these limits. Default 0",
@@ -239,7 +240,7 @@
     "span": "Of the object, in %",
     "lighting_off_state": "Default off, standby, unavailable, unknown",
     "scale": "Default 0.001",
-    "text": "A text or a template",
+    "text": "A text, where $entity is the state, or a template [[[ ]]] as entity_template. Empty: the state and its unit",
     "url_zoom": "A parameter name, e.g. area: ?area=kitchen shows the view kitchen",
     "initialLevel": "Shown when the card opens and with the initial view. Empty: all the levels",
     "level": "The view shows only this level. Empty: all the levels",
@@ -289,7 +290,8 @@
     "moon_size": "Width of the moon in pixels. Default 30",
     "sky_clouds": "Off: the sky ignores the clouds of the weather entity, and stars and moon always show",
     "angle_offset": "Added to the angle of the sensor, where its 0 is on the model. Default 0",
-    "mapping": "Flat: on the largest face of the object, readable from the front and the back. Model: on the mapping of the model, as before 2.11.3"
+    "mapping": "Flat: on the largest face of the object, readable from the front and the back. Model: on the mapping of the model, as before 2.11.3",
+    "cameras_button": "A button next to the menus hides the icons and shows them again, on each device"
   },
   "options": {
     "language": {

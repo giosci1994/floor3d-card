@@ -197,7 +197,8 @@
     "moon_size": "Mondgröße",
     "sky_clouds": "Wolken des Wetters",
     "angle_offset": "Winkel der 0 des Sensors",
-    "mapping": "Text auf dem Objekt"
+    "mapping": "Text auf dem Objekt",
+    "cameras_button": "Schaltfläche zum Ausblenden"
   },
   "helpers": {
     "path": "Zum Beispiel /local/floor3d/",
@@ -224,9 +225,9 @@
     "distance": "Standard 600 cm",
     "single": "Für eine Lampe aus mehreren Objekten: weniger Lichter und Schatten",
     "light_object": "Leer: in der Mitte aller Objekte",
-    "round_per_second": "2 oder weniger",
+    "round_per_second": "Umdrehungen pro Sekunde bei voller Geschwindigkeit. Standard 1, 2 oder weniger",
     "ramp": "Sekunden bis zur vollen Geschwindigkeit oder bis zum Stillstand. Standard 1.5, 0 für keine",
-    "speed_entity": "Ein Sensor von 0 bis 100: der Anteil von round_per_second, mit dem sich das Objekt dreht",
+    "speed_entity": "Ein Sensor von 0 bis 100: der Anteil von round_per_second, mit dem sich das Objekt dreht. Leer: die Entität selbst, wenn ihr Zustand eine Zahl ist",
     "speed_multiplier": "Multipliziert den Sensorwert mit diesem Faktor. Standard 1",
     "angle_entity": "Ein Sensor in Grad (Windrichtung, ein Ventil): das Objekt dreht sich auf diesen Winkel, im Uhrzeigersinn vom positiven Ende der Achse gesehen, mit round_per_second. Der Geschwindigkeitssensor wird dann nicht verwendet",
     "angle_min": "Der Winkel bleibt in diesen Grenzen. Standard 0",
@@ -236,7 +237,7 @@
     "span": "Des Objekts, in %",
     "lighting_off_state": "Standard off, standby, unavailable, unknown",
     "scale": "Standard 0.001",
-    "text": "Ein Text oder ein Template",
+    "text": "Ein Text, in dem $entity der Zustand ist, oder ein Template [[[ ]]] wie entity_template. Leer: der Zustand mit seiner Einheit",
     "url_zoom": "Ein Parametername, z. B. area: ?area=kueche zeigt die Ansicht kueche",
     "initialLevel": "Gezeigt beim Öffnen der Karte und mit der Startansicht. Leer: alle Etagen",
     "level": "Die Ansicht zeigt nur diese Etage. Leer: alle Etagen",
@@ -286,7 +287,8 @@
     "moon_size": "Breite des Mondes in Pixeln. Standard 30",
     "sky_clouds": "Aus: der Himmel ignoriert die Wolken der Wetter-Entität, Sterne und Mond sind immer zu sehen",
     "angle_offset": "Wird zum Winkel des Sensors addiert: wo seine 0 am Modell liegt. Standard 0",
-    "mapping": "Flach: auf der größten Fläche des Objekts, von vorne und hinten lesbar. Modell: auf der Abbildung (UV) des Modells, wie vor 2.11.3"
+    "mapping": "Flach: auf der größten Fläche des Objekts, von vorne und hinten lesbar. Modell: auf der Abbildung (UV) des Modells, wie vor 2.11.3",
+    "cameras_button": "Eine Schaltfläche neben den Menüs blendet die Symbole aus und wieder ein, auf jedem Gerät"
   },
   "options": {
     "language": {

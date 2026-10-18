@@ -16,6 +16,7 @@ export async function start() {
     ['/local/floor3d/home.obj', objFile()],
     ['/local/floor3d/levels.obj', objFile({ level1: ['floor_bed', 'bed', 'wardrobe'] })], // the bedroom on level 1
     ['/local/floor3d/covers.obj', objFile({ covers: true })],
+    ['/local/floor3d/basement.obj', objFile({ basement: true })], // the house on a basement
     ['/local/floor3d/home.mtl', mtlFile()],
     ['/local/floor3d/home.glb', glbFile()],
     ['/local/floor3d/rich.glb', glbFile(true)],

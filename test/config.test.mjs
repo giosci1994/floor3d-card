@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { test } from 'node:test';
-import { cleanConfig, matchObjects, normalizeConfig, objectPattern } from '../src/config.ts';
+import { cleanConfig, matchObjects, normalizeConfig, objectPattern, valueDefaults } from '../src/config.ts';
 
 const example = JSON.parse(fs.readFileSync(new URL('./config.json', import.meta.url), 'utf8'));
 
@@ -312,4 +312,16 @@ test('rotate and ground: angles and ground_floor_level written as numbers, 0 lef
   assert.equal(c.ground_floor_level, 270);
   assert.deepEqual(c.entities[0].rotate, { axis: 'y', angle_entity: 'sensor.dir', angle_offset: 90, angle_min: 0, angle_max: 360 });
   assert.ok(!('ground_floor_level' in cleanConfig({ ground_floor_level: 0, entities: [] })), '0 is the default');
+});
+
+test('defaults: the values the editor shows in empty fields, left out of the YAML; cameras_button', () => {
+  const d = valueDefaults();
+  assert.equal(d.camera_popup_position, 'bottom-right');
+  assert.equal(d.camera_popup_duration, 20);
+  assert.equal(d.language, 'auto');
+  d.camera_popup_duration = 5;
+  assert.equal(valueDefaults().camera_popup_duration, 20, 'a copy');
+  const c = cleanConfig({ camera_popup_position: 'bottom-right', camera_popup_duration: '20', cameras_button: true, entities: [] });
+  ['camera_popup_position', 'camera_popup_duration', 'cameras_button'].forEach((key) => assert.ok(!(key in c), key + ' is the default'));
+  assert.equal(cleanConfig({ cameras_button: false, entities: [] }).cameras_button, 'no');
 });
