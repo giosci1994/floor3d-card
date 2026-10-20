@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 // Forms of the configuration shared by the card and its editor.
 // normalizeConfig(): what the card and the editor work with. It accepts the short forms (true/false
 // for the yes/no switches, object_id strings in object_groups, a missing options block).

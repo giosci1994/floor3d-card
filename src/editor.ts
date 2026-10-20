@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 // Card editor built on the components of Home Assistant (ha-form and its selectors, ha-sortable,
 // ha-expansion-panel), like the editors of the built-in cards: Home Assistant 2024.1 or newer.
 //

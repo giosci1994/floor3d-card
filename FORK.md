@@ -36,7 +36,8 @@ npm run build        # = rollup -c rollup.config.mjs
 npm start            # rebuilds on every change and serves dist/ on port 5000
 npm test             # tests of src/config.ts and of the language files (Node 22 or newer)
 npm run test:browser # the built card in headless Chromium (after npm run build), see Browser tests
-npm run lint         # ESLint on src/*.ts
+npm run lint         # ESLint on src/
+npm run format       # Prettier on src/, test/ and the configurations of Rollup and ESLint (format:check only checks)
 ```
 
 `dist/` is not in the repository (2.12.0): `npm run build` makes it, and the Release workflow builds the files of each release from its tag. HACS and the installation by hand take them from the release.
@@ -45,7 +46,7 @@ The dependencies are installed with yarn 1 from `yarn.lock`, as the Build and Re
 
 `CARD_VERSION` in `src/const.ts` is shown in the card editor and in the console: keep it equal to `version` in `package.json` and to the tag of the release (see [Publishing a release](#publishing-a-release)). For test builds between releases add a suffix, for example `v2.0.1-dev.1`.
 
-- **Tooling.** Rollup 4 with the official `@rollup/plugin-*` packages, TypeScript 5.9 (target ES2021), Lit 3 and the types of home-assistant-js-websocket 9. Babel is gone: without a configuration it did nothing. What the card used of custom-card-helpers (two functions that send events to Home Assistant, and a few types) is in `src/ha.ts` since 2.12.0. three.js went from 0.130 to 0.186; tween.js stays at 18.
+- **Tooling.** Rollup 4 with the official `@rollup/plugin-*` packages, TypeScript 5.9 (target ES2021), Lit 3 and the types of home-assistant-js-websocket 9. ESLint 10 (`eslint.config.mjs`, the recommended rules of typescript-eslint 8) and Prettier 3 (`.prettierrc.js`) since 2.12.0, before ESLint 7 and Prettier 2; the Build workflow checks both. Babel is gone: without a configuration it did nothing. What the card used of custom-card-helpers (two functions that send events to Home Assistant, and a few types) is in `src/ha.ts` since 2.12.0. three.js went from 0.130 to 0.186; tween.js stays at 18.
 - **Editor loaded separately.** The card doesn't import the editor at startup: `getConfigElement()` loads it when the card is edited. Devices that only show the card download about 850 KB. The build makes three files: `floor3d-card.js` (the card), `floor3d-card-core-<hash>.js` (libraries and code shared with the editor) and `floor3d-card-editor-<hash>.js` (the editor with its texts in every language, about 95 KB). Nothing imports `floor3d-card.js`: the resource has a query (`?hacstag=` added by HACS, `?v=` by hand), and an import without it would load a second copy of the card, whose `customElements.define` fails. `coreChunk()` in `rollup.config.mjs` does this split, and `removeOldChunks()` removes from `dist/` the chunks of older builds. Two more chunks are loaded only by [compressed models](#compressed-models): `floor3d-card-meshopt_decoder.module-<hash>.js` (about 25 KB) and `floor3d-card-DRACOLoader-<hash>.js` (the loader; the Draco decoder itself comes from `draco_decoder_path`).
 - **What the card reads from Home Assistant.** `isPanel`, `editMode` and `preview` are read directly from Home Assistant (2024+); without them the card falls back to the page structure.
 
@@ -55,7 +56,7 @@ The dependencies are installed with yarn 1 from `yarn.lock`, as the Build and Re
 2. On GitHub, **Releases › Draft a new release**: a new tag named after the version (`v2.0.1`), a description of the changes, **Publish release**.
 3. The Release workflow builds the card and attaches the `.js` files to the release. HACS downloads them from there, and shows the update when it next checks the repository (**Update information** in the menu of the repository checks at once).
 
-The Validate workflow runs the HACS checks at every push and every night; the Build workflow runs `npm run lint`, builds the card and runs `npm test`.
+The Validate workflow runs the HACS checks at every push and every night; the Build workflow runs `npm run lint` and `npm run format:check`, builds the card and runs `npm test` and the [browser tests](#browser-tests).
 
 ## New features
 

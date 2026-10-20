@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/ban-types */
 import { LitElement, html, nothing, TemplateResult, css, CSSResultGroup, render } from 'lit';
 import { property, customElement } from 'lit/decorators.js';
 import { HomeAssistant, LovelaceCardEditor, fireEvent, forwardHaptic } from './ha';
@@ -517,13 +516,11 @@ export class Floor3dCard extends LitElement {
 
   public static getStubConfig(hass: HomeAssistant, entities: string[], entitiesFallback: string[]): object {
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const _arrayFilter = (array: any[], conditions: Array<(value: any) => boolean>, maxSize: number) => {
       if (!maxSize || maxSize > array.length) {
         maxSize = array.length;
       }
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const filteredArray: any[] = [];
 
       for (let i = 0; i < array.length && filteredArray.length < maxSize; i++) {
@@ -555,7 +552,6 @@ export class Floor3dCard extends LitElement {
       const conditions: Array<(value: string) => boolean> = [];
 
       if (includeDomains?.length) {
-        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
         conditions.push((eid) => includeDomains!.includes(eid.split('.')[0]));
       }
 

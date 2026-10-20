@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 // The cameras of the card (cameras:): an icon on the map at a point of the model, and their picture,
 // which pops up in a corner when their doorbell or motion sensor goes off. What they show is worked
 // out here, without three.js and without Home Assistant, so that the tests run in Node.

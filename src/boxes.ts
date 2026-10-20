@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 // The boxes in the corners of the card, next to the weather: what is on or open (status), energy,
 // people, alarm panel and chips. What they show is worked out here, without three.js and without
 // Home Assistant, so that the tests run in Node.

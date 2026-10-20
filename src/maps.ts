@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/explicit-module-boundary-types */
 // Room maps from sensors, alarms and climate: the rules, without three.js (tests: test/maps.test.mjs).
 // The card draws them in _updateStateColors.
 

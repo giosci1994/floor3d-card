@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 // Fields of the editor, as ha-form schemas. Their labels, help texts, menu entries and headings are
 // in the language files of the editor (src/localize/editor/), by the name of the field: see
 // localizeSchema, labelFor and helperFor. The defaults written in the help texts are the values the

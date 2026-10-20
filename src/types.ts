@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import type { LovelaceCard, LovelaceCardEditor } from './ha';
 
 declare global {

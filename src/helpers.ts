@@ -1,6 +1,3 @@
-/* eslint-disable @typescript-eslint/explicit-module-boundary-types */
-/* eslint-disable @typescript-eslint/no-non-null-assertion */
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import { Floor3dCardConfig } from './types';
 
 /**
@@ -33,7 +30,6 @@ export function mergeDeep(...objects: any): any {
 }
 
 export const getLovelace = () => {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   let root: any = document.querySelector('home-assistant');
   root = root && root.shadowRoot;
   root = root && root.querySelector('home-assistant-main');
