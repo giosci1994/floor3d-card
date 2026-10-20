@@ -478,6 +478,7 @@
   },
   "ui": {
     "loading": "Loading…",
+    "unsupported": "This editor needs Home Assistant 2024.1 or newer. You can still set up the card in the code editor (Show code editor).",
     "pause_preview": "Pause the preview (it keeps its last picture while you edit)",
     "resume_preview": "Resume the preview",
     "reload_preview": "Reload the preview",

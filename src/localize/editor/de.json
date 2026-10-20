@@ -451,6 +451,7 @@
   },
   "ui": {
     "loading": "Wird geladen…",
+    "unsupported": "Dieser Editor benötigt Home Assistant 2024.1 oder neuer. Die Karte lässt sich weiterhin im Code-Editor einrichten (Code-Editor anzeigen).",
     "pause_preview": "Vorschau anhalten (sie behält ihr letztes Bild, während du bearbeitest)",
     "resume_preview": "Vorschau fortsetzen",
     "reload_preview": "Vorschau neu laden",

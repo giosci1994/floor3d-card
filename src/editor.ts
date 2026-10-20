@@ -1,7 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 // Card editor built on the components of Home Assistant (ha-form and its selectors, ha-sortable,
-// ha-expansion-panel), like the editors of the built-in cards. When Home Assistant doesn't provide
-// them, it shows the editor of version 2.1 (editor-classic.ts) instead.
+// ha-expansion-panel), like the editors of the built-in cards: Home Assistant 2024.1 or newer.
 //
 // The config goes through normalizeConfig() when it comes in and cleanConfig() when it goes out
 // (config.ts). Home Assistant passes back every config the editor sends; the editor keeps its own
@@ -169,8 +168,13 @@ function entityFromForm(data: any, original: any): any {
 // Components of Home Assistant used by the editor. They are defined once any built-in editor with
 // forms has been loaded: in the card dialog they usually are; otherwise the editors of the entities
 // and tile cards load them.
+const HA_COMPONENTS = ['ha-form', 'ha-expansion-panel'];
+const haComponentsDefined = (): Promise<unknown> => Promise.all(HA_COMPONENTS.map((name) => customElements.whenDefined(name)));
+
+// true once the components are there; false when they aren't after 5 seconds (Home Assistant older
+// than 2024.1, or a very slow one: the editor still comes when they arrive, see connectedCallback).
 async function loadHaComponents(): Promise<boolean> {
-  if (customElements.get('ha-form') && customElements.get('ha-expansion-panel')) return true;
+  if (HA_COMPONENTS.every((name) => customElements.get(name))) return true;
   try {
     const helpers = await (window as any).loadCardHelpers();
     for (const config of [{ type: 'entities', entities: [] }, { type: 'tile', entity: 'sun.sun' }]) {
@@ -178,13 +182,12 @@ async function loadHaComponents(): Promise<boolean> {
       await (card.constructor as any).getConfigElement?.();
     }
   } catch (e) {
-    // Home Assistant without loadCardHelpers: the classic editor is used.
+    // Home Assistant without loadCardHelpers: too old for this editor.
   }
-  const defined = await Promise.race([
-    customElements.whenDefined('ha-form').then(() => true),
+  return Promise.race([
+    haComponentsDefined().then(() => true),
     new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 5000)),
   ]);
-  return defined && !!customElements.get('ha-expansion-panel');
 }
 
 @customElement('floor3d-card-editor')
@@ -193,7 +196,7 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
   @state() private _config?: any;
   @state() private _view: View = {};
   @state() private _expanded: string[] = [];
-  @state() private _mode: 'loading' | 'ready' | 'classic' = 'loading';
+  @state() private _mode: 'loading' | 'ready' | 'unsupported' = 'loading';
   @state() private _modelObjects: string[] = [];
   @state() private _listObjects: string[] = [];
   @state() private _picking?: PickTarget;
@@ -232,7 +235,6 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
     return this._view.list === 'object_groups' && this._view.index !== undefined;
   }
   private _internal?: any;
-  private _classic?: any;
   private _keys = new WeakMap<Record<string, unknown>, string>();
   private _objectlist?: string;
   private _previewListener = (ev: Event): void => this._onPreview((ev as CustomEvent).detail);
@@ -260,8 +262,13 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
     this._toPreview({ request: 'objects' });
     if (this._mode === 'loading') {
       loadHaComponents().then((ready) => {
-        this._mode = ready ? 'ready' : 'classic';
-        if (!ready) this._showClassic();
+        if (this._mode !== 'loading') return;
+        if (ready) this._mode = 'ready';
+        else {
+          // The YAML editor is still there; the form comes if the components arrive after all.
+          this._mode = 'unsupported';
+          haComponentsDefined().then(() => (this._mode = 'ready'));
+        }
       });
     }
   }
@@ -291,7 +298,6 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
     if (!Array.isArray(normalized.entities)) normalized.entities = [];
     if (!this._config) this._expanded = normalized.entities.length ? ['entities'] : ['model'];
     this._config = normalized;
-    if (this._classic) this._classic.setConfig(config);
     this._loadObjectList();
   }
 
@@ -527,19 +533,7 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
       .catch(() => undefined);
   }
 
-  // --- Classic editor ---------------------------------------------------------------------------
-
-  private async _showClassic(): Promise<void> {
-    await import('./editor-classic');
-    const classic: any = document.createElement('floor3d-card-editor-classic');
-    classic.hass = this.hass;
-    if (this._config) classic.setConfig(this._config);
-    this._classic = classic;
-    this.requestUpdate();
-  }
-
   protected updated(changed: Map<string, any>): void {
-    if (changed.has('hass') && this._classic) this._classic.hass = this.hass;
     if (changed.has('_view')) {
       this._highlightCurrent();
       // An object group closed: what changed in it goes now (see _flushListener).
@@ -552,8 +546,7 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
 
   protected render(): TemplateResult | typeof nothing {
     if (!this.hass || !this._config) return nothing;
-    if (this._mode === 'classic') return html`${this._classic || nothing}`;
-    if (this._mode === 'loading') return html`<div class="loading">${this._t('ui.loading')}</div>`;
+    if (this._mode !== 'ready') return html`<div class="loading">${this._t(this._mode === 'loading' ? 'ui.loading' : 'ui.unsupported')}</div>`;
     const { list, index } = this._view;
     if (list && index !== undefined && this._list(list)[index] !== undefined) {
       return this._renderItemEditor(list, index);

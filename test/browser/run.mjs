@@ -2023,3 +2023,42 @@ test('the old buttons of the views (hideZoomMenu: yes) and of selectionMode are 
   assert.deepEqual(errors, []);
   await page.close();
 });
+
+test('card editor: on a Home Assistant without its forms (older than 2024.1) a message points to the code editor, and the editor comes if they arrive', { timeout: TIMEOUT }, async () => {
+  const { page, errors } = await open(house());
+  const loading = await page.evaluate(async () => {
+    const card = window.__card;
+    const ed = await card.constructor.getConfigElement();
+    ed.hass = window.__hass();
+    ed.setConfig(JSON.parse(JSON.stringify(card._config)));
+    document.body.append(ed);
+    await ed.updateComplete;
+    window.__ed = ed;
+    return { mode: ed._mode, text: ed.shadowRoot.textContent.trim(), expected: ed._t('ui.loading') };
+  });
+  assert.equal(loading.mode, 'loading');
+  assert.equal(loading.text, loading.expected);
+  // The test page has no ha-form: after 5 seconds, the message.
+  await until(page, () => window.__ed._mode === 'unsupported', null, 'the message after 5 s');
+  const message = await page.evaluate(async () => {
+    const ed = window.__ed;
+    await ed.updateComplete;
+    return {
+      text: ed.shadowRoot.textContent.trim(),
+      expected: ed._t('ui.unsupported'),
+      panels: ed.shadowRoot.querySelectorAll('ha-expansion-panel').length,
+      classic: !!customElements.get('floor3d-card-editor-classic'),
+    };
+  });
+  assert.equal(message.text, message.expected);
+  assert.match(message.text, /2024\.1/);
+  assert.equal(message.panels, 0);
+  assert.equal(message.classic, false, 'no classic editor any more');
+  // Home Assistant defines its components late after all: the editor shows up.
+  await page.evaluate(() => {
+    for (const name of ['ha-form', 'ha-expansion-panel']) customElements.define(name, class extends HTMLElement {});
+  });
+  await until(page, () => window.__ed._mode === 'ready' && window.__ed.shadowRoot.querySelectorAll('ha-expansion-panel').length > 0, null, 'the editor once the components are there');
+  assert.deepEqual(errors, []);
+  await page.close();
+});
