@@ -43,7 +43,7 @@ If the original floor3d-card is installed, remove it from HACS first: both defin
 Copy all the files (`.js` and `.wasm`) of the [latest release](https://github.com/giosci1994/floor3d-card/releases/latest) into a folder of `/config/www` and add `floor3d-card.js` as a resource (details in [FORK.md](FORK.md#installation)). It's **required** to load this card as `module`.
 
 ```yaml
-- url: /local/floor3d-card/floor3d-card.js?v=2.12.1 # the version: change it at every update
+- url: /local/floor3d-card/floor3d-card.js?v=2.12.2 # the version: change it at every update
   type: module
 ```
 

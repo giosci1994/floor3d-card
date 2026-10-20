@@ -2787,3 +2787,82 @@ test(
     await page.close();
   },
 );
+
+test(
+  'the alarm panel box: its coloured stripe is inside the border, which is the same on the four sides',
+  { timeout: TIMEOUT },
+  async () => {
+    const { page, errors } = await open(
+      house({ alarm_panel: 'alarm_control_panel.home' }),
+      states({ 'alarm_control_panel.home': { state: 'armed_away', attributes: {} } }),
+    );
+    const look = await page.evaluate(() => {
+      const el = window.__card.shadowRoot.querySelector('.f3d-alarm_panel');
+      const style = getComputedStyle(el);
+      const sides = ['Top', 'Right', 'Bottom', 'Left'];
+      return {
+        widths: sides.map((side) => style['border' + side + 'Width']),
+        colors: sides.map((side) => style['border' + side + 'Color']),
+        stripe: style.boxShadow,
+        colour: getComputedStyle(el.querySelector('ha-icon')).color, // the colour of the state
+      };
+    });
+    assert.deepEqual(look.widths, ['1px', '1px', '1px', '1px'], 'the same thin border on every side');
+    assert.equal(new Set(look.colors).size, 1, 'one colour of the border: ' + look.colors.join(', '));
+    assert.equal(look.stripe, look.colour + ' 4px 0px 0px 0px inset', 'the stripe, in the colour of the state, inside');
+    assert.deepEqual(errors, []);
+    await page.close();
+  },
+);
+
+test(
+  'a card added from the card picker: no model of the original card; the card says where to set the model, and the editor opens there',
+  { timeout: TIMEOUT },
+  async () => {
+    const { page, errors } = await open(house());
+    const result = await page.evaluate(async () => {
+      const Card = customElements.get('floor3d-card');
+      const hass = window.__hass();
+      const stub = Card.getStubConfig(hass, Object.keys(hass.states), []);
+      // The new card, as Home Assistant creates it, and one without even a path.
+      const cards = [stub, {}].map((config) => {
+        const card = document.createElement('floor3d-card');
+        card.setConfig({ type: 'custom:floor3d-card', ...config });
+        card.hass = hass;
+        document.body.append(card);
+        return card;
+      });
+      await Promise.all(cards.map((card) => card.updateComplete));
+      await new Promise((r) => setTimeout(r, 300));
+      const screens = cards.map((card) => {
+        const el = card.shadowRoot.querySelector('.f3d-loading');
+        return {
+          setup: !!el && el.classList.contains('setup'),
+          title: el && el.querySelector('.f3d-title').textContent,
+          detail: el && el.querySelector('.f3d-detail').textContent,
+          canvas: !!card.shadowRoot.querySelector('canvas'),
+        };
+      });
+      const ed = await Card.getConfigElement();
+      ed.hass = hass;
+      ed.setConfig({ type: 'custom:floor3d-card', ...stub });
+      document.body.append(ed);
+      ed._mode = 'ready';
+      await ed.updateComplete;
+      return {
+        stub,
+        screens,
+        expanded: ed._expanded,
+        texts: [cards[0]._t('no_model'), cards[0]._t('no_model_detail')],
+      };
+    });
+    assert.deepEqual(result.stub, { path: '/local/floor3d/', objfile: '' }, 'no home.glb, objects or entities');
+    for (const screen of result.screens) {
+      assert.deepEqual(screen, { setup: true, title: result.texts[0], detail: result.texts[1], canvas: false });
+    }
+    assert.match(result.texts[1], /\/local\/floor3d\//);
+    assert.deepEqual(result.expanded, ['model'], 'the editor opens on the 3D model');
+    assert.deepEqual(errors, [], 'no error, no file asked for');
+    await page.close();
+  },
+);

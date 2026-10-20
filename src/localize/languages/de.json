@@ -37,6 +37,8 @@
     "preparing": "3D-Szene wird vorbereitet",
     "load_error": "Das Modell konnte nicht geladen werden",
     "setup_error": "Fehler beim Vorbereiten des Modells, siehe Browserkonsole",
+    "no_model": "3D-Modell wählen",
+    "no_model_detail": "Im Karteneditor unter 3D-Modell den Ordner des Modells (zum Beispiel /local/floor3d/) und seine Datei angeben: eine .glb oder eine .obj mit ihrer .mtl, zum Beispiel aus Sweet Home 3D exportiert.",
     "clear_selections": "Auswahl aufheben ({count})",
     "enable_selection": "Auswahl aktivieren",
     "disable_selection": "Auswahl deaktivieren",

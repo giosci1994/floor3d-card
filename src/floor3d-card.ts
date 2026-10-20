@@ -522,139 +522,12 @@ export class Floor3dCard extends LitElement {
     return document.createElement('floor3d-card-editor');
   }
 
-  public static getStubConfig(hass: HomeAssistant, entities: string[], entitiesFallback: string[]): object {
-    const _arrayFilter = (array: any[], conditions: Array<(value: any) => boolean>, maxSize: number) => {
-      if (!maxSize || maxSize > array.length) {
-        maxSize = array.length;
-      }
-
-      const filteredArray: any[] = [];
-
-      for (let i = 0; i < array.length && filteredArray.length < maxSize; i++) {
-        let meetsConditions = true;
-
-        for (const condition of conditions) {
-          if (!condition(array[i])) {
-            meetsConditions = false;
-            break;
-          }
-        }
-
-        if (meetsConditions) {
-          filteredArray.push(array[i]);
-        }
-      }
-
-      return filteredArray;
-    };
-
-    const _findEntities = (
-      hass: HomeAssistant,
-      maxEntities: number,
-      entities: string[],
-      entitiesFallback: string[],
-      includeDomains?: string[],
-      entityFilter?: (stateObj: HassEntity) => boolean,
-    ) => {
-      const conditions: Array<(value: string) => boolean> = [];
-
-      if (includeDomains?.length) {
-        conditions.push((eid) => includeDomains!.includes(eid.split('.')[0]));
-      }
-
-      if (entityFilter) {
-        conditions.push((eid) => hass.states[eid] && entityFilter(hass.states[eid]));
-      }
-
-      const entityIds = _arrayFilter(entities, conditions, maxEntities);
-
-      if (entityIds.length < maxEntities && entitiesFallback.length) {
-        const fallbackEntityIds = _findEntities(
-          hass,
-          maxEntities - entityIds.length,
-          entitiesFallback,
-          [],
-          includeDomains,
-          entityFilter,
-        );
-
-        entityIds.push(...fallbackEntityIds);
-      }
-
-      return entityIds;
-    };
-
-    //build a valid stub config
-
-    let includeDomains = ['binary_sensor'];
-    let maxEntities = 2;
-
-    let foundEntities = _findEntities(hass, maxEntities, entities, entitiesFallback, includeDomains);
-
-    const url = new URL(import.meta.url);
-    let asset = url.pathname.split('/').pop();
-    let path = url.pathname.replace(asset, '');
-
-    if (path.includes('hacsfiles')) {
-      path = '/local/community/floor3d-card/';
-    }
-
-    const conf = {
-      path: path,
-      name: 'Home',
-      objfile: 'home.glb',
-      backgroundColor: '#aaaaaa',
-      globalLightPower: 0.8,
-      overlay_alignment: 'top-left',
-      north: { x: 0, z: -1 },
-      camera_position: { x: 609.3072605703628, y: 905.5330092468828, z: 376.66437610591277 },
-      camera_rotate: { x: -1.0930244719682243, y: 0.5200808414019678, z: 0.7648717152512469 },
-      camera_target: { x: 37.36890424945437, y: 18.64464320782064, z: -82.55051697031719 },
-      object_groups: [
-        {
-          object_group: 'RoundTable',
-          objects: ['Round_table_1', 'Round_table_2', 'Round_table_3'],
-        },
-        {
-          object_group: 'EntranceDoor',
-          objects: ['Door_9', 'Door_7', 'Door_5'],
-        },
-      ],
-      entities: [],
-    };
-
-    if (foundEntities[0]) {
-      conf.entities.push({
-        entity: foundEntities[0],
-        type3d: 'door',
-        object_id: '<EntranceDoor>',
-        door: { doortype: 'swing', direction: 'inner', hinge: 'Door_3', percentage: 90 },
-      });
-    }
-    if (foundEntities[1]) {
-      conf.entities.push({
-        entity: foundEntities[1],
-        type3d: 'hide',
-        object_id: '<RoundTable>',
-        hide: { state: 'off' },
-      });
-    }
-
-    includeDomains = ['light'];
-    maxEntities = 1;
-
-    let foundLights = _findEntities(hass, maxEntities, entities, entitiesFallback, includeDomains);
-
-    if (foundLights[0]) {
-      conf.entities.push({
-        entity: foundLights[0],
-        type3d: 'light',
-        object_id: 'Bowl_2',
-        light: { lumens: 800 },
-      });
-    }
-
-    return conf;
+  // The configuration of a card added from the card picker of Home Assistant: the folder the editor
+  // suggests and no model yet, so the card says what to set (see _showNoModel). Before 2.12.2 it
+  // was the example of the original card, a home.glb and objects that nobody has, and the new card
+  // showed an error.
+  public static getStubConfig(): object {
+    return { path: '/local/floor3d/', objfile: '' };
   }
 
   public setConfig(config: Floor3dCardConfig): void {
@@ -1886,41 +1759,41 @@ export class Floor3dCard extends LitElement {
     this._renderer.toneMappingExposure = this._num(this._config.exposure, 1);
     this._renderer.localClippingEnabled = true;
 
-    if (this._config.path && this._config.path != '') {
-      let path = this._config.path;
-      const lastChar = path.charAt(path.length - 1);
-      if (lastChar == '.') {
-        path = '';
-      } else if (lastChar != '/') {
-        path = path + '/';
+    if (!this._config.path || !this._config.objfile) {
+      this._showNoModel();
+      return;
+    }
+    let path = this._config.path;
+    const lastChar = path.charAt(path.length - 1);
+    if (lastChar == '.') {
+      path = '';
+    } else if (lastChar != '/') {
+      path = path + '/';
+    }
+
+    let fileExt = this._config.objfile.split('?')[0].split('.').pop();
+
+    this._showLoading(fileExt == 'obj' && this._config.mtlfile ? 'loading_materials' : 'loading_model');
+
+    if (fileExt == 'obj') {
+      //waterfront format
+      if (this._config.mtlfile && this._config.mtlfile != '') {
+        const mtlLoader: MTLLoader = new MTLLoader();
+        mtlLoader.setPath(path);
+        mtlLoader.load(
+          this._config.mtlfile,
+          this._onLoaded3DMaterials.bind(this),
+          this._onLoadMaterialProgress.bind(this),
+          this._loadError(path + this._config.mtlfile),
+        );
+      } else {
+        this._loadOBJ(path);
       }
-
-      let fileExt = this._config.objfile.split('?')[0].split('.').pop();
-
-      this._showLoading(fileExt == 'obj' && this._config.mtlfile ? 'loading_materials' : 'loading_model');
-
-      if (fileExt == 'obj') {
-        //waterfront format
-        if (this._config.mtlfile && this._config.mtlfile != '') {
-          const mtlLoader: MTLLoader = new MTLLoader();
-          mtlLoader.setPath(path);
-          mtlLoader.load(
-            this._config.mtlfile,
-            this._onLoaded3DMaterials.bind(this),
-            this._onLoadMaterialProgress.bind(this),
-            this._loadError(path + this._config.mtlfile),
-          );
-        } else {
-          this._loadOBJ(path);
-        }
-        this._modeltype = ModelSource.OBJ;
-      } else if (fileExt == 'glb') {
-        //glb format
-        this._loadGLB(path);
-        this._modeltype = ModelSource.GLB;
-      }
-    } else {
-      throw new Error('Path is empty');
+      this._modeltype = ModelSource.OBJ;
+    } else if (fileExt == 'glb') {
+      //glb format
+      this._loadGLB(path);
+      this._modeltype = ModelSource.GLB;
     }
   }
 
@@ -2048,6 +1921,18 @@ export class Floor3dCard extends LitElement {
         }, 0),
       );
     });
+  }
+
+  // A card without its model yet (just added from the card picker, or path or objfile left empty):
+  // where to set it, in place of the loading screen.
+  private _showNoModel(): void {
+    if (!this._content) return;
+    const el = this._loadingScreen();
+    el.classList.remove('error');
+    el.classList.add('setup');
+    el.querySelector('path').setAttribute('d', mdiCubeOutline);
+    el.querySelector('.f3d-title').textContent = this._t('no_model');
+    el.querySelector('.f3d-detail').textContent = this._t('no_model_detail');
   }
 
   private _showLoadError(file: string, error: any): void {
@@ -6933,8 +6818,11 @@ export class Floor3dCard extends LitElement {
         filter: grayscale(1);
         opacity: 0.55;
       }
+      /* The coloured stripe inside the border of the box (a wider left border met the thin one at the
+         rounded corners and looked like two walls); the text stays where it was. */
       .f3d-alarm_panel {
-        border-left: 4px solid var(--f3d-panel, #9e9e9e);
+        box-shadow: inset 4px 0 0 var(--f3d-panel, #9e9e9e);
+        padding-left: 13px;
         cursor: pointer;
       }
       .f3d-alarm_panel ha-icon {
@@ -7203,8 +7091,12 @@ export class Floor3dCard extends LitElement {
       .f3d-loading.error .f3d-title {
         color: var(--error-color, #db4437);
       }
-      .f3d-loading.error .f3d-bar {
+      .f3d-loading.error .f3d-bar,
+      .f3d-loading.setup .f3d-bar {
         display: none;
+      }
+      .f3d-loading.setup .f3d-icon {
+        animation: none;
       }
       @keyframes f3d-slide {
         from {
