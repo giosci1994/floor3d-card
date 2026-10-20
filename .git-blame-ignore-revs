@@ -1,0 +1,4 @@
+# Commits that only changed the formatting: git blame skips them (GitHub does it by itself; locally
+# git config blame.ignoreRevsFile .git-blame-ignore-revs).
+# Prettier 3, 2.12.0
+f04d0a1817ece4d134aac4b65b6f61bf2f42b8ba
