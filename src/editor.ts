@@ -9,7 +9,7 @@
 // the names of the objects of the model and for the current view, and turns on picking objects with
 // a tap and highlighting them (see _onPreview() and the "Editor" part of floor3d-card.ts).
 import { LitElement, html, css, nothing, TemplateResult, CSSResultGroup } from 'lit';
-import { customElement, property, state } from 'lit/decorators.js';
+import { property, state } from 'lit/decorators.js';
 import { repeat } from 'lit/directives/repeat.js';
 import { fireEvent, HomeAssistant, LovelaceCardEditor } from './ha';
 import {
@@ -205,7 +205,6 @@ async function loadHaComponents(): Promise<boolean> {
   ]);
 }
 
-@customElement('floor3d-card-editor')
 export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor {
   @property({ attribute: false }) public hass?: HomeAssistant;
   @state() private _config?: any;
@@ -1394,3 +1393,6 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
     `;
   }
 }
+
+// Same element name as the editor of the original card: see the end of floor3d-card.ts.
+if (!customElements.get('floor3d-card-editor')) customElements.define('floor3d-card-editor', Floor3dCardEditor);

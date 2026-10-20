@@ -1,5 +1,5 @@
 import { LitElement, html, nothing, TemplateResult, css, CSSResultGroup, render } from 'lit';
-import { property, customElement } from 'lit/decorators.js';
+import { property } from 'lit/decorators.js';
 import { HomeAssistant, LovelaceCardEditor, fireEvent, forwardHaptic } from './ha';
 // The editor is loaded on demand by getConfigElement(): devices that only show the card never download it.
 import { HassEntity } from 'home-assistant-js-websocket';
@@ -7,6 +7,7 @@ import { createObjectGroupConfigArray, getLovelace } from './helpers';
 import { matchObjects, normalizeConfig, objectPattern } from './config';
 import type { Floor3dCardConfig } from './types';
 import { CARD_VERSION, EDITOR_EVENT, PREVIEW_EVENT } from './const';
+import DRACO_DECODER from 'virtual:draco-decoder';
 import { previewState } from './preview';
 import {
   CLIMATE_COLORS,
@@ -73,8 +74,6 @@ const TRACKER_FADE = 0.35; // seconds to appear or disappear
 const LIGHT_ANIMATION_FRAME_MS = 33; // only trackers or the shower moving: at most 30 frames per second
 const MOVING_SHADOW_MS = 300; // shadows of a moving door: redrawn at most this often, and at the end
 const ROTATE_RAMP = 1.5; // seconds for a fan to reach full speed or to stop, when rotate.ramp is missing
-// Decoder of Draco-compressed models, when draco_decoder_path is missing (the version of three.js 0.186).
-const DRACO_DECODER_PATH = 'https://www.gstatic.com/draco/versioned/decoders/1.5.7/';
 
 // Quantized models (gltf-transform meshopt adds KHR_mesh_quantization) keep their positions as
 // integers, with a scale and an offset on each node. The card moves doors, covers and fans by
@@ -247,7 +246,6 @@ function stackCanvases(canvases: HTMLCanvasElement[], background?: string): HTML
   return canvas;
 }
 
-@customElement('floor3d-card')
 export class Floor3dCard extends LitElement {
   private _scene?: THREE.Scene;
   private _camera?: THREE.PerspectiveCamera;
@@ -1928,8 +1926,8 @@ export class Floor3dCard extends LitElement {
 
   // A .glb model, also one compressed with Draco or meshopt (gltf-transform draco / meshopt, 5 to 10
   // times smaller). The file is read first, and the decoder it needs is loaded only then: meshopt
-  // from a chunk of the card, Draco from draco_decoder_path (Google's CDN by default). Idea from
-  // Steven-D-Morgan/hass-3d-floorplan.
+  // from a chunk of the card, Draco from the files that come with the card, or from
+  // draco_decoder_path when set. Idea from Steven-D-Morgan/hass-3d-floorplan.
   private _loadGLB(path: string): void {
     const file = path + this._config.objfile;
     const onError = this._loadError(file);
@@ -1951,9 +1949,9 @@ export class Floor3dCard extends LitElement {
           }
           if (extensions.includes('KHR_draco_mesh_compression')) {
             const { DRACOLoader } = await import('three/examples/jsm/loaders/DRACOLoader.js');
-            let decoderPath = this._config.draco_decoder_path || DRACO_DECODER_PATH;
-            if (!decoderPath.endsWith('/')) decoderPath += '/';
-            const dracoLoader = new DRACOLoader().setDecoderPath(decoderPath);
+            let decoderPath = this._config.draco_decoder_path;
+            if (decoderPath && !decoderPath.endsWith('/')) decoderPath += '/';
+            const dracoLoader = new DRACOLoader().setDecoderPath(decoderPath || DRACO_DECODER);
             draco = dracoLoader;
             loader.setDRACOLoader(dracoLoader);
           }
@@ -7237,4 +7235,14 @@ export class Floor3dCard extends LitElement {
       }
     `;
   }
+}
+
+// The original card (adizanni/floor3d-card) defines the same elements: when both are loaded, the first
+// one stays and the other one leaves it alone instead of failing.
+if (!customElements.get('floor3d-card')) {
+  customElements.define('floor3d-card', Floor3dCard);
+} else {
+  console.warn(
+    'floor3d-card mod: custom:floor3d-card is already defined by another resource, probably the original card',
+  );
 }

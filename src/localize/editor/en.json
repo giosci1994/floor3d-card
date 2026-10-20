@@ -236,7 +236,7 @@
     "angle_min": "The angle stays within these limits. Default 0",
     "angle_max": "Default 360: a whole turn, and the object goes the shorter way",
     "objfile": "A .glb can be compressed with Draco or meshopt",
-    "draco_decoder_path": "Only for .glb models compressed with Draco. Default: Google CDN",
+    "draco_decoder_path": "Only for .glb models compressed with Draco. Default: the decoder that comes with the card",
     "span": "Of the object, in %",
     "lighting_off_state": "Default off, standby, unavailable, unknown",
     "scale": "Default 0.001",

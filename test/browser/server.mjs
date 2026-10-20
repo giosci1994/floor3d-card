@@ -12,6 +12,7 @@ const TYPES = {
   '.js': 'text/javascript',
   '.json': 'application/json',
   '.glb': 'model/gltf-binary',
+  '.wasm': 'application/wasm',
 };
 // The picture of a camera (a pixel), as the camera proxy of Home Assistant gives it.
 const GIF = Buffer.from('R0lGODlhAQABAIAAAP///wAAACwAAAAAAQABAAACAkQBADs=', 'base64');
@@ -25,6 +26,8 @@ export async function start() {
     ['/local/floor3d/home.mtl', mtlFile()],
     ['/local/floor3d/home.glb', glbFile()],
     ['/local/floor3d/rich.glb', glbFile(true)],
+    // The GLB house compressed with Draco: npx @gltf-transform/cli draco home.glb home-draco.glb
+    ['/local/floor3d/draco.glb', fs.readFileSync(path.join(root, 'test/browser/home-draco.glb'))],
     ['/api/camera_proxy/camera.door', GIF],
   ]);
   const hits = new Map();
@@ -33,11 +36,11 @@ export async function start() {
     hits.set(url, (hits.get(url) || 0) + 1);
     let body = files.get(url);
     if (body === undefined) {
-      // The test page, and the card: /floor3d-card.js and its chunks come from dist/.
+      // The test page, and the card: /floor3d-card.js, its chunks and the Draco decoder come from dist/.
       const file =
         url === '/test/index.html'
           ? path.join(root, 'test/index.html')
-          : /^\/floor3d-card[\w.-]*\.js$/.test(url)
+          : /^\/floor3d-card[\w.-]*\.(js|wasm)$/.test(url)
             ? path.join(root, 'dist', url)
             : null;
       if (file && fs.existsSync(file)) body = fs.readFileSync(file);
