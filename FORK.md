@@ -14,8 +14,8 @@ The card needs Home Assistant 2024.1 or newer (2.12.0; `homeassistant` in `hacs.
 
 [![Open this repository in HACS](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=giosci1994&repository=floor3d-card&category=plugin)
 
-1. Open the link above: HACS offers to add this repository. Or add it by hand: in HACS, menu (⋮) at the top right › **Custom repositories**, repository `https://github.com/giosci1994/floor3d-card`, type **Dashboard**.
-2. Open **floor3d-card mod** and click **Download**. HACS copies the files of the latest release into `www/community/floor3d-card/` and adds the resource `/hacsfiles/floor3d-card/floor3d-card.js`.
+1. In HACS, search for **floor3d-card mod**: the card is in the default list of HACS since October 2026 (2.12.1). Or open the link above.
+2. Open it and click **Download**. HACS copies the files of the latest release into `www/community/floor3d-card/` and adds the resource `/hacsfiles/floor3d-card/floor3d-card.js`.
 3. Reload the browser or the app. The version is shown at the top of the card editor and in the browser console.
 
 If the original card is installed, remove it from HACS first: both define `custom:floor3d-card` and use the same `www/community/floor3d-card` folder. When both are loaded, the one loaded first is used and the other one stays out of the way (2.12.1): the console says `custom:floor3d-card is already defined by another resource`. The configuration of the card stays the same. HACS shows the updates of this fork like those of any other card.
