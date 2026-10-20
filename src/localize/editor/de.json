@@ -233,7 +233,7 @@
     "angle_min": "Der Winkel bleibt in diesen Grenzen. Standard 0",
     "angle_max": "Standard 360: eine ganze Umdrehung, und das Objekt nimmt den kürzeren Weg",
     "objfile": "Eine .glb kann mit Draco oder meshopt komprimiert werden",
-    "draco_decoder_path": "Nur für mit Draco komprimierte .glb-Modelle. Standard: Google-CDN",
+    "draco_decoder_path": "Nur für mit Draco komprimierte .glb-Modelle. Standard: der mit der Karte gelieferte Decoder",
     "span": "Des Objekts, in %",
     "lighting_off_state": "Standard off, standby, unavailable, unknown",
     "scale": "Standard 0.001",

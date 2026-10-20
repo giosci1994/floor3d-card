@@ -2,6 +2,7 @@
 // the generated test house of model.mjs. npm run build, then npm run test:browser. Chromium comes
 // from Playwright: npx playwright install --only-shell chromium (the CI does it).
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import { after, before, test } from 'node:test';
 import { chromium } from 'playwright';
 import { objectNames } from './model.mjs';
@@ -80,12 +81,13 @@ const states = (extra = {}) => {
 let pages = 0;
 
 // Opens the test page with the card on config and states, once the model is shown. errors collects
-// the errors of the page and the shader errors of three.js.
-async function open(config, stateSet = states()) {
+// the errors of the page and the shader errors of three.js. setup(page) runs before the page loads.
+async function open(config, stateSet = states(), setup = undefined) {
   const name = 'case' + ++pages;
   server.put(name + '.json', config);
   server.put(name + '-states.json', stateSet);
   const page = await browser.newPage({ viewport: { width: 900, height: 700 } });
+  await setup?.(page);
   const errors = [];
   page.on('pageerror', (e) => errors.push('page: ' + e.message));
   page.on('console', (m) => {
@@ -198,6 +200,67 @@ test(
     assert.equal(s.status.budget, expectedLimit(s, 10));
     assert.ok((await brightness(page)) > 0.03);
     assert.deepEqual(errors, []);
+    await page.close();
+  },
+);
+
+test(
+  'Draco GLB: the decoder comes with the card (dist/), nothing is asked of other sites',
+  { timeout: TIMEOUT },
+  async () => {
+    const outside = [];
+    const decoder = [];
+    const { page, errors } = await open(house({ objfile: 'draco.glb', mtlfile: undefined }), states(), (p) =>
+      p.route('**/*', (route) => {
+        const url = route.request().url();
+        if (!url.startsWith(server.url)) {
+          outside.push(url);
+          return route.abort();
+        }
+        if (/\/floor3d-card-draco_(wasm_wrapper|decoder)-[\w-]+\.(js|wasm)$/.test(url)) decoder.push(url);
+        return route.continue();
+      }),
+    );
+    assert.deepEqual(outside, [], 'no request to other sites');
+    assert.equal(decoder.length, 2, 'the wrapper and the .wasm of the card');
+    const found = await page.evaluate(
+      (names) => names.filter((n) => window.__card._scene.getObjectByName(n)),
+      ['bed', 'wardrobe', 'tv_screen'],
+    );
+    assert.deepEqual(found, ['bed', 'wardrobe', 'tv_screen'], 'the objects of the model');
+    assert.ok((await brightness(page)) > 0.03, 'the model is drawn');
+    assert.deepEqual(errors, []);
+    await page.close();
+  },
+);
+
+test(
+  'another card already defines floor3d-card and floor3d-card-editor: no error, a warning',
+  { timeout: TIMEOUT },
+  async () => {
+    const page = await browser.newPage();
+    const errors = [];
+    const warnings = [];
+    page.on('pageerror', (e) => errors.push(e.message));
+    page.on('console', (m) => (m.type() === 'warning' ? warnings : m.type() === 'error' ? errors : []).push(m.text()));
+    // The original card, loaded first by another resource.
+    await page.addInitScript(() => {
+      class Original extends HTMLElement {
+        setConfig() {}
+      }
+      customElements.define('floor3d-card', Original);
+      customElements.define('floor3d-card-editor', class extends HTMLElement {});
+      window.__original = Original;
+    });
+    server.put('defined.json', house());
+    server.put('defined-states.json', states());
+    await page.goto(`${server.url}/test/index.html?cfg=defined.json&st=defined-states.json`);
+    await until(page, () => window.__card, null, 'the test page creates the card');
+    const editor = fs.readdirSync(new URL('../../dist/', import.meta.url)).find((f) => /^floor3d-card-editor-/.test(f));
+    await page.evaluate((file) => import('/' + file), editor);
+    assert.ok(await page.evaluate(() => customElements.get('floor3d-card') === window.__original));
+    assert.deepEqual(errors, []);
+    assert.ok(warnings.some((w) => w.includes('custom:floor3d-card is already defined')));
     await page.close();
   },
 );

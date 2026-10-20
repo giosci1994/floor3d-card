@@ -233,7 +233,7 @@
     "angle_min": "L'angolo resta entro questi limiti. Predefinito 0",
     "angle_max": "Predefinito 360: un giro intero, e l'oggetto passa dalla parte più corta",
     "objfile": "Un .glb può essere compresso con Draco o meshopt",
-    "draco_decoder_path": "Solo per i modelli .glb compressi con Draco. Predefinito: CDN di Google",
+    "draco_decoder_path": "Solo per i modelli .glb compressi con Draco. Predefinito: il decoder incluso nella card",
     "span": "Dell'oggetto, in %",
     "lighting_off_state": "Predefiniti off, standby, unavailable, unknown",
     "scale": "Predefinito 0.001",
