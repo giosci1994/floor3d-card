@@ -32,8 +32,8 @@ Javascript Module for the Home Assistant visualization Card for 3D Models with b
 
 [![Open this repository in HACS](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=giosci1994&repository=floor3d-card&category=plugin)
 
-1. Open the link above: HACS offers to add this repository. Or add it by hand: in HACS, menu (⋮) at the top right › **Custom repositories**, repository `https://github.com/giosci1994/floor3d-card`, type **Dashboard**.
-2. Open **floor3d-card mod** and click **Download**. HACS adds the resource by itself.
+1. In HACS, search for **floor3d-card mod**: the card is in the default list of HACS. Or open the link above.
+2. Open it and click **Download**. HACS adds the resource by itself.
 3. Reload the browser or the app.
 
 If the original floor3d-card is installed, remove it from HACS first: both define `custom:floor3d-card` and use the same `www/community/floor3d-card` folder. The configuration of the card stays the same.
