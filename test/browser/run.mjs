@@ -701,7 +701,7 @@ test('views: one with a level shows only that level, one without shows them all,
 
   // The buttons of hideZoomMenu: yes jump to the view; the initial view shows initialLevel again.
   ({ page, errors } = await open(house({ objfile: 'levels.obj', zoom_areas, hideZoomMenu: 'yes', initialLevel: 1 })));
-  const press = (index) => page.evaluate((index) => [...window.__card._zoombar.querySelectorAll('floor3d-button')].find((b) => b.index === index).click(), index);
+  const press = (index) => page.evaluate((index) => [...window.__card._zoombar.querySelectorAll('button')].find((b) => b.index === index).click(), index);
   const start = await camera(page);
   assert.deepEqual(await levels(page), [false, true], 'initialLevel: 1');
   await press(2);
@@ -1969,6 +1969,57 @@ test('text: two text entities on one object, one under the other; each updates i
   r = await rows();
   assert.notEqual(r.picture, before, 'the second line updated');
   assert.ok(r.top > 0 && r.bottom > 0 && r.middle === 0, 'still both');
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+// --- 2.12.0: cleanup ------------------------------------------------------------------------------
+
+test('doors of a GLB with a position of their own and a shared mesh: they stay where they are when closed, open around their hinge, and the other object stays', { timeout: TIMEOUT }, async () => {
+  const swing = { entity: 'binary_sensor.door', type3d: 'door', object_id: 'fan_a', door: { doortype: 'swing', side: 'left', direction: 'inner', degrees: 90 } };
+  const slide = { entity: 'binary_sensor.door', type3d: 'door', object_id: 'fan_a', door: { doortype: 'slide', side: 'left', percentage: 100 } };
+  const box = async (page, name) => {
+    const [min, max] = await worldBox(page, name);
+    return [...min, ...max].map(Math.round);
+  };
+  // Centred by the card: 1400 / 2 off. fan_a: 80 x 2 x 10 around (500, 241, 700); fan_b at 900.
+  const closedA = [460 - 700, 240, 695 - 700, 540 - 700, 242, 705 - 700];
+  const closedB = [860 - 700, 240, 695 - 700, 940 - 700, 242, 705 - 700];
+  for (const door of [swing, slide]) {
+    const doorStates = states({ 'binary_sensor.door': { state: 'off', attributes: {} } });
+    const { page, errors } = await open(house({ objfile: 'home.glb', mtlfile: undefined, entities: [door] }), doorStates);
+    assert.deepEqual(await box(page, 'fan_a'), closedA, door.door.doortype + ': where it is in the model (it jumped away)');
+    assert.deepEqual(await box(page, 'fan_b'), closedB, door.door.doortype + ': the other blade stays (it moved with the shared mesh)');
+    await page.evaluate(() => window.__setState('binary_sensor.door', 'on'));
+    await still(page);
+    const opened = await box(page, 'fan_a');
+    if (door.door.doortype == 'swing') {
+      // Turned by 90 degrees around its left end (x 460): now along z, from 700 for 80.
+      assert.deepEqual([opened[0], opened[3]], [460 - 700 - 5, 460 - 700 + 5], 'around the hinge: ' + opened);
+      assert.equal(opened[5] - opened[2], 80, 'turned a quarter: ' + opened);
+    } else {
+      assert.deepEqual(opened, [closedA[0] - 80, 240, closedA[2], closedA[3] - 80, 242, closedA[5]], 'slid by its width to the left');
+    }
+    assert.deepEqual(await box(page, 'fan_b'), closedB, 'the other blade still there');
+    assert.deepEqual(errors, []);
+    await page.close();
+  }
+});
+
+test('the old buttons of the views (hideZoomMenu: yes) and of selectionMode are plain buttons: no Lit 2 or Material in the card', { timeout: TIMEOUT }, async () => {
+  const zoom_areas = [{ zoom: 'Living', camera_position: { x: -200, y: 500, z: 300 }, camera_target: { x: -200, y: 0, z: 0 } }];
+  const { page, errors } = await open(house({ zoom_areas, hideZoomMenu: 'yes', selectionMode: 'yes' }));
+  const bars = await page.evaluate(() => {
+    const card = window.__card;
+    const texts = (el) => [...el.querySelectorAll('button')].map((b) => b.textContent.trim());
+    return { zoom: texts(card._zoombar), selection: texts(card._selectionbar), material: !!customElements.get('floor3d-button') };
+  });
+  assert.deepEqual(bars.zoom, ['reset', 'Living'], 'shown in capitals by the style, as before');
+  assert.equal(bars.selection.length, 2);
+  assert.equal(bars.material, false, 'floor3d-button is no longer defined');
+  // The view button flies there (at once, as before).
+  await page.evaluate(() => [...window.__card._zoombar.querySelectorAll('button')][1].click());
+  assert.deepEqual(await page.evaluate(() => window.__card._camera.position.toArray().map(Math.round)), [-200, 500, 300]);
   assert.deepEqual(errors, []);
   await page.close();
 });

@@ -63,7 +63,6 @@ import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
 import { MTLLoader } from 'three/examples/jsm/loaders/MTLLoader.js';
 import { GLTFLoader, GLTF } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { Object3D } from 'three';
-import '../elements/button';
 
 // three.js >= 0.155 always uses physical light units, and the model is in centimetres. These
 // factors keep the brightness close to the three.js 0.130 build at typical room distances (a lamp
@@ -2363,10 +2362,7 @@ export class Floor3dCard extends LitElement {
 
     iconArray.push(html`
       <div class="row" style="background-color:black;">
-        <font color="white">
-          <floor3d-button style="opacity: 100%;" label=${this._t('reset')} .index=${-1} @click=${this._handleZoomClick.bind(this)}>
-          </floor3d-button>
-        </font>
+        <button class="f3d-bar-button" .index=${-1} @click=${this._handleZoomClick.bind(this)}>${this._t('reset')}</button>
       </div>
     `);
 
@@ -2374,10 +2370,7 @@ export class Floor3dCard extends LitElement {
       if (element) {
         iconArray.push(html`
           <div class="row" style="background-color:black;">
-            <font color="white">
-              <floor3d-button label=${element.name} .index=${index} @click=${this._handleZoomClick.bind(this)}>
-              </floor3d-button>
-            </font>
+            <button class="f3d-bar-button" .index=${index} @click=${this._handleZoomClick.bind(this)}>${element.name}</button>
           </div>
         `);
       }
@@ -2558,27 +2551,17 @@ export class Floor3dCard extends LitElement {
       const buttonArray: TemplateResult[] = [];
       buttonArray.push(html`
         <div class="row" style="background-color:black;">
-          <font color="white">
-            <floor3d-button
-              style="opacity: 100%;"
-              label=${this._t('clear_selections', { count: this._selectedobjects.length })}
-              @click=${this._handleClearSelectionsClick.bind(this)}
-            >
-            </floor3d-button>
-          </font>
+          <button class="f3d-bar-button" @click=${this._handleClearSelectionsClick.bind(this)}>
+            ${this._t('clear_selections', { count: this._selectedobjects.length })}
+          </button>
         </div>
       `);
 
       buttonArray.push(html`
         <div class="row" style="background-color:black;">
-          <font color="white">
-            <floor3d-button
-              style="opacity: 100%;"
-              label=${this._t(this._selectionModeEnabled ? 'disable_selection' : 'enable_selection')}
-              @click=${this._handleToggleSelectionMode.bind(this)}
-            >
-            </floor3d-button>
-          </font>
+          <button class="f3d-bar-button" @click=${this._handleToggleSelectionMode.bind(this)}>
+            ${this._t(this._selectionModeEnabled ? 'disable_selection' : 'enable_selection')}
+          </button>
         </div>
       `);
 
@@ -2617,7 +2600,7 @@ export class Floor3dCard extends LitElement {
   // The buttons of the views (hideZoomMenu: yes) jump to the view, the menu flies there.
   private _handleZoomClick(ev): void {
     ev.stopPropagation();
-    this._goToView(ev.target.index, false);
+    this._goToView(ev.currentTarget.index, false);
   }
 
   private _handleLevelClick(ev): void {
@@ -2989,29 +2972,22 @@ export class Floor3dCard extends LitElement {
                     this._degrees[i] = 90;
                   }
 
+                  // Around the hinge, in the frame of each object (see _pivotObject).
                   this._object_ids[i].objects.forEach((element) => {
-                    let _obj: any = this._scene.getObjectByName(element.object_id);
-
-                    this._centerobjecttopivot(_obj, this._pivot[i]);
-
-                    _obj.geometry.applyMatrix4(
-                      new THREE.Matrix4().makeTranslation(-this._pivot[i].x, -this._pivot[i].y, -this._pivot[i].z),
-                    );
+                    const _obj = this._scene.getObjectByName(element.object_id);
+                    if (_obj) this._pivotObject(_obj, this._pivot[i]);
                   });
 
                 }
                 if (entity.door.doortype == 'slide') {
 
                   this._object_ids[i].objects.forEach((element) => {
-                    let _obj: any = this._scene.getObjectByName(element.object_id);
-                    let objbbox = new THREE.Box3().setFromObject(_obj);
-                    this._slidingdoorposition[i].push(objbbox.min);
-                    this._centerobjecttopivot(_obj, objbbox.min);
-                    _obj.geometry.applyMatrix4(
-                      new THREE.Matrix4().makeTranslation(-objbbox.min.x, -objbbox.min.y, -objbbox.min.z),
-                    );
+                    const _obj = this._scene.getObjectByName(element.object_id);
+                    if (!_obj) return;
+                    // From the corner of its box, where it is when closed (see _pivotObject).
+                    this._pivotObject(_obj, new THREE.Box3().setFromObject(_obj).min);
+                    this._slidingdoorposition[i].push(_obj.position.clone());
                   });
-
                 }
               }
               if (entity.type3d == 'cover') {
@@ -3022,13 +2998,11 @@ export class Floor3dCard extends LitElement {
 
                 if (pane) {
                   this._object_ids[i].objects.forEach((element) => {
-                    let _obj: any = this._scene.getObjectByName(element.object_id);
-                    let objbbox = new THREE.Box3().setFromObject(_obj);
-                    this._slidingdoorposition[i].push(objbbox.min);
-                    this._centerobjecttopivot(_obj, objbbox.min);
-                    _obj.geometry.applyMatrix4(
-                      new THREE.Matrix4().makeTranslation(-objbbox.min.x, -objbbox.min.y, -objbbox.min.z),
-                    );
+                    const _obj = this._scene.getObjectByName(element.object_id);
+                    if (!_obj) return;
+                    // From the corner of its box: a roller shade shortens toward it (see _pivotObject).
+                    this._pivotObject(_obj, new THREE.Box3().setFromObject(_obj).min);
+                    this._slidingdoorposition[i].push(_obj.position.clone());
                   });
 
                   const boxpane: THREE.Box3 = new THREE.Box3().setFromObject(pane);
@@ -6131,13 +6105,14 @@ export class Floor3dCard extends LitElement {
     });
   }
 
-  // An object of a rotate entity turns around pivot, a point of the scene: its geometry moves so that the
-  // pivot is its origin, and the object moves to the pivot, so that it stays where it is. In the frame
+  // An object that turns or slides (rotate, door, cover) turns around pivot, a point of the scene: its
+  // geometry moves so that the pivot is its origin, and the object moves to the pivot, so that it stays
+  // where it is. In the frame
   // of the object: a mesh of a GLB has a position (and a rotation) of its own, and the pivot is worked
   // out on the object as it is in the scene; before, the object jumped away and turned around a corner.
   // A copy of the geometry: identical objects may share it, and they moved with it. An object of
-  // several meshes (a group) moves its children. Once per object: a second rotate entity on it turns it
-  // around the same pivot (before, it jumped again).
+  // several meshes (a group) moves its children. Once per object: a second entity on it turns it around
+  // the same pivot (before, it jumped again). Doors and covers since 2.12.0, rotate since 2.11.4.
   private _pivotObject(object: THREE.Object3D, pivot: THREE.Vector3): void {
     if (object.userData.f3dPivoted) return;
     object.userData.f3dPivoted = true;
@@ -6883,6 +6858,33 @@ export class Floor3dCard extends LitElement {
           opacity: 0;
           transform: scale(0.92);
         }
+      }
+      /* The buttons of the bars of the views and of selectionMode: a text button, as the Material one
+         they were until 2.12.0 (it brought Lit 2 into the card). */
+      .f3d-bar-button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        box-sizing: border-box;
+        min-width: 64px;
+        height: 36px;
+        margin: 0;
+        padding: 0 8px;
+        border: 0;
+        border-radius: 4px;
+        background: none;
+        color: var(--primary-color, #03a9f4);
+        font: inherit;
+        font-size: 14px;
+        font-weight: 500;
+        letter-spacing: 0.0892857143em;
+        text-transform: uppercase;
+        cursor: pointer;
+      }
+      .f3d-bar-button:hover,
+      .f3d-bar-button:focus-visible {
+        background: rgba(255, 255, 255, 0.08);
+        outline: none;
       }
       .f3d-menu-button {
         display: flex;
