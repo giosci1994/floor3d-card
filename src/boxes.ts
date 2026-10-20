@@ -1,11 +1,11 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 // The boxes in the corners of the card, next to the weather: what is on or open (status), energy,
 // people, alarm panel and chips. What they show is worked out here, without three.js and without
 // Home Assistant, so that the tests run in Node.
 
 export type Corner = 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
 export const CORNERS: Corner[] = ['top-left', 'top-right', 'bottom-left', 'bottom-right'];
-export const corner = (value: unknown, fallback: Corner): Corner => (CORNERS.includes(value as Corner) ? (value as Corner) : fallback);
+export const corner = (value: unknown, fallback: Corner): Corner =>
+  CORNERS.includes(value as Corner) ? (value as Corner) : fallback;
 
 // The boxes, in the order they stack from their corner.
 export const BOX_KINDS = ['alarm_panel', 'status', 'people', 'energy', 'weather', 'chips', 'camera_popup'];
@@ -16,7 +16,8 @@ interface State {
 }
 type States = { [id: string]: State | undefined };
 
-const number = (value: unknown): number => (value === null || value === undefined || value === '' ? NaN : Number(value));
+const number = (value: unknown): number =>
+  value === null || value === undefined || value === '' ? NaN : Number(value);
 
 // --- What is on or open ------------------------------------------------------------------------
 
@@ -59,7 +60,8 @@ export function statusKind(
   if (entity.type3d === 'door' || (domain === 'binary_sensor' && OPENINGS.includes(deviceClass))) {
     return state === 'on' || state === 'open' || state === 'opening' ? 'open' : null;
   }
-  if (domain === 'cover' && COVER_OPENINGS.includes(deviceClass)) return state === 'open' || state === 'opening' ? 'open' : null;
+  if (domain === 'cover' && COVER_OPENINGS.includes(deviceClass))
+    return state === 'open' || state === 'opening' ? 'open' : null;
   if (entity.type3d === 'climate') {
     return working(stateObj, entity.climate && entity.climate.mode === 'cool' ? 'cool' : 'heat') ? 'climate' : null;
   }
@@ -67,7 +69,11 @@ export function statusKind(
 }
 
 // The entities of each kind (each entity once) and the positions of their rows in the config.
-export function statusGroups(entities: any[], states: States, working: Working): { kind: StatusKind; entities: string[]; indices: number[] }[] {
+export function statusGroups(
+  entities: any[],
+  states: States,
+  working: Working,
+): { kind: StatusKind; entities: string[]; indices: number[] }[] {
   const groups = new Map<StatusKind, { kind: StatusKind; entities: string[]; indices: number[] }>();
   (entities || []).forEach((entity, index) => {
     if (!entity || typeof entity !== 'object') return;
@@ -160,10 +166,17 @@ export function matchRoom(value: unknown, rooms: { name?: string; object_id?: st
 }
 
 // A person: at home or not, the zone where they are, and the room, if their room entity names one.
-export function personPlace(personState: string | undefined, roomValue: unknown, rooms: { name?: string; object_id?: string }[]): { home: boolean; zone?: string; room: number } {
+export function personPlace(
+  personState: string | undefined,
+  roomValue: unknown,
+  rooms: { name?: string; object_id?: string }[],
+): { home: boolean; zone?: string; room: number } {
   const home = personState === 'home';
   const room = home ? matchRoom(roomValue, rooms) : -1;
-  const zone = !home && personState && personState !== 'not_home' && personState !== 'unknown' && personState !== 'unavailable' ? personState : undefined;
+  const zone =
+    !home && personState && personState !== 'not_home' && personState !== 'unknown' && personState !== 'unavailable'
+      ? personState
+      : undefined;
   return { home, zone, room };
 }
 
@@ -178,7 +191,13 @@ export function initials(name: string): string {
 // people: entity ids, or { entity, room } with the entity whose state names the room.
 export function peopleList(value: unknown): { entity: string; room?: string }[] {
   return (Array.isArray(value) ? value : value ? [value] : [])
-    .map((p: any) => (typeof p === 'string' ? { entity: p } : p && typeof p === 'object' && p.entity ? { entity: String(p.entity), room: p.room ? String(p.room) : undefined } : null))
+    .map((p: any) =>
+      typeof p === 'string'
+        ? { entity: p }
+        : p && typeof p === 'object' && p.entity
+          ? { entity: String(p.entity), room: p.room ? String(p.room) : undefined }
+          : null,
+    )
     .filter((p) => p && p.entity);
 }
 
@@ -186,7 +205,11 @@ export function peopleList(value: unknown): { entity: string; room?: string }[] 
 export function chipList(value: unknown): { entity: string; name?: string; icon?: string }[] {
   return (Array.isArray(value) ? value : value ? [value] : [])
     .map((c: any) =>
-      typeof c === 'string' ? { entity: c } : c && typeof c === 'object' && c.entity ? { entity: String(c.entity), name: c.name, icon: c.icon } : null,
+      typeof c === 'string'
+        ? { entity: c }
+        : c && typeof c === 'object' && c.entity
+          ? { entity: String(c.entity), name: c.name, icon: c.icon }
+          : null,
     )
     .filter((c) => c && c.entity);
 }

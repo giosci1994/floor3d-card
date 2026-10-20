@@ -37,7 +37,19 @@ box('ground', 'grass', 0, 1400, 0, 2, 0, 1400);
 box('floor_living', 'floor', 320, 700, 2, 6, 420, 980);
 box('floor_bed', 'floor', 720, 1080, 2, 6, 420, 980);
 box('wall_north', 'wall', 300, 1100, H0, H1, 400, 420);
-wallX('wall_south', 980, 1000, 300, 1100, [[400, 620], [820, 980]], 90, 220);
+wallX(
+  'wall_south',
+  980,
+  1000,
+  300,
+  1100,
+  [
+    [400, 620],
+    [820, 980],
+  ],
+  90,
+  220,
+);
 wallZ('wall_west', 300, 320, 420, 980, [[600, 800]], 90, 220);
 wallZ('wall_east', 1080, 1100, 420, 980, [[650, 740]], H0, 216);
 wallZ('wall_inner', 700, 720, 420, 980, [[640, 730]], H0, 216);
@@ -102,11 +114,31 @@ const basementBoxes = [
 // Boxes one after the other with the same name are one object.
 export function objFile({ level1 = [], covers = false, basement = false } = {}) {
   const level = (name) =>
-    (basement ? (basementBoxes.some((b) => b[0] === name) ? 'lvl000' : 'lvl001') : level1.length ? (level1.includes(name) ? 'lvl001' : 'lvl000') : '') + name;
+    (basement
+      ? basementBoxes.some((b) => b[0] === name)
+        ? 'lvl000'
+        : 'lvl001'
+      : level1.length
+        ? level1.includes(name)
+          ? 'lvl001'
+          : 'lvl000'
+        : '') + name;
   const lift = (b) => (basement ? [b[0], b[1], b[2], b[3], b[4] + BASEMENT, b[5] + BASEMENT, b[6], b[7]] : b);
   const lines = ['mtllib home.mtl'];
-  [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]].forEach((n) => lines.push('vn ' + n.join(' ')));
-  [[0, 0], [1, 0], [1, 1], [0, 1]].forEach((t) => lines.push('vt ' + t.join(' ')));
+  [
+    [1, 0, 0],
+    [-1, 0, 0],
+    [0, 1, 0],
+    [0, -1, 0],
+    [0, 0, 1],
+    [0, 0, -1],
+  ].forEach((n) => lines.push('vn ' + n.join(' ')));
+  [
+    [0, 0],
+    [1, 0],
+    [1, 1],
+    [0, 1],
+  ].forEach((t) => lines.push('vt ' + t.join(' ')));
   let vi = 0;
   let previous = null;
   const all = [...(basement ? basementBoxes : []), ...(covers ? [...boxes, ...coverBoxes] : boxes).map(lift)];
@@ -114,12 +146,26 @@ export function objFile({ level1 = [], covers = false, basement = false } = {}) 
     if (name !== previous) lines.push(`o ${level(name)}`);
     lines.push(`usemtl ${mat}`);
     previous = name;
-    [[x0, y0, z0], [x1, y0, z0], [x1, y1, z0], [x0, y1, z0], [x0, y0, z1], [x1, y0, z1], [x1, y1, z1], [x0, y1, z1]].forEach((p) =>
-      lines.push('v ' + p.join(' ')),
-    );
+    [
+      [x0, y0, z0],
+      [x1, y0, z0],
+      [x1, y1, z0],
+      [x0, y1, z0],
+      [x0, y0, z1],
+      [x1, y0, z1],
+      [x1, y1, z1],
+      [x0, y1, z1],
+    ].forEach((p) => lines.push('v ' + p.join(' ')));
     const b = vi + 1;
     // faces counter-clockwise seen from outside, with their normal
-    const faces = [[[1, 2, 6, 5], 1], [[0, 4, 7, 3], 2], [[3, 7, 6, 2], 3], [[0, 1, 5, 4], 4], [[4, 5, 6, 7], 5], [[0, 3, 2, 1], 6]];
+    const faces = [
+      [[1, 2, 6, 5], 1],
+      [[0, 4, 7, 3], 2],
+      [[3, 7, 6, 2], 3],
+      [[0, 1, 5, 4], 4],
+      [[4, 5, 6, 7], 5],
+      [[0, 3, 2, 1], 6],
+    ];
     faces.forEach(([idx, n]) => lines.push('f ' + idx.map((i, k) => `${b + i}/${k + 1}/${n}`).join(' ')));
     vi += 8;
   }
@@ -187,12 +233,60 @@ export function glbFile(rich = false) {
   const nodes = [];
   for (const [name, mat, x0, x1, y0, y1, z0, z1] of boxes) {
     const faces = [
-      [[[x1, y0, z0], [x1, y1, z0], [x1, y1, z1], [x1, y0, z1]], [1, 0, 0]],
-      [[[x0, y0, z0], [x0, y0, z1], [x0, y1, z1], [x0, y1, z0]], [-1, 0, 0]],
-      [[[x0, y1, z0], [x0, y1, z1], [x1, y1, z1], [x1, y1, z0]], [0, 1, 0]],
-      [[[x0, y0, z0], [x1, y0, z0], [x1, y0, z1], [x0, y0, z1]], [0, -1, 0]],
-      [[[x0, y0, z1], [x1, y0, z1], [x1, y1, z1], [x0, y1, z1]], [0, 0, 1]],
-      [[[x0, y0, z0], [x0, y1, z0], [x1, y1, z0], [x1, y0, z0]], [0, 0, -1]],
+      [
+        [
+          [x1, y0, z0],
+          [x1, y1, z0],
+          [x1, y1, z1],
+          [x1, y0, z1],
+        ],
+        [1, 0, 0],
+      ],
+      [
+        [
+          [x0, y0, z0],
+          [x0, y0, z1],
+          [x0, y1, z1],
+          [x0, y1, z0],
+        ],
+        [-1, 0, 0],
+      ],
+      [
+        [
+          [x0, y1, z0],
+          [x0, y1, z1],
+          [x1, y1, z1],
+          [x1, y1, z0],
+        ],
+        [0, 1, 0],
+      ],
+      [
+        [
+          [x0, y0, z0],
+          [x1, y0, z0],
+          [x1, y0, z1],
+          [x0, y0, z1],
+        ],
+        [0, -1, 0],
+      ],
+      [
+        [
+          [x0, y0, z1],
+          [x1, y0, z1],
+          [x1, y1, z1],
+          [x0, y1, z1],
+        ],
+        [0, 0, 1],
+      ],
+      [
+        [
+          [x0, y0, z0],
+          [x0, y1, z0],
+          [x1, y1, z0],
+          [x1, y0, z0],
+        ],
+        [0, 0, -1],
+      ],
     ];
     const pos = [];
     const nor = [];
@@ -203,7 +297,14 @@ export function glbFile(rich = false) {
       corners.forEach((c, k) => {
         pos.push(...c);
         nor.push(...n);
-        uv.push(...[[0, 1], [1, 1], [1, 0], [0, 0]][k]);
+        uv.push(
+          ...[
+            [0, 1],
+            [1, 1],
+            [1, 0],
+            [0, 0],
+          ][k],
+        );
       });
       idx.push(base, base + 1, base + 2, base, base + 2, base + 3);
     });
@@ -211,7 +312,10 @@ export function glbFile(rich = false) {
     const q = add(f32(nor), 34962, nor.length / 3, 5126, 'VEC3');
     const t = add(f32(uv), 34962, uv.length / 2, 5126, 'VEC2');
     const i = add(Buffer.from(new Uint16Array(idx).buffer), 34963, idx.length, 5123, 'SCALAR');
-    meshes.push({ name, primitives: [{ attributes: { POSITION: p, NORMAL: q, TEXCOORD_0: t }, indices: i, material: names.indexOf(mat) }] });
+    meshes.push({
+      name,
+      primitives: [{ attributes: { POSITION: p, NORMAL: q, TEXCOORD_0: t }, indices: i, material: names.indexOf(mat) }],
+    });
     nodes.push({ name, mesh: meshes.length - 1 });
   }
   // Two fan blades that share one mesh, each at a position of its own (a node with a translation), as
@@ -219,14 +323,28 @@ export function glbFile(rich = false) {
   {
     const [x0, x1, y0, y1, z0, z1] = [-40, 40, 0, 2, -5, 5];
     const pos = [x0, y0, z0, x1, y0, z0, x1, y1, z0, x0, y1, z0, x0, y0, z1, x1, y0, z1, x1, y1, z1, x0, y1, z1];
-    const idx = [0, 1, 2, 0, 2, 3, 4, 6, 5, 4, 7, 6, 3, 2, 6, 3, 6, 7, 0, 5, 1, 0, 4, 5, 0, 3, 7, 0, 7, 4, 1, 5, 6, 1, 6, 2];
+    const idx = [
+      0, 1, 2, 0, 2, 3, 4, 6, 5, 4, 7, 6, 3, 2, 6, 3, 6, 7, 0, 5, 1, 0, 4, 5, 0, 3, 7, 0, 7, 4, 1, 5, 6, 1, 6, 2,
+    ];
     const p = add(f32(pos), 34962, 8, 5126, 'VEC3', [x0, y0, z0], [x1, y1, z1]);
     const i = add(Buffer.from(new Uint16Array(idx).buffer), 34963, idx.length, 5123, 'SCALAR');
-    meshes.push({ name: 'fan', primitives: [{ attributes: { POSITION: p }, indices: i, material: names.indexOf('wood') }] });
+    meshes.push({
+      name: 'fan',
+      primitives: [{ attributes: { POSITION: p }, indices: i, material: names.indexOf('wood') }],
+    });
     nodes.push({ name: 'fan_a', mesh: meshes.length - 1, translation: [500, 240, 700] });
     nodes.push({ name: 'fan_b', mesh: meshes.length - 1, translation: [900, 240, 700] });
   }
-  const gltf = { asset: { version: '2.0' }, scene: 0, scenes: [{ nodes: nodes.map((_, k) => k) }], nodes, meshes, materials, accessors, bufferViews: views };
+  const gltf = {
+    asset: { version: '2.0' },
+    scene: 0,
+    scenes: [{ nodes: nodes.map((_, k) => k) }],
+    nodes,
+    meshes,
+    materials,
+    accessors,
+    bufferViews: views,
+  };
   if (rich) {
     const tex = () => ({ index: 0 });
     const wall = materials[names.indexOf('wall')];
@@ -236,7 +354,14 @@ export function glbFile(rich = false) {
       occlusionTexture: tex(),
       emissiveTexture: tex(),
       emissiveFactor: [0, 0, 0],
-      extensions: { KHR_materials_clearcoat: { clearcoatFactor: 0.3, clearcoatTexture: tex(), clearcoatRoughnessTexture: tex(), clearcoatNormalTexture: tex() } },
+      extensions: {
+        KHR_materials_clearcoat: {
+          clearcoatFactor: 0.3,
+          clearcoatTexture: tex(),
+          clearcoatRoughnessTexture: tex(),
+          clearcoatNormalTexture: tex(),
+        },
+      },
     });
     const image = add(png());
     Object.assign(gltf, {

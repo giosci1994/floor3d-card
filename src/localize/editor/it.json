@@ -451,6 +451,7 @@
   },
   "ui": {
     "loading": "Caricamento…",
+    "unsupported": "Questo editor richiede Home Assistant 2024.1 o successivo. Puoi comunque configurare la card nell'editor di codice (Mostra editor di codice).",
     "pause_preview": "Metti in pausa l'anteprima (mantiene l'ultima immagine mentre modifichi)",
     "resume_preview": "Riprendi l'anteprima",
     "reload_preview": "Ricarica l'anteprima",

@@ -18,7 +18,10 @@ function box(min, max) {
   ]);
 }
 // u, v of a corner of the triangles, and its position.
-const corner = (positions, layout, k) => ({ p: Array.from(positions.slice(k * 3, k * 3 + 3)), uv: [layout.uv[k * 2], layout.uv[k * 2 + 1]].map((n) => Math.round(n * 1000) / 1000) });
+const corner = (positions, layout, k) => ({
+  p: Array.from(positions.slice(k * 3, k * 3 + 3)),
+  uv: [layout.uv[k * 2], layout.uv[k * 2 + 1]].map((n) => Math.round(n * 1000) / 1000),
+});
 
 test('text on a TV on a wall: on the largest faces, the right way up and readable from the front and the back', () => {
   // 200 wide, 100 high, 4 deep, facing z.

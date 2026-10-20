@@ -11,12 +11,12 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: 22
 
-      # Build (it also removes from dist/ the chunks of older builds)
+      # Build: dist/ is not in the repository, the files of the release are built here from the tag.
       - name: Build the files
         run: |
           npx --yes yarn@1.22.22 install --frozen-lockfile

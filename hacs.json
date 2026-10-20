@@ -1,5 +1,6 @@
 {
     "name": "floor3d-card mod",
     "filename": "floor3d-card.js",
+    "homeassistant": "2024.1.0",
     "render_readme": true
 }

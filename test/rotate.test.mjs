@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { rotationAngle, sensorNumber, turnToward } from '../src/rotate.ts';
 
-const deg = (r) => Math.round((r * 180) / Math.PI * 1000) / 1000;
+const deg = (r) => Math.round(((r * 180) / Math.PI) * 1000) / 1000;
 
 test('angle: the state in degrees, within angle_min and angle_max, plus angle_offset', () => {
   assert.deepEqual(rotationAngle('90'), { angle: Math.PI / 2, wrap: true });
@@ -14,7 +14,8 @@ test('angle: the state in degrees, within angle_min and angle_max, plus angle_of
   assert.equal(deg(rotationAngle('10', 90, 0).angle), 10, 'limits the other way round');
   assert.equal(deg(rotationAngle('350', undefined, undefined, '20').angle), 370, 'offset added');
   assert.equal(deg(rotationAngle('30', '', '', '').angle), 30, 'empty fields: the defaults');
-  for (const none of ['unavailable', 'unknown', '', ' ', undefined, null, 'abc']) assert.equal(rotationAngle(none), null, String(none));
+  for (const none of ['unavailable', 'unknown', '', ' ', undefined, null, 'abc'])
+    assert.equal(rotationAngle(none), null, String(none));
 });
 
 test('turn: towards the target by at most a step, then the target; the shorter way on a whole turn', () => {
@@ -39,7 +40,8 @@ test('number of a state: with a dot or a comma, with a unit after it; none for o
   assert.equal(sensorNumber(' -3 '), -3);
   assert.equal(sensorNumber('.5'), 0.5);
   assert.equal(sensorNumber(7), 7);
-  for (const none of ['on', 'off', 'unavailable', 'unknown', '', ' ', 'abc', 'N 12', undefined, null, NaN]) assert.equal(sensorNumber(none), null, String(none));
+  for (const none of ['on', 'off', 'unavailable', 'unknown', '', ' ', 'abc', 'N 12', undefined, null, NaN])
+    assert.equal(sensorNumber(none), null, String(none));
   assert.equal(deg(rotationAngle('45,5').angle), 45.5, 'the angle with a comma');
   assert.equal(deg(rotationAngle('90°').angle), 90, 'and with its unit');
 });

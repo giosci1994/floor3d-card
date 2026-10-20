@@ -7,14 +7,27 @@ import { cleanConfig, matchObjects, normalizeConfig, objectPattern, valueDefault
 const example = JSON.parse(fs.readFileSync(new URL('./config.json', import.meta.url), 'utf8'));
 
 test('switches: true/false read as yes/no', () => {
-  const c = normalizeConfig({ shadow: true, click: false, entities: [{ entity: 'light.a', type3d: 'light', light: { shadow: false } }] });
+  const c = normalizeConfig({
+    shadow: true,
+    click: false,
+    entities: [{ entity: 'light.a', type3d: 'light', light: { shadow: false } }],
+  });
   assert.equal(c.shadow, 'yes');
   assert.equal(c.click, 'no');
   assert.equal(c.entities[0].light.shadow, 'no');
 });
 
 test('switches: only the ones at their default are left out', () => {
-  const c = cleanConfig({ header: 'yes', click: 'no', shadow: 'yes', editModeNotifications: 'no', hideLevelsMenu: 'no', sun_shadow: 'yes', sky: 'no', entities: [] });
+  const c = cleanConfig({
+    header: 'yes',
+    click: 'no',
+    shadow: 'yes',
+    editModeNotifications: 'no',
+    hideLevelsMenu: 'no',
+    sun_shadow: 'yes',
+    sky: 'no',
+    entities: [],
+  });
   assert.deepEqual(c, { shadow: 'yes', editModeNotifications: 'no', entities: [] });
 });
 
@@ -24,7 +37,14 @@ test('switches of an options block are kept, default or not', () => {
 });
 
 test('overlay size and colours left out when they are the defaults', () => {
-  const c = cleanConfig({ overlay: 'yes', overlay_width: '33', overlay_height: 25, overlay_bgcolor: 'transparent', overlay_fgcolor: 'white', entities: [] });
+  const c = cleanConfig({
+    overlay: 'yes',
+    overlay_width: '33',
+    overlay_height: 25,
+    overlay_bgcolor: 'transparent',
+    overlay_fgcolor: 'white',
+    entities: [],
+  });
   assert.deepEqual(c, { overlay: 'yes', overlay_height: 25, overlay_fgcolor: 'white', entities: [] });
 });
 
@@ -34,15 +54,26 @@ test('language: left out on auto (the language of the user), kept when chosen', 
 });
 
 test('object groups: plain ids read and written', () => {
-  const n = normalizeConfig({ object_groups: [{ object_group: 'g', objects: ['a', { object_id: 'b' }] }, { object_group: 'h' }] });
+  const n = normalizeConfig({
+    object_groups: [{ object_group: 'g', objects: ['a', { object_id: 'b' }] }, { object_group: 'h' }],
+  });
   assert.deepEqual(n.object_groups[0].objects, [{ object_id: 'a' }, { object_id: 'b' }]);
   assert.deepEqual(n.object_groups[1].objects, []);
-  const c = cleanConfig({ entities: [], object_groups: [{ object_group: 'g', objects: [{ object_id: 'a' }, { object_id: '' }, {}, 'c'] }] });
+  const c = cleanConfig({
+    entities: [],
+    object_groups: [{ object_group: 'g', objects: [{ object_id: 'a' }, { object_id: '' }, {}, 'c'] }],
+  });
   assert.deepEqual(c.object_groups, [{ object_group: 'g', objects: ['a', 'c'] }]);
 });
 
 test('the options block the card reads is added when missing', () => {
-  const c = normalizeConfig({ entities: [{ entity: 'light.a', type3d: 'light' }, { entity: 'x.b', type3d: 'hide' }, { entity: 'x.c', type3d: 'tracker' }] });
+  const c = normalizeConfig({
+    entities: [
+      { entity: 'light.a', type3d: 'light' },
+      { entity: 'x.b', type3d: 'hide' },
+      { entity: 'x.c', type3d: 'tracker' },
+    ],
+  });
   assert.deepEqual(c.entities[0].light, {});
   assert.deepEqual(c.entities[1].hide, {});
   assert.equal(c.entities[2].tracker, undefined);
@@ -50,7 +81,13 @@ test('the options block the card reads is added when missing', () => {
 
 test('empty rows left out, rows being filled in kept', () => {
   const c = cleanConfig({
-    entities: [{ entity: '' }, { entity: '', type3d: 'light' }, { entity: 'light.a', object_id: '', light: {} }, 'switch.b', ''],
+    entities: [
+      { entity: '' },
+      { entity: '', type3d: 'light' },
+      { entity: 'light.a', object_id: '', light: {} },
+      'switch.b',
+      '',
+    ],
     object_groups: [{ object_group: '' }],
     zoom_areas: [{ zoom: '' }],
   });
@@ -58,8 +95,14 @@ test('empty rows left out, rows being filled in kept', () => {
 });
 
 test('rooms: empty rows left out, rows being filled in kept', () => {
-  const c = cleanConfig({ entities: [], rooms: [{ name: 'Bedroom', object_id: 'f1' }, { name: '' }, { name: '', object_id: 'f2' }] });
-  assert.deepEqual(c.rooms, [{ name: 'Bedroom', object_id: 'f1' }, { name: '', object_id: 'f2' }]);
+  const c = cleanConfig({
+    entities: [],
+    rooms: [{ name: 'Bedroom', object_id: 'f1' }, { name: '' }, { name: '', object_id: 'f2' }],
+  });
+  assert.deepEqual(c.rooms, [
+    { name: 'Bedroom', object_id: 'f1' },
+    { name: '', object_id: 'f2' },
+  ]);
   assert.ok(!('rooms' in cleanConfig({ entities: [], rooms: [{ name: '' }] })));
 });
 
@@ -94,16 +137,27 @@ test('numbers written as numbers; zero, entity ids and object ids kept', () => {
 });
 
 test('light powers: numbers typed as text written as numbers, sensor ids kept', () => {
-  const c = cleanConfig({ globalLightPower: '0.3', sun_power: '0', sky_power: 'sensor.diffuse_light', sky_color: '#ffffff', entities: [] });
+  const c = cleanConfig({
+    globalLightPower: '0.3',
+    sun_power: '0',
+    sky_power: 'sensor.diffuse_light',
+    sky_color: '#ffffff',
+    entities: [],
+  });
   assert.equal(c.globalLightPower, 0.3);
   assert.equal(c.sun_power, 0);
   assert.equal(c.sky_power, 'sensor.diffuse_light');
   assert.equal(c.sky_color, '#ffffff');
-  assert.equal(cleanConfig({ sun_power: 'sensor.direct_light', sky_power: 0.4, entities: [] }).sun_power, 'sensor.direct_light');
+  assert.equal(
+    cleanConfig({ sun_power: 'sensor.direct_light', sky_power: 0.4, entities: [] }).sun_power,
+    'sensor.direct_light',
+  );
 });
 
 test('one light for a lamp: single read as yes/no and kept, light_object kept', () => {
-  const n = normalizeConfig({ entities: [{ entity: 'light.a', type3d: 'light', object_id: '<spots>', light: { single: true } }] });
+  const n = normalizeConfig({
+    entities: [{ entity: 'light.a', type3d: 'light', object_id: '<spots>', light: { single: true } }],
+  });
   assert.equal(n.entities[0].light.single, 'yes');
   const c = cleanConfig({
     entities: [
@@ -116,7 +170,9 @@ test('one light for a lamp: single read as yes/no and kept, light_object kept', 
 });
 
 test('rotate: round_per_second and ramp written as numbers', () => {
-  const c = cleanConfig({ entities: [{ entity: 'fan.a', type3d: 'rotate', rotate: { axis: 'y', round_per_second: '1', ramp: '0' } }] });
+  const c = cleanConfig({
+    entities: [{ entity: 'fan.a', type3d: 'rotate', rotate: { axis: 'y', round_per_second: '1', ramp: '0' } }],
+  });
   assert.deepEqual(c.entities[0].rotate, { axis: 'y', round_per_second: 1, ramp: 0 });
 });
 
@@ -161,10 +217,27 @@ test('example config: nothing is lost except defaults and empty values', () => {
     return out;
   };
   const defaults = {
-    header: 'yes', click: 'no', overlay: 'no', lock_camera: 'no', show_axes: 'no', shadow: 'no', extralightmode: 'no',
-    hideLevelsMenu: 'no', hideZoomMenu: 'no', editModeNotifications: 'yes', selectionMode: 'no', sun: 'no', sun_shadow: 'yes',
-    log_depth: 'no', reversed_depth: 'yes', state_colors: 'no', sky: 'no',
-    overlay_width: '33', overlay_height: '20', overlay_bgcolor: 'transparent', overlay_fgcolor: 'black',
+    header: 'yes',
+    click: 'no',
+    overlay: 'no',
+    lock_camera: 'no',
+    show_axes: 'no',
+    shadow: 'no',
+    extralightmode: 'no',
+    hideLevelsMenu: 'no',
+    hideZoomMenu: 'no',
+    editModeNotifications: 'yes',
+    selectionMode: 'no',
+    sun: 'no',
+    sun_shadow: 'yes',
+    log_depth: 'no',
+    reversed_depth: 'yes',
+    state_colors: 'no',
+    sky: 'no',
+    overlay_width: '33',
+    overlay_height: '20',
+    overlay_bgcolor: 'transparent',
+    overlay_fgcolor: 'black',
   };
   const before = leaves(normalizeConfig(example));
   const after = leaves(normalizeConfig(cleanConfig(example)));
@@ -174,7 +247,10 @@ test('example config: nothing is lost except defaults and empty values', () => {
       continue;
     }
     const topLevel = p.split('/').length === 2;
-    assert.ok(v === '' || v === '{}' || v === '[]' || (topLevel && String(defaults[p.slice(1)]) === String(v)), 'lost: ' + p);
+    assert.ok(
+      v === '' || v === '{}' || v === '[]' || (topLevel && String(defaults[p.slice(1)]) === String(v)),
+      'lost: ' + p,
+    );
   }
   for (const p of Object.keys(after)) assert.ok(p in before, 'added: ' + p);
 });
@@ -183,12 +259,34 @@ test('sensor maps and rooms: empty maps left out, numbers written as numbers, se
   const c = cleanConfig({
     alarm_view: true,
     entities: [],
-    maps: [{ key: 'co2', min: '400', max: '1400', colors: ['#00ff00', '', '#ff0000'] }, { key: '' }, { name: 'Fridge', key: 'fridge', decimals: '1' }],
-    rooms: [{ name: 'Kitchen', object_id: 'floor_kitchen', co2: 'sensor.co2', power: ['sensor.a', 'sensor.b'], alarms: 'binary_sensor.smoke', climate: '' }],
+    maps: [
+      { key: 'co2', min: '400', max: '1400', colors: ['#00ff00', '', '#ff0000'] },
+      { key: '' },
+      { name: 'Fridge', key: 'fridge', decimals: '1' },
+    ],
+    rooms: [
+      {
+        name: 'Kitchen',
+        object_id: 'floor_kitchen',
+        co2: 'sensor.co2',
+        power: ['sensor.a', 'sensor.b'],
+        alarms: 'binary_sensor.smoke',
+        climate: '',
+      },
+    ],
   });
   assert.equal(c.alarm_view, 'yes');
-  assert.deepEqual(c.maps, [{ key: 'co2', min: 400, max: 1400, colors: ['#00ff00', '#ff0000'] }, { name: 'Fridge', key: 'fridge', decimals: 1 }]);
-  assert.deepEqual(c.rooms[0], { name: 'Kitchen', object_id: 'floor_kitchen', co2: 'sensor.co2', power: ['sensor.a', 'sensor.b'], alarms: 'binary_sensor.smoke' });
+  assert.deepEqual(c.maps, [
+    { key: 'co2', min: 400, max: 1400, colors: ['#00ff00', '#ff0000'] },
+    { name: 'Fridge', key: 'fridge', decimals: 1 },
+  ]);
+  assert.deepEqual(c.rooms[0], {
+    name: 'Kitchen',
+    object_id: 'floor_kitchen',
+    co2: 'sensor.co2',
+    power: ['sensor.a', 'sensor.b'],
+    alarms: 'binary_sensor.smoke',
+  });
   assert.ok(!('alarm_view' in cleanConfig({ alarm_view: 'no', entities: [] })));
 });
 
@@ -199,7 +297,14 @@ test('covers and weather: angles of the slats and forecasts shown written as num
     weather_position: 'bottom-left',
     weather_forecast: 'hourly',
     weather_count: '6',
-    entities: [{ entity: 'cover.blind', type3d: 'cover', object_id: 'blind', cover: { slats: 'blind', motion: 'none', tilt_closed: '-60', tilt_open: '30' } }],
+    entities: [
+      {
+        entity: 'cover.blind',
+        type3d: 'cover',
+        object_id: 'blind',
+        cover: { slats: 'blind', motion: 'none', tilt_closed: '-60', tilt_open: '30' },
+      },
+    ],
   });
   assert.deepEqual(c.entities[0].cover, { slats: 'blind', motion: 'none', tilt_closed: -60, tilt_open: 30 });
   assert.equal(c.backgroundColor, 'sky');
@@ -218,7 +323,13 @@ test('boxes: people and chips without empty rows, an id alone written as the id,
     energy_top: '5',
     energy_position: 'top-right',
     energy_plugs: ['sensor.washer', ''],
-    people: ['person.a', { entity: 'person.b', room: 'sensor.b_area' }, { entity: 'person.c', room: '' }, { entity: '' }, ''],
+    people: [
+      'person.a',
+      { entity: 'person.b', room: 'sensor.b_area' },
+      { entity: 'person.c', room: '' },
+      { entity: '' },
+      '',
+    ],
     chips: [],
     alarm_panel: 'alarm_control_panel.home',
     alarm_panel_position: 'top-right',
@@ -236,17 +347,37 @@ test('boxes: people and chips without empty rows, an id alone written as the id,
   assert.equal(cleanConfig({ status: true, entities: [] }).status_show, 'yes', 'the status: yes of before');
   assert.ok(!('status' in normalizeConfig({ status: 'yes', entities: [] })));
   // A box hidden keeps its settings; shown is the default and goes away.
-  const hidden = cleanConfig({ weather: 'weather.home', weather_show: false, chips: ['sensor.t'], chips_show: 'yes', hideMapMenu: true, entities: [] });
-  assert.deepEqual([hidden.weather, hidden.weather_show, hidden.chips, 'chips_show' in hidden, hidden.hideMapMenu], ['weather.home', 'no', ['sensor.t'], false, 'yes']);
+  const hidden = cleanConfig({
+    weather: 'weather.home',
+    weather_show: false,
+    chips: ['sensor.t'],
+    chips_show: 'yes',
+    hideMapMenu: true,
+    entities: [],
+  });
+  assert.deepEqual(
+    [hidden.weather, hidden.weather_show, hidden.chips, 'chips_show' in hidden, hidden.hideMapMenu],
+    ['weather.home', 'no', ['sensor.t'], false, 'yes'],
+  );
   const one = normalizeConfig({ people: 'person.a', chips: 'sensor.t', energy_plugs: 'sensor.washer', entities: [] });
-  assert.deepEqual([one.people, one.chips, one.energy_plugs], [['person.a'], ['sensor.t'], ['sensor.washer']], 'one alone: a list');
+  assert.deepEqual(
+    [one.people, one.chips, one.energy_plugs],
+    [['person.a'], ['sensor.t'], ['sensor.washer']],
+    'one alone: a list',
+  );
 });
 
 test('cameras: position as [x, y, z] once complete, sensors as a list, an id alone written as the id, defaults left out', () => {
   const c = cleanConfig({
     cameras: [
       'camera.a',
-      { entity: 'camera.b', position: { x: 10, y: '240', z: -30 }, level: '1', name: '', popup_on: ['binary_sensor.bell', ''] },
+      {
+        entity: 'camera.b',
+        position: { x: 10, y: '240', z: -30 },
+        level: '1',
+        name: '',
+        popup_on: ['binary_sensor.bell', ''],
+      },
       { entity: 'camera.c', position: { x: 5, y: '' } },
       { entity: 'camera.d', popup_on: [] },
       { entity: '', position: [1, 2, 3] },
@@ -268,14 +399,20 @@ test('cameras: position as [x, y, z] once complete, sensors as a list, an id alo
     'camera.d',
     { entity: '', position: [1, 2, 3] },
   ]);
-  assert.ok(!('cameras_show' in c) && !('camera_popup_show' in c) && !('camera_popup_position' in c) && !('moon_show' in c), 'defaults');
+  assert.ok(
+    !('cameras_show' in c) && !('camera_popup_show' in c) && !('camera_popup_position' in c) && !('moon_show' in c),
+    'defaults',
+  );
   assert.equal(c.camera_popup_duration, 30);
   assert.equal(c.stars_show, 'no');
   assert.ok(!('camera_popup_duration' in cleanConfig({ camera_popup_duration: 20, entities: [] })));
   assert.ok(!('cameras' in cleanConfig({ cameras: [{ entity: '' }, ''], entities: [] })));
   const one = normalizeConfig({ cameras: 'camera.a', entities: [] });
   assert.deepEqual(one.cameras, ['camera.a'], 'one alone: a list');
-  assert.deepEqual(normalizeConfig({ cameras: [{ entity: 'camera.a', popup_on: 'event.bell' }], entities: [] }).cameras[0].popup_on, ['event.bell']);
+  assert.deepEqual(
+    normalizeConfig({ cameras: [{ entity: 'camera.a', popup_on: 'event.bell' }], entities: [] }).cameras[0].popup_on,
+    ['event.bell'],
+  );
 });
 
 test('night sky and ground: moon_size written as a number, defaults left out, ground kept', () => {
@@ -290,27 +427,57 @@ test('night sky and ground: moon_size written as a number, defaults left out, gr
 test('text and room: font and colours at the level of the entity go into their block, the block wins', () => {
   const c = normalizeConfig({
     entities: [
-      { entity: 'sensor.a', type3d: 'text', object_id: 'tv', font: 'verdana', span: '50', textfgcolor: 'red', textbgcolor: 'black', text: { attribute: 'x', textfgcolor: 'blue' } },
+      {
+        entity: 'sensor.a',
+        type3d: 'text',
+        object_id: 'tv',
+        font: 'verdana',
+        span: '50',
+        textfgcolor: 'red',
+        textbgcolor: 'black',
+        text: { attribute: 'x', textfgcolor: 'blue' },
+      },
       { entity: 'sensor.b', type3d: 'room', object_id: 'room_1', font: 'arial' },
       { entity: 'sensor.c', type3d: 'info', object_id: 'panel', font: 'arial', info: { font: 'serif' } },
     ],
   });
   const [text, room, info] = c.entities;
-  assert.deepEqual(text.text, { attribute: 'x', font: 'verdana', span: '50', textfgcolor: 'blue', textbgcolor: 'black' });
+  assert.deepEqual(text.text, {
+    attribute: 'x',
+    font: 'verdana',
+    span: '50',
+    textfgcolor: 'blue',
+    textbgcolor: 'black',
+  });
   ['font', 'span', 'textfgcolor', 'textbgcolor'].forEach((key) => assert.ok(!(key in text), key + ' left the entity'));
   assert.deepEqual(room.room, { font: 'arial' });
   assert.equal(info.font, 'arial', 'the info type keeps its options as they are');
-  const clean = cleanConfig({ entities: [{ entity: 'sensor.a', type3d: 'text', object_id: 'tv', span: '50', text: {} }] });
+  const clean = cleanConfig({
+    entities: [{ entity: 'sensor.a', type3d: 'text', object_id: 'tv', span: '50', text: {} }],
+  });
   assert.deepEqual(clean.entities[0].text, { span: 50 }, 'span written as a number in the block');
 });
 
 test('rotate and ground: angles and ground_floor_level written as numbers, 0 left out', () => {
   const c = cleanConfig({
     ground_floor_level: '270',
-    entities: [{ entity: 'sensor.wind', type3d: 'rotate', object_id: 'vane', rotate: { axis: 'y', angle_entity: 'sensor.dir', angle_offset: '90', angle_min: '0', angle_max: '360' } }],
+    entities: [
+      {
+        entity: 'sensor.wind',
+        type3d: 'rotate',
+        object_id: 'vane',
+        rotate: { axis: 'y', angle_entity: 'sensor.dir', angle_offset: '90', angle_min: '0', angle_max: '360' },
+      },
+    ],
   });
   assert.equal(c.ground_floor_level, 270);
-  assert.deepEqual(c.entities[0].rotate, { axis: 'y', angle_entity: 'sensor.dir', angle_offset: 90, angle_min: 0, angle_max: 360 });
+  assert.deepEqual(c.entities[0].rotate, {
+    axis: 'y',
+    angle_entity: 'sensor.dir',
+    angle_offset: 90,
+    angle_min: 0,
+    angle_max: 360,
+  });
   assert.ok(!('ground_floor_level' in cleanConfig({ ground_floor_level: 0, entities: [] })), '0 is the default');
 });
 
@@ -321,7 +488,14 @@ test('defaults: the values the editor shows in empty fields, left out of the YAM
   assert.equal(d.language, 'auto');
   d.camera_popup_duration = 5;
   assert.equal(valueDefaults().camera_popup_duration, 20, 'a copy');
-  const c = cleanConfig({ camera_popup_position: 'bottom-right', camera_popup_duration: '20', cameras_button: true, entities: [] });
-  ['camera_popup_position', 'camera_popup_duration', 'cameras_button'].forEach((key) => assert.ok(!(key in c), key + ' is the default'));
+  const c = cleanConfig({
+    camera_popup_position: 'bottom-right',
+    camera_popup_duration: '20',
+    cameras_button: true,
+    entities: [],
+  });
+  ['camera_popup_position', 'camera_popup_duration', 'cameras_button'].forEach((key) =>
+    assert.ok(!(key in c), key + ' is the default'),
+  );
   assert.equal(cleanConfig({ cameras_button: false, entities: [] }).cameras_button, 'no');
 });

@@ -13,7 +13,11 @@ let browser;
 
 before(async () => {
   server = await start();
-  browser = await chromium.launch({ args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
+  // CHROMIUM_PATH: a Chromium already installed, of another version than the one of Playwright.
+  browser = await chromium.launch({
+    args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'],
+    ...(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {}),
+  });
 });
 after(async () => {
   await browser?.close();
@@ -23,7 +27,12 @@ after(async () => {
 // --- Configurations and states ------------------------------------------------------------------
 
 const lamps = (count, light = {}) =>
-  Array.from({ length: count }, (_, k) => ({ entity: `light.lamp_${k + 1}`, type3d: 'light', object_id: `lamp_${k + 1}`, light: { lumens: 300, ...light } }));
+  Array.from({ length: count }, (_, k) => ({
+    entity: `light.lamp_${k + 1}`,
+    type3d: 'light',
+    object_id: `lamp_${k + 1}`,
+    light: { lumens: 300, ...light },
+  }));
 
 const house = (extra = {}) => ({
   type: 'custom:floor3d-card',
@@ -45,7 +54,12 @@ const house = (extra = {}) => ({
 });
 
 // The TV lights the room with the colour of its picture (one light more, with shadows).
-const tv = { entity: 'media_player.tv', type3d: 'image', object_id: 'tv_screen', image: { lumens: 2, lighting_lumens: 300 } };
+const tv = {
+  entity: 'media_player.tv',
+  type3d: 'image',
+  object_id: 'tv_screen',
+  image: { lumens: 2, lighting_lumens: 300 },
+};
 
 const states = (extra = {}) => {
   const all = {
@@ -53,7 +67,9 @@ const states = (extra = {}) => {
     'media_player.tv': { state: 'off', attributes: { friendly_name: 'TV' } },
     'light.group': { state: 'on', attributes: { brightness: 255, friendly_name: 'Group' } },
     'sensor.t_living': { state: '21.5', attributes: { unit_of_measurement: '°C' } },
-    ...Object.fromEntries(Array.from({ length: 30 }, (_, k) => [`light.lamp_${k + 1}`, { state: 'on', attributes: { brightness: 60 } }])),
+    ...Object.fromEntries(
+      Array.from({ length: 30 }, (_, k) => [`light.lamp_${k + 1}`, { state: 'on', attributes: { brightness: 60 } }]),
+    ),
     ...extra,
   };
   return Object.fromEntries(Object.entries(all).map(([id, s]) => [id, { entity_id: id, ...s }]));
@@ -73,7 +89,8 @@ async function open(config, stateSet = states()) {
   const errors = [];
   page.on('pageerror', (e) => errors.push('page: ' + e.message));
   page.on('console', (m) => {
-    if (m.type() === 'error' || /Shader Error|not valid|WebGL: INVALID/.test(m.text())) errors.push(m.text().split('\n')[0]);
+    if (m.type() === 'error' || /Shader Error|not valid|WebGL: INVALID/.test(m.text()))
+      errors.push(m.text().split('\n')[0]);
   });
   await page.goto(`${server.url}/test/index.html?cfg=${name}.json&st=${name}-states.json`);
   await page.waitForFunction(() => window.__card && window.__card._modelready, null, { timeout: 120000 });
@@ -97,7 +114,8 @@ const still = (page, message = 'the animations end') => until(page, () => !windo
 // Until the card has followed a new size of its box: the boxes in the corners are placed again by a
 // ResizeObserver, which runs in the frame after the change, before its paint; two frames later they
 // are, however long a frame takes.
-const resized = (page) => page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
+const resized = (page) =>
+  page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
 // Until fn (in the test) returns something true, polled; it gives it back.
 const eventually = async (fn, message, timeout = 15000) => {
   const end = Date.now() + timeout;
@@ -109,7 +127,8 @@ const eventually = async (fn, message, timeout = 15000) => {
   }
 };
 // Until the camera has arrived (other animations, as the blink of an alarm, may go on).
-const flown = (page, message = 'the camera arrives') => until(page, () => window.__card._cameraTweens.every((t) => !t.isPlaying()), null, message);
+const flown = (page, message = 'the camera arrives') =>
+  until(page, () => window.__card._cameraTweens.every((t) => !t.isPlaying()), null, message);
 
 // The shadow limit as the card computes it, from the GPU of the page and the richest material.
 const shadowState = (page) =>
@@ -140,7 +159,8 @@ const brightness = (page) =>
     return sum / (64 * 48 * 255);
   });
 
-const expectedLimit = (s, textures = 2) => Math.max(2, Math.min(s.maxTextures - textures, s.maxVaryings - Math.max(6, 4 + Math.ceil(textures / 2))));
+const expectedLimit = (s, textures = 2) =>
+  Math.max(2, Math.min(s.maxTextures - textures, s.maxVaryings - Math.max(6, 4 + Math.ceil(textures / 2))));
 
 // --- Tests --------------------------------------------------------------------------------------
 
@@ -148,32 +168,45 @@ for (const [model, files] of [
   ['OBJ', { objfile: 'home.obj', mtlfile: 'home.mtl' }],
   ['GLB', { objfile: 'home.glb', mtlfile: undefined }],
 ]) {
-  test(`${model} model, 30 lamps, TV and sun with shadows: drawn, no shader error, shadows within the GPU limit`, { timeout: TIMEOUT }, async () => {
-    const { page, errors } = await open(house({ ...files, entities: [tv, ...lamps(30)] }));
-    const s = await shadowState(page);
-    assert.equal(s.status.lights, 32, 'sun, TV and 30 lamps');
-    assert.equal(s.status.budget, expectedLimit(s));
-    assert.equal(s.casting, Math.min(32, s.status.budget));
-    assert.equal(s.status.dropped.length, Math.max(0, 32 - s.status.budget));
-    assert.ok((await brightness(page)) > 0.03, 'the model is drawn');
-    assert.deepEqual(errors, []);
-    await page.close();
-  });
+  test(
+    `${model} model, 30 lamps, TV and sun with shadows: drawn, no shader error, shadows within the GPU limit`,
+    { timeout: TIMEOUT },
+    async () => {
+      const { page, errors } = await open(house({ ...files, entities: [tv, ...lamps(30)] }));
+      const s = await shadowState(page);
+      assert.equal(s.status.lights, 32, 'sun, TV and 30 lamps');
+      assert.equal(s.status.budget, expectedLimit(s));
+      assert.equal(s.casting, Math.min(32, s.status.budget));
+      assert.equal(s.status.dropped.length, Math.max(0, 32 - s.status.budget));
+      assert.ok((await brightness(page)) > 0.03, 'the model is drawn');
+      assert.deepEqual(errors, []);
+      await page.close();
+    },
+  );
 }
 
-test('GLB material with 10 texture units: the shadow limit leaves them, no shader error', { timeout: TIMEOUT }, async () => {
-  const { page, errors } = await open(house({ objfile: 'rich.glb', mtlfile: undefined, entities: [tv, ...lamps(30)] }));
-  const s = await shadowState(page);
-  assert.equal(s.status.textures, 10);
-  assert.equal(s.status.material, 'wall');
-  assert.equal(s.status.budget, expectedLimit(s, 10));
-  assert.ok((await brightness(page)) > 0.03);
-  assert.deepEqual(errors, []);
-  await page.close();
-});
+test(
+  'GLB material with 10 texture units: the shadow limit leaves them, no shader error',
+  { timeout: TIMEOUT },
+  async () => {
+    const { page, errors } = await open(
+      house({ objfile: 'rich.glb', mtlfile: undefined, entities: [tv, ...lamps(30)] }),
+    );
+    const s = await shadowState(page);
+    assert.equal(s.status.textures, 10);
+    assert.equal(s.status.material, 'wall');
+    assert.equal(s.status.budget, expectedLimit(s, 10));
+    assert.ok((await brightness(page)) > 0.03);
+    assert.deepEqual(errors, []);
+    await page.close();
+  },
+);
 
 test('one light for a lamp of several objects: in the middle, or on light_object', { timeout: TIMEOUT }, async () => {
-  const group = (light) => house({ entities: [{ entity: 'light.group', type3d: 'light', object_id: 'lamp_*', light: { lumens: 3000, ...light } }] });
+  const group = (light) =>
+    house({
+      entities: [{ entity: 'light.group', type3d: 'light', object_id: 'lamp_*', light: { lumens: 3000, ...light } }],
+    });
   const lights = (page) =>
     page.evaluate(() => {
       const found = [];
@@ -194,7 +227,14 @@ test('one light for a lamp of several objects: in the middle, or on light_object
         return box.min.map((v, i) => Math.round((v + box.max[i]) / 2));
       };
       const p = found[0] && found[0].getWorldPosition(found[0].position.clone());
-      return { count: found.length, at: p ? [p.x, p.y, p.z].map(Math.round) : null, intensity: found[0] && found[0].intensity, lamp1: center('lamp_1'), lamp5: center('lamp_5'), lamp30: center('lamp_30') };
+      return {
+        count: found.length,
+        at: p ? [p.x, p.y, p.z].map(Math.round) : null,
+        intensity: found[0] && found[0].intensity,
+        lamp1: center('lamp_1'),
+        lamp5: center('lamp_5'),
+        lamp30: center('lamp_30'),
+      };
     });
   let { page, errors } = await open(group({}));
   assert.equal((await lights(page)).count, 30, 'one light per object');
@@ -204,7 +244,11 @@ test('one light for a lamp of several objects: in the middle, or on light_object
   ({ page, errors } = await open(group({ single: 'yes' })));
   let l = await lights(page);
   assert.equal(l.count, 1);
-  assert.deepEqual(l.at, l.lamp1.map((v, i) => Math.round((v + l.lamp30[i]) / 2)), 'in the middle of the lamps');
+  assert.deepEqual(
+    l.at,
+    l.lamp1.map((v, i) => Math.round((v + l.lamp30[i]) / 2)),
+    'in the middle of the lamps',
+  );
   assert.ok(l.intensity > 0, 'on with the entity');
   assert.deepEqual(errors, []);
   await page.close();
@@ -218,7 +262,10 @@ test('one light for a lamp of several objects: in the middle, or on light_object
 });
 
 test('a lamp follows its state, brightness, colour and colour temperature', { timeout: TIMEOUT }, async () => {
-  const { page, errors } = await open(house({ entities: lamps(1) }), states({ 'light.lamp_1': { state: 'on', attributes: { brightness: 255, rgb_color: [255, 0, 0] } } }));
+  const { page, errors } = await open(
+    house({ entities: lamps(1) }),
+    states({ 'light.lamp_1': { state: 'on', attributes: { brightness: 255, rgb_color: [255, 0, 0] } } }),
+  );
   const light = () =>
     page.evaluate(() => {
       const l = window.__card._scene.getObjectByName('lamp_1_light');
@@ -228,7 +275,9 @@ test('a lamp follows its state, brightness, colour and colour temperature', { ti
   assert.ok(l.intensity > 0);
   assert.ok(l.color[0] > 0.9 && l.color[1] < 0.05 && l.color[2] < 0.05, 'red: ' + l.color);
   const full = l.intensity;
-  await page.evaluate(() => window.__setState('light.lamp_1', 'on', { brightness: 128, rgb_color: null, color_temp_kelvin: 2700 }));
+  await page.evaluate(() =>
+    window.__setState('light.lamp_1', 'on', { brightness: 128, rgb_color: null, color_temp_kelvin: 2700 }),
+  );
   l = await light();
   assert.ok(Math.abs(l.intensity - (full * 128) / 255) < 1e-6 * full, 'half brightness');
   assert.ok(l.color[0] > l.color[2] * 1.5, 'warm white at 2700 K: ' + l.color);
@@ -238,67 +287,75 @@ test('a lamp follows its state, brightness, colour and colour temperature', { ti
   await page.close();
 });
 
-test('languages: the profile of the user, a regional variant, and the language option', { timeout: TIMEOUT }, async () => {
-  const rooms = { rooms: [{ name: 'Living', object_id: 'floor_living', temperature: 'sensor.t_living' }] };
-  let { page, errors } = await open(house(rooms));
-  const menu = () =>
-    page.evaluate(() => {
-      window.__card._renderMenus();
-      return [...window.__card._zoommenu.querySelectorAll('select option')].map((o) => o.textContent.trim());
+test(
+  'languages: the profile of the user, a regional variant, and the language option',
+  { timeout: TIMEOUT },
+  async () => {
+    const rooms = { rooms: [{ name: 'Living', object_id: 'floor_living', temperature: 'sensor.t_living' }] };
+    let { page, errors } = await open(house(rooms));
+    const menu = () =>
+      page.evaluate(() => {
+        window.__card._renderMenus();
+        return [...window.__card._zoommenu.querySelectorAll('select option')].map((o) => o.textContent.trim());
+      });
+    const profile = (language) =>
+      page.evaluate((language) => {
+        const h = window.__hass();
+        window.__card.hass = { ...h, language, locale: { ...h.locale, language } };
+      }, language);
+    assert.deepEqual(await menu(), ['No map', 'Temperatures', 'Presence', 'Illuminance']);
+    await profile('it');
+    assert.deepEqual(await menu(), ['Nessuna mappa', 'Temperature', 'Presenze', 'Illuminamento']);
+    await profile('de-CH');
+    assert.equal((await menu())[0], 'Keine Karte');
+    await profile('fr');
+    assert.equal((await menu())[0], 'No map', 'a language without texts is English');
+    assert.deepEqual(errors, []);
+    await page.close();
+
+    ({ page, errors } = await open(house({ ...rooms, language: 'it' })));
+    await profile('de');
+    assert.equal((await menu())[0], 'Nessuna mappa', 'the option wins over the profile');
+    assert.deepEqual(errors, []);
+    await page.close();
+  },
+);
+
+test(
+  'card editor: objects and shadows from the preview, texts in the language of the card',
+  { timeout: TIMEOUT },
+  async () => {
+    const config = house({ language: 'de', entities: [tv, ...lamps(30)] });
+    const { page, errors } = await open(config);
+    const editor = await page.evaluate(async () => {
+      const card = window.__card;
+      card.preview = true; // the card in the preview of the editor answers it
+      const ed = await card.constructor.getConfigElement();
+      ed.hass = window.__hass();
+      ed.setConfig(JSON.parse(JSON.stringify(card._config)));
+      document.body.append(ed);
+      await new Promise((r) => setTimeout(r, 300));
+      ed._mode = 'ready'; // the test page has no Home Assistant forms: the parts of the editor are checked
+      ed._expanded = ['entities'];
+      await ed.updateComplete;
+      const lines = [...ed.shadowRoot.querySelectorAll('.row .secondary')].map((r) => r.textContent.trim());
+      return {
+        objects: ed._modelObjects.slice().sort(),
+        shadows: ed._shadows,
+        panels: [...ed.shadowRoot.querySelectorAll('ha-expansion-panel')].map((p) => p.header),
+        noShadow: lines.filter((t) => t.includes('Kein Schatten')).length,
+      };
     });
-  const profile = (language) =>
-    page.evaluate((language) => {
-      const h = window.__hass();
-      window.__card.hass = { ...h, language, locale: { ...h.locale, language } };
-    }, language);
-  assert.deepEqual(await menu(), ['No map', 'Temperatures', 'Presence', 'Illuminance']);
-  await profile('it');
-  assert.deepEqual(await menu(), ['Nessuna mappa', 'Temperature', 'Presenze', 'Illuminamento']);
-  await profile('de-CH');
-  assert.equal((await menu())[0], 'Keine Karte');
-  await profile('fr');
-  assert.equal((await menu())[0], 'No map', 'a language without texts is English');
-  assert.deepEqual(errors, []);
-  await page.close();
-
-  ({ page, errors } = await open(house({ ...rooms, language: 'it' })));
-  await profile('de');
-  assert.equal((await menu())[0], 'Nessuna mappa', 'the option wins over the profile');
-  assert.deepEqual(errors, []);
-  await page.close();
-});
-
-test('card editor: objects and shadows from the preview, texts in the language of the card', { timeout: TIMEOUT }, async () => {
-  const config = house({ language: 'de', entities: [tv, ...lamps(30)] });
-  const { page, errors } = await open(config);
-  const editor = await page.evaluate(async () => {
-    const card = window.__card;
-    card.preview = true; // the card in the preview of the editor answers it
-    const ed = await card.constructor.getConfigElement();
-    ed.hass = window.__hass();
-    ed.setConfig(JSON.parse(JSON.stringify(card._config)));
-    document.body.append(ed);
-    await new Promise((r) => setTimeout(r, 300));
-    ed._mode = 'ready'; // the test page has no Home Assistant forms: the parts of the editor are checked
-    ed._expanded = ['entities'];
-    await ed.updateComplete;
-    const lines = [...ed.shadowRoot.querySelectorAll('.row .secondary')].map((r) => r.textContent.trim());
-    return {
-      objects: ed._modelObjects.slice().sort(),
-      shadows: ed._shadows,
-      panels: [...ed.shadowRoot.querySelectorAll('ha-expansion-panel')].map((p) => p.header),
-      noShadow: lines.filter((t) => t.includes('Kein Schatten')).length,
-    };
-  });
-  assert.deepEqual(editor.objects, objectNames.slice().sort());
-  assert.equal(editor.shadows.lights, 32);
-  assert.equal(editor.panels[0], '3D-Modell');
-  assert.ok(editor.panels.includes('Anzeigen in den Ecken'), 'the section of the boxes: ' + editor.panels.join(', '));
-  assert.ok(editor.panels.includes('Entitäten (31)'), editor.panels.join(', '));
-  assert.equal(editor.noShadow, editor.shadows.dropped.length, 'the lines of the lights left without shadow say so');
-  assert.deepEqual(errors, []);
-  await page.close();
-});
+    assert.deepEqual(editor.objects, objectNames.slice().sort());
+    assert.equal(editor.shadows.lights, 32);
+    assert.equal(editor.panels[0], '3D-Modell');
+    assert.ok(editor.panels.includes('Anzeigen in den Ecken'), 'the section of the boxes: ' + editor.panels.join(', '));
+    assert.ok(editor.panels.includes('Entitäten (31)'), editor.panels.join(', '));
+    assert.equal(editor.noShadow, editor.shadows.dropped.length, 'the lines of the lights left without shadow say so');
+    assert.deepEqual(errors, []);
+    await page.close();
+  },
+);
 
 test('reload (refresh button of the editor): the model comes back, without errors', { timeout: TIMEOUT }, async () => {
   const { page, errors } = await open(house({ entities: [tv, ...lamps(10)] }));
@@ -331,386 +388,499 @@ const roomState = (page) =>
     ),
   );
 const near = (hex, expected) =>
-  [0, 2, 4].every((i) => Math.abs(parseInt(hex.slice(i, i + 2), 16) - parseInt(expected.replace('#', '').slice(i, i + 2), 16)) <= 2);
-
-test('sensor maps: in the menu once a room has the sensor, coloured, labelled, with a legend', { timeout: TIMEOUT }, async () => {
-  const sensor = (state, unit) => ({ state: String(state), attributes: unit ? { unit_of_measurement: unit } : {} });
-  const config = house({
-    sun: 'no',
-    rooms: [
-      {
-        name: 'Living',
-        object_id: 'floor_living',
-        humidity: 'sensor.h_living',
-        co2: 'sensor.co2_living',
-        power: ['sensor.plug_tv', 'sensor.plug_pc', 'sensor.plug_off'],
-        hcho: 'sensor.hcho_living',
-        voc: 'sensor.voc_living',
-      },
-      { name: 'Bed', object_id: 'floor_bed', co2: 'sensor.co2_bed' },
-    ],
-  });
-  const { page, errors } = await open(
-    config,
-    states({
-      'sensor.h_living': sensor(45, '%'),
-      'sensor.co2_living': sensor(1200, 'ppm'),
-      'sensor.co2_bed': sensor(700, 'ppm'),
-      'sensor.plug_tv': sensor(120, 'W'),
-      'sensor.plug_pc': sensor(1.5, 'kW'),
-      'sensor.plug_off': sensor('unavailable', 'W'),
-      'sensor.hcho_living': sensor(0.05, 'mg/m³'),
-      'sensor.voc_living': sensor(180),
-    }),
+  [0, 2, 4].every(
+    (i) => Math.abs(parseInt(hex.slice(i, i + 2), 16) - parseInt(expected.replace('#', '').slice(i, i + 2), 16)) <= 2,
   );
-  const options = await page.evaluate(() => [...window.__card._zoommenu.querySelectorAll('select option')].map((o) => o.value));
-  assert.deepEqual(options, ['none', 'temperature', 'presence', 'illuminance', 'humidity', 'co2', 'voc', 'hcho', 'power']);
-  const show = async (mode) => {
-    await page.evaluate((mode) => window.__card._setMapMode(mode), mode);
-    const legend = await page.evaluate(() => {
-      const l = window.__card._zoommenu.querySelector('.f3d-legend');
-      return l ? [...l.querySelectorAll('span')].map((span) => span.textContent.trim()).join(' ') : null;
+
+test(
+  'sensor maps: in the menu once a room has the sensor, coloured, labelled, with a legend',
+  { timeout: TIMEOUT },
+  async () => {
+    const sensor = (state, unit) => ({ state: String(state), attributes: unit ? { unit_of_measurement: unit } : {} });
+    const config = house({
+      sun: 'no',
+      rooms: [
+        {
+          name: 'Living',
+          object_id: 'floor_living',
+          humidity: 'sensor.h_living',
+          co2: 'sensor.co2_living',
+          power: ['sensor.plug_tv', 'sensor.plug_pc', 'sensor.plug_off'],
+          hcho: 'sensor.hcho_living',
+          voc: 'sensor.voc_living',
+        },
+        { name: 'Bed', object_id: 'floor_bed', co2: 'sensor.co2_bed' },
+      ],
     });
-    return { rooms: await roomState(page), legend };
-  };
-  let m = await show('co2');
-  assert.equal(m.rooms.Living.label, '1,200 ppm');
-  // 1200 ppm: 40 % of the way from yellow (#facc15, 1000 ppm) to orange (#f97316, 1500 ppm)
-  assert.ok(near(m.rooms.Living.color, '#faa815'), 'between yellow and orange: ' + m.rooms.Living.color);
-  assert.equal(m.rooms.Bed.label, '700 ppm');
-  assert.equal(m.legend, '600 2,000 ppm');
-  m = await show('power');
-  assert.equal(m.rooms.Living.label, '1,620 W', 'the plugs added up, kW converted');
-  assert.equal(m.rooms.Bed.visible, false, 'no sensor: not coloured');
-  m = await show('hcho');
-  assert.equal(m.rooms.Living.label, '50 µg/m³', 'mg/m³ converted');
-  m = await show('voc');
-  assert.equal(m.rooms.Living.label, '180', 'an index has no unit');
-  assert.equal(m.legend, '100 400', 'and its own scale');
-  m = await show('humidity');
-  assert.equal(m.rooms.Living.label, '45 %');
-  assert.ok(near(m.rooms.Living.color, '#22c55e'), 'good humidity is green');
-  m = await show('none');
-  assert.equal(m.rooms.Living.visible, false);
-  assert.equal(m.legend, null);
-  assert.deepEqual(errors, []);
-  await page.close();
-});
-
-test('alarms: a room blinks over any map with the kind written on it, an object too; the camera goes there', { timeout: TIMEOUT }, async () => {
-  const off = (deviceClass) => ({ state: 'off', attributes: { device_class: deviceClass } });
-  const config = house({
-    sun: 'no',
-    alarm_view: 'yes',
-    rooms: [
-      { name: 'Living', object_id: 'floor_living', alarms: ['binary_sensor.smoke_living'] },
-      { name: 'Bed', object_id: 'floor_bed', alarms: 'binary_sensor.leak_bed' },
-    ],
-    entities: [{ entity: 'binary_sensor.leak_bed', type3d: 'alarm', object_id: 'wardrobe' }],
-  });
-  const { page, errors } = await open(config, states({ 'binary_sensor.smoke_living': off('smoke'), 'binary_sensor.leak_bed': off('moisture') }));
-  let rooms = await roomState(page);
-  assert.equal(rooms.Living.visible, false);
-  assert.equal(await page.evaluate(() => window.__card._roomAlarms), false);
-
-  await page.evaluate(() => window.__setState('binary_sensor.smoke_living', 'on'));
-  rooms = await roomState(page);
-  assert.equal(rooms.Living.visible, true, 'shown with no map');
-  assert.equal(rooms.Living.label, 'Smoke');
-  assert.ok(near(rooms.Living.color, '#ff3b30'));
-  assert.ok(await page.evaluate(() => window.__card._roomAlarms && window.__card._to_animate), 'blinking');
-  // It blinks: its opacity changes from frame to frame (sampled until it has, a few seconds at most).
-  const opacities = [];
-  for (let k = 0; k < 50 && !(opacities.length >= 4 && Math.max(...opacities) - Math.min(...opacities) > 0.1); k++) {
-    opacities.push((await roomState(page)).Living.opacity);
-    await page.waitForTimeout(100);
-  }
-  assert.ok(Math.max(...opacities) - Math.min(...opacities) > 0.1, 'the opacity changes: ' + opacities);
-  await flown(page, 'the camera flies to the room');
-  const target = await page.evaluate(() => {
-    const t = window.__card._controls.target;
-    const c = window.__card._roomViews[0].box.getCenter(t.clone());
-    return t.distanceTo(c);
-  });
-  assert.ok(target < 1, 'the camera looks at the room: ' + target);
-
-  await page.evaluate(() => window.__setState('binary_sensor.leak_bed', 'on'));
-  rooms = await roomState(page);
-  assert.equal(rooms.Bed.label, 'Water leak');
-  assert.ok(near(rooms.Bed.color, '#2f80ff'));
-  const wardrobe = () =>
-    page.evaluate(() => {
-      const o = window.__card._scene.getObjectByName('wardrobe');
-      return { tinted: o.material === o.userData.tintMaterial, emissive: o.material.emissive.getHexString() };
-    });
-  let w = await wardrobe();
-  assert.ok(w.tinted && near(w.emissive, '#2f80ff'), 'the object of the leak sensor glows blue: ' + JSON.stringify(w));
-
-  await page.evaluate(() => {
-    window.__setState('binary_sensor.smoke_living', 'off');
-    window.__setState('binary_sensor.leak_bed', 'off');
-  });
-  rooms = await roomState(page);
-  assert.equal(rooms.Living.visible || rooms.Bed.visible, false);
-  assert.equal(await page.evaluate(() => window.__card._roomAlarms), false);
-  w = await wardrobe();
-  assert.equal(w.tinted, false);
-  assert.deepEqual(errors, []);
-  await page.close();
-});
-
-test('climate: a heater glows while it heats; a room shows the target and the temperature of its thermostat', { timeout: TIMEOUT }, async () => {
-  const thermostat = (action) => ({ state: 'heat', attributes: { hvac_action: action, current_temperature: 20.5, temperature: 22 } });
-  const config = house({
-    sun: 'no',
-    room_colors: 'temperature',
-    rooms: [{ name: 'Living', object_id: 'floor_living', climate: 'climate.living' }],
-    entities: [
-      { entity: 'climate.living', type3d: 'climate', object_id: 'sofa' },
-      { entity: 'switch.boiler', type3d: 'climate', object_id: 'table' },
-    ],
-  });
-  const { page, errors } = await open(config, states({ 'climate.living': thermostat('heating'), 'switch.boiler': { state: 'off', attributes: {} } }));
-  const glow = (name) =>
-    page.evaluate((name) => {
-      const o = window.__card._scene.getObjectByName(name);
-      return { tinted: o.material === o.userData.tintMaterial, emissive: o.material.emissive.getHexString() };
-    }, name);
-  let g = await glow('sofa');
-  assert.ok(g.tinted && near(g.emissive, '#ff6a00'), 'heating: orange ' + JSON.stringify(g));
-  assert.equal((await glow('table')).tinted, false, 'the boiler is off');
-  let rooms = await roomState(page);
-  assert.equal(rooms.Living.label, '20.5 °C → 22 °C', 'the temperature of the thermostat and its target');
-  assert.ok(rooms.Living.background.includes('255, 106, 0'), 'heating: orange label');
-
-  await page.evaluate(() => window.__setState('climate.living', 'heat', { hvac_action: 'idle' }));
-  assert.equal((await glow('sofa')).tinted, false, 'idle: no glow');
-  rooms = await roomState(page);
-  assert.ok(rooms.Living.background.includes('0, 0, 0'), 'idle: plain label');
-  await page.evaluate(() => window.__setState('switch.boiler', 'on'));
-  g = await glow('table');
-  assert.ok(g.tinted && near(g.emissive, '#ff6a00'), 'a switch on heats');
-  assert.deepEqual(errors, []);
-  await page.close();
-});
-
-test('a card with only rooms, without the entities list: the rooms follow their sensors, the canvas its card', { timeout: TIMEOUT }, async () => {
-  const config = house({ room_colors: 'co2', rooms: [{ name: 'Living', object_id: 'floor_living', co2: 'sensor.co2' }] });
-  delete config.entities;
-  const { page, errors } = await open(config, states({ 'sensor.co2': { state: '900', attributes: { unit_of_measurement: 'ppm' } } }));
-  assert.equal((await roomState(page)).Living.label, '900 ppm');
-  await page.evaluate(() => window.__setState('sensor.co2', '1600'));
-  assert.equal((await roomState(page)).Living.label, '1,600 ppm', 'updated');
-  const size = await page.evaluate(() => [window.__card._renderer.domElement.width, document.getElementById('wrap').clientWidth]);
-  assert.equal(size[0], size[1], 'the canvas fills the card');
-  assert.deepEqual(errors, []);
-  await page.close();
-});
-
-test('card editor: a room with the sensors of the maps, its alarms and thermostat; the sensor maps', { timeout: TIMEOUT }, async () => {
-  const config = house({
-    language: 'it',
-    rooms: [{ name: 'Living', object_id: 'floor_living', co2: 'sensor.co2', power: 'sensor.plug', alarms: ['binary_sensor.smoke'] }],
-    maps: [{ key: 'co2', min: 400, max: 1400 }, { key: 'fridge', name: 'Frigo', unit: '°C', min: 2, max: 8 }],
-  });
-  const { page, errors } = await open(config);
-  const result = await page.evaluate(async () => {
-    const card = window.__card;
-    card.preview = true;
-    const ed = await card.constructor.getConfigElement();
-    ed.hass = window.__hass();
-    ed.setConfig(JSON.parse(JSON.stringify(card._config)));
-    document.body.append(ed);
-    await new Promise((r) => setTimeout(r, 200));
-    ed._mode = 'ready';
-    ed._expanded = ['colours'];
-    await ed.updateComplete;
-    const lines = [...ed.shadowRoot.querySelectorAll('.row')].map((r) => r.textContent.replace(/\s+/g, ' ').trim());
-    ed._view = { list: 'rooms', index: 0 };
-    await ed.updateComplete;
-    const headings = [...ed.shadowRoot.querySelectorAll('.heading')].map((h) => h.textContent.trim());
-    const forms = [...ed.shadowRoot.querySelectorAll('ha-form')];
-    const fields = forms.flatMap((f) => {
-      const out = [];
-      const walk = (s) => s.forEach((x) => (x.schema ? walk(x.schema) : out.push([x.name, f.computeLabel(x)])));
-      walk(f.schema);
-      return out;
-    });
-    const data = forms.map((f) => f.data);
-    // A change in the sensors form: the alarms list of one goes back to one id.
-    const sensorsForm = forms.find((f) => JSON.stringify(f.schema).includes('"co2"'));
-    sensorsForm.dispatchEvent(new CustomEvent('value-changed', { detail: { value: { ...sensorsForm.data, humidity: 'sensor.hum', power: ['sensor.plug', 'sensor.plug2'] } } }));
-    const room = ed._config.rooms[0];
-    return { lines, headings, fields, alarmsInForm: data[0].alarms, room };
-  });
-  assert.ok(result.lines.some((l) => l.startsWith('CO₂') && l.includes('Mappa pronta, altri colori') && l.includes('400–1400')), result.lines.join(' | '));
-  assert.ok(result.lines.some((l) => l.startsWith('Frigo') && l.includes('Mappa nuova')));
-  assert.ok(result.headings.includes('Sensori per le mappe') && result.headings.includes('Allarmi e clima'), result.headings.join(' | '));
-  const labels = Object.fromEntries(result.fields);
-  assert.equal(labels.power, 'Consumi (prese smart)');
-  assert.equal(labels.fridge, 'Frigo', 'a new map adds a sensor field to the rooms');
-  assert.equal(labels.alarms, 'Sensori di allarme');
-  assert.deepEqual(result.alarmsInForm, ['binary_sensor.smoke'], 'one alarm id shown as a list in the picker');
-  assert.equal(result.room.humidity, 'sensor.hum');
-  assert.deepEqual(result.room.power, ['sensor.plug', 'sensor.plug2']);
-  assert.equal(result.room.alarms, 'binary_sensor.smoke', 'written back as one id');
-  assert.deepEqual(errors, []);
-  await page.close();
-});
-
-test('card editor: only its preview answers (not the cards of the dashboard in edit mode); picking and the current view keep the pause; the camera stays', { timeout: TIMEOUT }, async () => {
-  const config = house({ sun: 'no', shadow: 'no', entities: lamps(2) });
-  const { page, errors } = await open(config);
-  const ready = (name) => page.waitForFunction((name) => window[name] && window[name]._modelready, name, { timeout: 120000 });
-  // A card of the dashboard in edit mode (Home Assistant sets preview on it too) and the preview.
-  const add = (name, inView) =>
-    page.evaluate(
-      ({ name, inView }) => {
-        const card = document.createElement('floor3d-card');
-        card.setConfig(JSON.parse(JSON.stringify(window.__card._config)));
-        card.hass = window.__hass();
-        card.preview = true;
-        const box = document.createElement('div');
-        box.style.cssText = 'width: 500px; height: 380px';
-        box.appendChild(card);
-        if (inView) {
-          const view = document.createElement('hui-view');
-          view.appendChild(box);
-          document.body.appendChild(view);
-        } else {
-          document.body.appendChild(box);
-        }
-        window[name] = card;
-      },
-      { name, inView },
+    const { page, errors } = await open(
+      config,
+      states({
+        'sensor.h_living': sensor(45, '%'),
+        'sensor.co2_living': sensor(1200, 'ppm'),
+        'sensor.co2_bed': sensor(700, 'ppm'),
+        'sensor.plug_tv': sensor(120, 'W'),
+        'sensor.plug_pc': sensor(1.5, 'kW'),
+        'sensor.plug_off': sensor('unavailable', 'W'),
+        'sensor.hcho_living': sensor(0.05, 'mg/m³'),
+        'sensor.voc_living': sensor(180),
+      }),
     );
-  await page.evaluate(() => window.__card.remove()); // not part of this test
-  await add('__dashboard', true);
-  await ready('__dashboard');
-  await add('__preview', false);
-  await ready('__preview');
-  const camera = (name) => page.evaluate((name) => window[name]._camera.position.toArray().map((v) => Math.round(v)), name);
-  // The user moves the camera of the preview.
-  await page.evaluate(() => {
-    window.__preview._camera.position.set(300, 700, 500);
-    window.__preview._controls.update();
-  });
-  const moved = await camera('__preview');
-  const editorCamera = () => page.evaluate(() => window.__ed._config.camera_position && [window.__ed._config.camera_position.x, window.__ed._config.camera_position.y, window.__ed._config.camera_position.z].map(Math.round));
-  await page.evaluate(async () => {
-    const ed = await window.__preview.constructor.getConfigElement();
-    ed.hass = window.__hass();
-    ed.setConfig(JSON.parse(JSON.stringify(window.__preview._config)));
-    document.body.append(ed);
-    window.__ed = ed;
-    await new Promise((r) => setTimeout(r, 100));
-    ed._useCurrentView();
-  });
-  assert.deepEqual(await editorCamera(), moved, 'the camera of the preview, not the one of the card behind');
+    const options = await page.evaluate(() =>
+      [...window.__card._zoommenu.querySelectorAll('select option')].map((o) => o.value),
+    );
+    assert.deepEqual(options, [
+      'none',
+      'temperature',
+      'presence',
+      'illuminance',
+      'humidity',
+      'co2',
+      'voc',
+      'hcho',
+      'power',
+    ]);
+    const show = async (mode) => {
+      await page.evaluate((mode) => window.__card._setMapMode(mode), mode);
+      const legend = await page.evaluate(() => {
+        const l = window.__card._zoommenu.querySelector('.f3d-legend');
+        return l ? [...l.querySelectorAll('span')].map((span) => span.textContent.trim()).join(' ') : null;
+      });
+      return { rooms: await roomState(page), legend };
+    };
+    let m = await show('co2');
+    assert.equal(m.rooms.Living.label, '1,200 ppm');
+    // 1200 ppm: 40 % of the way from yellow (#facc15, 1000 ppm) to orange (#f97316, 1500 ppm)
+    assert.ok(near(m.rooms.Living.color, '#faa815'), 'between yellow and orange: ' + m.rooms.Living.color);
+    assert.equal(m.rooms.Bed.label, '700 ppm');
+    assert.equal(m.legend, '600 2,000 ppm');
+    m = await show('power');
+    assert.equal(m.rooms.Living.label, '1,620 W', 'the plugs added up, kW converted');
+    assert.equal(m.rooms.Bed.visible, false, 'no sensor: not coloured');
+    m = await show('hcho');
+    assert.equal(m.rooms.Living.label, '50 µg/m³', 'mg/m³ converted');
+    m = await show('voc');
+    assert.equal(m.rooms.Living.label, '180', 'an index has no unit');
+    assert.equal(m.legend, '100 400', 'and its own scale');
+    m = await show('humidity');
+    assert.equal(m.rooms.Living.label, '45 %');
+    assert.ok(near(m.rooms.Living.color, '#22c55e'), 'good humidity is green');
+    m = await show('none');
+    assert.equal(m.rooms.Living.visible, false);
+    assert.equal(m.legend, null);
+    assert.deepEqual(errors, []);
+    await page.close();
+  },
+);
 
-  // Pause, then Home Assistant replaces the preview (a change of the configuration).
-  await page.evaluate(() => {
-    window.__ed._setPaused(true);
-    window.__preview.remove();
-  });
-  await add('__preview2', false);
-  await add('__dashboard2', true);
-  await ready('__dashboard2');
-  let state = await page.evaluate(() => ({
-    placeholder: !!window.__preview2._pausedEl,
-    image: !!(window.__preview2._pausedEl && window.__preview2._pausedEl.querySelector('img')),
-    dashboardLive: !!window.__dashboard2._renderer && !window.__dashboard2._pausedEl,
-  }));
-  assert.deepEqual(state, { placeholder: true, image: true, dashboardLive: true }, 'only the preview shows the picture of the pause');
+test(
+  'alarms: a room blinks over any map with the kind written on it, an object too; the camera goes there',
+  { timeout: TIMEOUT },
+  async () => {
+    const off = (deviceClass) => ({ state: 'off', attributes: { device_class: deviceClass } });
+    const config = house({
+      sun: 'no',
+      alarm_view: 'yes',
+      rooms: [
+        { name: 'Living', object_id: 'floor_living', alarms: ['binary_sensor.smoke_living'] },
+        { name: 'Bed', object_id: 'floor_bed', alarms: 'binary_sensor.leak_bed' },
+      ],
+      entities: [{ entity: 'binary_sensor.leak_bed', type3d: 'alarm', object_id: 'wardrobe' }],
+    });
+    const { page, errors } = await open(
+      config,
+      states({ 'binary_sensor.smoke_living': off('smoke'), 'binary_sensor.leak_bed': off('moisture') }),
+    );
+    let rooms = await roomState(page);
+    assert.equal(rooms.Living.visible, false);
+    assert.equal(await page.evaluate(() => window.__card._roomAlarms), false);
 
-  // "Use the current view" while paused: the camera of the last live preview, and the pause stays.
-  await page.evaluate(() => {
-    window.__ed._config = { ...window.__ed._config, camera_position: undefined };
-    window.__ed._useCurrentView();
-  });
-  assert.deepEqual(await editorCamera(), moved);
-  assert.equal(await page.evaluate(() => window.__ed._paused), true);
+    await page.evaluate(() => window.__setState('binary_sensor.smoke_living', 'on'));
+    rooms = await roomState(page);
+    assert.equal(rooms.Living.visible, true, 'shown with no map');
+    assert.equal(rooms.Living.label, 'Smoke');
+    assert.ok(near(rooms.Living.color, '#ff3b30'));
+    assert.ok(await page.evaluate(() => window.__card._roomAlarms && window.__card._to_animate), 'blinking');
+    // It blinks: its opacity changes from frame to frame (sampled until it has, a few seconds at most).
+    const opacities = [];
+    for (let k = 0; k < 50 && !(opacities.length >= 4 && Math.max(...opacities) - Math.min(...opacities) > 0.1); k++) {
+      opacities.push((await roomState(page)).Living.opacity);
+      await page.waitForTimeout(100);
+    }
+    assert.ok(Math.max(...opacities) - Math.min(...opacities) > 0.1, 'the opacity changes: ' + opacities);
+    await flown(page, 'the camera flies to the room');
+    const target = await page.evaluate(() => {
+      const t = window.__card._controls.target;
+      const c = window.__card._roomViews[0].box.getCenter(t.clone());
+      return t.distanceTo(c);
+    });
+    assert.ok(target < 1, 'the camera looks at the room: ' + target);
 
-  // "Pick in the preview" while paused: the preview loads the model, where the camera was; the
-  // pause stays, also after the object is picked.
-  await page.evaluate(() => window.__ed._startPick({ path: ['entities', 0, 'object_id'] }));
-  await ready('__preview2');
-  assert.deepEqual(await camera('__preview2'), moved, 'the camera where it was, not the initial view');
-  state = await page.evaluate(() => ({ paused: window.__ed._paused, pick: window.__preview2._pickMode }));
-  assert.deepEqual(state, { paused: true, pick: true });
-  await page.evaluate(() => window.__preview2._toEditor({ picked: 'lamp_7' }));
-  state = await page.evaluate(() => ({ paused: window.__ed._paused, object: window.__ed._config.entities[0].object_id }));
-  assert.deepEqual(state, { paused: true, object: 'lamp_7' });
+    await page.evaluate(() => window.__setState('binary_sensor.leak_bed', 'on'));
+    rooms = await roomState(page);
+    assert.equal(rooms.Bed.label, 'Water leak');
+    assert.ok(near(rooms.Bed.color, '#2f80ff'));
+    const wardrobe = () =>
+      page.evaluate(() => {
+        const o = window.__card._scene.getObjectByName('wardrobe');
+        return { tinted: o.material === o.userData.tintMaterial, emissive: o.material.emissive.getHexString() };
+      });
+    let w = await wardrobe();
+    assert.ok(
+      w.tinted && near(w.emissive, '#2f80ff'),
+      'the object of the leak sensor glows blue: ' + JSON.stringify(w),
+    );
 
-  // Closing the editor (Save or X) ends the pause: a preview still showing the picture loads.
-  await page.evaluate(() => window.__preview2.remove());
-  await add('__preview3', false);
-  assert.equal(await page.evaluate(() => !!window.__preview3._pausedEl), true);
-  await page.evaluate(() => window.__ed.remove());
-  await ready('__preview3');
-  assert.equal(await page.evaluate(() => !!window.__preview3._pausedEl), false);
-  // A new preview with the same initial view goes back to the camera; with another, to the new one.
-  await add('__preview4', false);
-  await ready('__preview4');
-  assert.deepEqual(await camera('__preview4'), moved);
-  await page.evaluate(() => {
-    const config = JSON.parse(JSON.stringify(window.__card._config));
-    config.camera_position = { x: 0, y: 1500, z: 10 };
-    const card = document.createElement('floor3d-card');
-    card.setConfig(config);
-    card.hass = window.__hass();
-    card.preview = true;
-    document.body.appendChild(card);
-    window.__preview5 = card;
-  });
-  await ready('__preview5');
-  assert.notDeepEqual(await camera('__preview5'), moved, 'another initial view: shown');
-  assert.deepEqual(errors, []);
-  await page.close();
-});
+    await page.evaluate(() => {
+      window.__setState('binary_sensor.smoke_living', 'off');
+      window.__setState('binary_sensor.leak_bed', 'off');
+    });
+    rooms = await roomState(page);
+    assert.equal(rooms.Living.visible || rooms.Bed.visible, false);
+    assert.equal(await page.evaluate(() => window.__card._roomAlarms), false);
+    w = await wardrobe();
+    assert.equal(w.tinted, false);
+    assert.deepEqual(errors, []);
+    await page.close();
+  },
+);
 
-test('views: one with a level shows only that level, one without shows them all, the initial view shows initialLevel again', { timeout: TIMEOUT }, async () => {
-  const view = (zoom, x, level) => ({ zoom, camera_position: { x, y: 500, z: 300 }, camera_target: { x, y: 0, z: 0 }, ...(level === undefined ? {} : { level }) });
-  const zoom_areas = [view('Bedroom', 200, 1), view('Living', -200), view('Ground floor', 0, 0)];
-  const levels = (page) => page.evaluate(() => window.__card._levels.map((l) => l.visible));
-  const camera = (page) => page.evaluate(() => window.__card._camera.position.toArray().map((v) => Math.round(v)));
+test(
+  'climate: a heater glows while it heats; a room shows the target and the temperature of its thermostat',
+  { timeout: TIMEOUT },
+  async () => {
+    const thermostat = (action) => ({
+      state: 'heat',
+      attributes: { hvac_action: action, current_temperature: 20.5, temperature: 22 },
+    });
+    const config = house({
+      sun: 'no',
+      room_colors: 'temperature',
+      rooms: [{ name: 'Living', object_id: 'floor_living', climate: 'climate.living' }],
+      entities: [
+        { entity: 'climate.living', type3d: 'climate', object_id: 'sofa' },
+        { entity: 'switch.boiler', type3d: 'climate', object_id: 'table' },
+      ],
+    });
+    const { page, errors } = await open(
+      config,
+      states({ 'climate.living': thermostat('heating'), 'switch.boiler': { state: 'off', attributes: {} } }),
+    );
+    const glow = (name) =>
+      page.evaluate((name) => {
+        const o = window.__card._scene.getObjectByName(name);
+        return { tinted: o.material === o.userData.tintMaterial, emissive: o.material.emissive.getHexString() };
+      }, name);
+    let g = await glow('sofa');
+    assert.ok(g.tinted && near(g.emissive, '#ff6a00'), 'heating: orange ' + JSON.stringify(g));
+    assert.equal((await glow('table')).tinted, false, 'the boiler is off');
+    let rooms = await roomState(page);
+    assert.equal(rooms.Living.label, '20.5 °C → 22 °C', 'the temperature of the thermostat and its target');
+    assert.ok(rooms.Living.background.includes('255, 106, 0'), 'heating: orange label');
 
-  // The Views menu.
-  let { page, errors } = await open(house({ objfile: 'levels.obj', zoom_areas }));
-  const choose = (index) =>
-    page.evaluate((index) => {
-      const select = window.__card._zoommenu.querySelector('select[aria-label="Views"]');
-      select.value = String(index);
-      select.dispatchEvent(new Event('change'));
-    }, index);
-  assert.deepEqual(await levels(page), [true, true], 'the bedroom on level 1, the rest on level 0');
-  await choose(0);
-  assert.deepEqual(await levels(page), [false, true], 'Bedroom: level 1');
-  await choose(1);
-  assert.deepEqual(await levels(page), [true, true], 'Living, without a level: all the levels');
-  await choose(2);
-  assert.deepEqual(await levels(page), [true, false], 'Ground floor: level 0');
-  await choose(-1);
-  assert.deepEqual(await levels(page), [true, true], 'the initial view: all the levels');
-  assert.deepEqual(errors, []);
-  await page.close();
+    await page.evaluate(() => window.__setState('climate.living', 'heat', { hvac_action: 'idle' }));
+    assert.equal((await glow('sofa')).tinted, false, 'idle: no glow');
+    rooms = await roomState(page);
+    assert.ok(rooms.Living.background.includes('0, 0, 0'), 'idle: plain label');
+    await page.evaluate(() => window.__setState('switch.boiler', 'on'));
+    g = await glow('table');
+    assert.ok(g.tinted && near(g.emissive, '#ff6a00'), 'a switch on heats');
+    assert.deepEqual(errors, []);
+    await page.close();
+  },
+);
 
-  // The buttons of hideZoomMenu: yes jump to the view; the initial view shows initialLevel again.
-  ({ page, errors } = await open(house({ objfile: 'levels.obj', zoom_areas, hideZoomMenu: 'yes', initialLevel: 1 })));
-  const press = (index) => page.evaluate((index) => [...window.__card._zoombar.querySelectorAll('floor3d-button')].find((b) => b.index === index).click(), index);
-  const start = await camera(page);
-  assert.deepEqual(await levels(page), [false, true], 'initialLevel: 1');
-  await press(2);
-  assert.deepEqual(await levels(page), [true, false]);
-  await press(1);
-  assert.deepEqual(await levels(page), [true, true]);
-  assert.deepEqual(await camera(page), [-200, 500, 300]);
-  await press(-1);
-  assert.deepEqual(await levels(page), [false, true], 'initialLevel again');
-  assert.deepEqual(await camera(page), start);
-  assert.deepEqual(errors, []);
-  await page.close();
-});
+test(
+  'a card with only rooms, without the entities list: the rooms follow their sensors, the canvas its card',
+  { timeout: TIMEOUT },
+  async () => {
+    const config = house({
+      room_colors: 'co2',
+      rooms: [{ name: 'Living', object_id: 'floor_living', co2: 'sensor.co2' }],
+    });
+    delete config.entities;
+    const { page, errors } = await open(
+      config,
+      states({ 'sensor.co2': { state: '900', attributes: { unit_of_measurement: 'ppm' } } }),
+    );
+    assert.equal((await roomState(page)).Living.label, '900 ppm');
+    await page.evaluate(() => window.__setState('sensor.co2', '1600'));
+    assert.equal((await roomState(page)).Living.label, '1,600 ppm', 'updated');
+    const size = await page.evaluate(() => [
+      window.__card._renderer.domElement.width,
+      document.getElementById('wrap').clientWidth,
+    ]);
+    assert.equal(size[0], size[1], 'the canvas fills the card');
+    assert.deepEqual(errors, []);
+    await page.close();
+  },
+);
+
+test(
+  'card editor: a room with the sensors of the maps, its alarms and thermostat; the sensor maps',
+  { timeout: TIMEOUT },
+  async () => {
+    const config = house({
+      language: 'it',
+      rooms: [
+        {
+          name: 'Living',
+          object_id: 'floor_living',
+          co2: 'sensor.co2',
+          power: 'sensor.plug',
+          alarms: ['binary_sensor.smoke'],
+        },
+      ],
+      maps: [
+        { key: 'co2', min: 400, max: 1400 },
+        { key: 'fridge', name: 'Frigo', unit: '°C', min: 2, max: 8 },
+      ],
+    });
+    const { page, errors } = await open(config);
+    const result = await page.evaluate(async () => {
+      const card = window.__card;
+      card.preview = true;
+      const ed = await card.constructor.getConfigElement();
+      ed.hass = window.__hass();
+      ed.setConfig(JSON.parse(JSON.stringify(card._config)));
+      document.body.append(ed);
+      await new Promise((r) => setTimeout(r, 200));
+      ed._mode = 'ready';
+      ed._expanded = ['colours'];
+      await ed.updateComplete;
+      const lines = [...ed.shadowRoot.querySelectorAll('.row')].map((r) => r.textContent.replace(/\s+/g, ' ').trim());
+      ed._view = { list: 'rooms', index: 0 };
+      await ed.updateComplete;
+      const headings = [...ed.shadowRoot.querySelectorAll('.heading')].map((h) => h.textContent.trim());
+      const forms = [...ed.shadowRoot.querySelectorAll('ha-form')];
+      const fields = forms.flatMap((f) => {
+        const out = [];
+        const walk = (s) => s.forEach((x) => (x.schema ? walk(x.schema) : out.push([x.name, f.computeLabel(x)])));
+        walk(f.schema);
+        return out;
+      });
+      const data = forms.map((f) => f.data);
+      // A change in the sensors form: the alarms list of one goes back to one id.
+      const sensorsForm = forms.find((f) => JSON.stringify(f.schema).includes('"co2"'));
+      sensorsForm.dispatchEvent(
+        new CustomEvent('value-changed', {
+          detail: { value: { ...sensorsForm.data, humidity: 'sensor.hum', power: ['sensor.plug', 'sensor.plug2'] } },
+        }),
+      );
+      const room = ed._config.rooms[0];
+      return { lines, headings, fields, alarmsInForm: data[0].alarms, room };
+    });
+    assert.ok(
+      result.lines.some(
+        (l) => l.startsWith('CO₂') && l.includes('Mappa pronta, altri colori') && l.includes('400–1400'),
+      ),
+      result.lines.join(' | '),
+    );
+    assert.ok(result.lines.some((l) => l.startsWith('Frigo') && l.includes('Mappa nuova')));
+    assert.ok(
+      result.headings.includes('Sensori per le mappe') && result.headings.includes('Allarmi e clima'),
+      result.headings.join(' | '),
+    );
+    const labels = Object.fromEntries(result.fields);
+    assert.equal(labels.power, 'Consumi (prese smart)');
+    assert.equal(labels.fridge, 'Frigo', 'a new map adds a sensor field to the rooms');
+    assert.equal(labels.alarms, 'Sensori di allarme');
+    assert.deepEqual(result.alarmsInForm, ['binary_sensor.smoke'], 'one alarm id shown as a list in the picker');
+    assert.equal(result.room.humidity, 'sensor.hum');
+    assert.deepEqual(result.room.power, ['sensor.plug', 'sensor.plug2']);
+    assert.equal(result.room.alarms, 'binary_sensor.smoke', 'written back as one id');
+    assert.deepEqual(errors, []);
+    await page.close();
+  },
+);
+
+test(
+  'card editor: only its preview answers (not the cards of the dashboard in edit mode); picking and the current view keep the pause; the camera stays',
+  { timeout: TIMEOUT },
+  async () => {
+    const config = house({ sun: 'no', shadow: 'no', entities: lamps(2) });
+    const { page, errors } = await open(config);
+    const ready = (name) =>
+      page.waitForFunction((name) => window[name] && window[name]._modelready, name, { timeout: 120000 });
+    // A card of the dashboard in edit mode (Home Assistant sets preview on it too) and the preview.
+    const add = (name, inView) =>
+      page.evaluate(
+        ({ name, inView }) => {
+          const card = document.createElement('floor3d-card');
+          card.setConfig(JSON.parse(JSON.stringify(window.__card._config)));
+          card.hass = window.__hass();
+          card.preview = true;
+          const box = document.createElement('div');
+          box.style.cssText = 'width: 500px; height: 380px';
+          box.appendChild(card);
+          if (inView) {
+            const view = document.createElement('hui-view');
+            view.appendChild(box);
+            document.body.appendChild(view);
+          } else {
+            document.body.appendChild(box);
+          }
+          window[name] = card;
+        },
+        { name, inView },
+      );
+    await page.evaluate(() => window.__card.remove()); // not part of this test
+    await add('__dashboard', true);
+    await ready('__dashboard');
+    await add('__preview', false);
+    await ready('__preview');
+    const camera = (name) =>
+      page.evaluate((name) => window[name]._camera.position.toArray().map((v) => Math.round(v)), name);
+    // The user moves the camera of the preview.
+    await page.evaluate(() => {
+      window.__preview._camera.position.set(300, 700, 500);
+      window.__preview._controls.update();
+    });
+    const moved = await camera('__preview');
+    const editorCamera = () =>
+      page.evaluate(
+        () =>
+          window.__ed._config.camera_position &&
+          [
+            window.__ed._config.camera_position.x,
+            window.__ed._config.camera_position.y,
+            window.__ed._config.camera_position.z,
+          ].map(Math.round),
+      );
+    await page.evaluate(async () => {
+      const ed = await window.__preview.constructor.getConfigElement();
+      ed.hass = window.__hass();
+      ed.setConfig(JSON.parse(JSON.stringify(window.__preview._config)));
+      document.body.append(ed);
+      window.__ed = ed;
+      await new Promise((r) => setTimeout(r, 100));
+      ed._useCurrentView();
+    });
+    assert.deepEqual(await editorCamera(), moved, 'the camera of the preview, not the one of the card behind');
+
+    // Pause, then Home Assistant replaces the preview (a change of the configuration).
+    await page.evaluate(() => {
+      window.__ed._setPaused(true);
+      window.__preview.remove();
+    });
+    await add('__preview2', false);
+    await add('__dashboard2', true);
+    await ready('__dashboard2');
+    let state = await page.evaluate(() => ({
+      placeholder: !!window.__preview2._pausedEl,
+      image: !!(window.__preview2._pausedEl && window.__preview2._pausedEl.querySelector('img')),
+      dashboardLive: !!window.__dashboard2._renderer && !window.__dashboard2._pausedEl,
+    }));
+    assert.deepEqual(
+      state,
+      { placeholder: true, image: true, dashboardLive: true },
+      'only the preview shows the picture of the pause',
+    );
+
+    // "Use the current view" while paused: the camera of the last live preview, and the pause stays.
+    await page.evaluate(() => {
+      window.__ed._config = { ...window.__ed._config, camera_position: undefined };
+      window.__ed._useCurrentView();
+    });
+    assert.deepEqual(await editorCamera(), moved);
+    assert.equal(await page.evaluate(() => window.__ed._paused), true);
+
+    // "Pick in the preview" while paused: the preview loads the model, where the camera was; the
+    // pause stays, also after the object is picked.
+    await page.evaluate(() => window.__ed._startPick({ path: ['entities', 0, 'object_id'] }));
+    await ready('__preview2');
+    assert.deepEqual(await camera('__preview2'), moved, 'the camera where it was, not the initial view');
+    state = await page.evaluate(() => ({ paused: window.__ed._paused, pick: window.__preview2._pickMode }));
+    assert.deepEqual(state, { paused: true, pick: true });
+    await page.evaluate(() => window.__preview2._toEditor({ picked: 'lamp_7' }));
+    state = await page.evaluate(() => ({
+      paused: window.__ed._paused,
+      object: window.__ed._config.entities[0].object_id,
+    }));
+    assert.deepEqual(state, { paused: true, object: 'lamp_7' });
+
+    // Closing the editor (Save or X) ends the pause: a preview still showing the picture loads.
+    await page.evaluate(() => window.__preview2.remove());
+    await add('__preview3', false);
+    assert.equal(await page.evaluate(() => !!window.__preview3._pausedEl), true);
+    await page.evaluate(() => window.__ed.remove());
+    await ready('__preview3');
+    assert.equal(await page.evaluate(() => !!window.__preview3._pausedEl), false);
+    // A new preview with the same initial view goes back to the camera; with another, to the new one.
+    await add('__preview4', false);
+    await ready('__preview4');
+    assert.deepEqual(await camera('__preview4'), moved);
+    await page.evaluate(() => {
+      const config = JSON.parse(JSON.stringify(window.__card._config));
+      config.camera_position = { x: 0, y: 1500, z: 10 };
+      const card = document.createElement('floor3d-card');
+      card.setConfig(config);
+      card.hass = window.__hass();
+      card.preview = true;
+      document.body.appendChild(card);
+      window.__preview5 = card;
+    });
+    await ready('__preview5');
+    assert.notDeepEqual(await camera('__preview5'), moved, 'another initial view: shown');
+    assert.deepEqual(errors, []);
+    await page.close();
+  },
+);
+
+test(
+  'views: one with a level shows only that level, one without shows them all, the initial view shows initialLevel again',
+  { timeout: TIMEOUT },
+  async () => {
+    const view = (zoom, x, level) => ({
+      zoom,
+      camera_position: { x, y: 500, z: 300 },
+      camera_target: { x, y: 0, z: 0 },
+      ...(level === undefined ? {} : { level }),
+    });
+    const zoom_areas = [view('Bedroom', 200, 1), view('Living', -200), view('Ground floor', 0, 0)];
+    const levels = (page) => page.evaluate(() => window.__card._levels.map((l) => l.visible));
+    const camera = (page) => page.evaluate(() => window.__card._camera.position.toArray().map((v) => Math.round(v)));
+
+    // The Views menu.
+    let { page, errors } = await open(house({ objfile: 'levels.obj', zoom_areas }));
+    const choose = (index) =>
+      page.evaluate((index) => {
+        const select = window.__card._zoommenu.querySelector('select[aria-label="Views"]');
+        select.value = String(index);
+        select.dispatchEvent(new Event('change'));
+      }, index);
+    assert.deepEqual(await levels(page), [true, true], 'the bedroom on level 1, the rest on level 0');
+    await choose(0);
+    assert.deepEqual(await levels(page), [false, true], 'Bedroom: level 1');
+    await choose(1);
+    assert.deepEqual(await levels(page), [true, true], 'Living, without a level: all the levels');
+    await choose(2);
+    assert.deepEqual(await levels(page), [true, false], 'Ground floor: level 0');
+    await choose(-1);
+    assert.deepEqual(await levels(page), [true, true], 'the initial view: all the levels');
+    assert.deepEqual(errors, []);
+    await page.close();
+
+    // The buttons of hideZoomMenu: yes jump to the view; the initial view shows initialLevel again.
+    ({ page, errors } = await open(house({ objfile: 'levels.obj', zoom_areas, hideZoomMenu: 'yes', initialLevel: 1 })));
+    const press = (index) =>
+      page.evaluate(
+        (index) => [...window.__card._zoombar.querySelectorAll('button')].find((b) => b.index === index).click(),
+        index,
+      );
+    const start = await camera(page);
+    assert.deepEqual(await levels(page), [false, true], 'initialLevel: 1');
+    await press(2);
+    assert.deepEqual(await levels(page), [true, false]);
+    await press(1);
+    assert.deepEqual(await levels(page), [true, true]);
+    assert.deepEqual(await camera(page), [-200, 500, 300]);
+    await press(-1);
+    assert.deepEqual(await levels(page), [false, true], 'initialLevel again');
+    assert.deepEqual(await camera(page), start);
+    assert.deepEqual(errors, []);
+    await page.close();
+  },
+);
 
 // --- Covers ------------------------------------------------------------------------------------
 
@@ -744,87 +914,112 @@ const keeps = (page, name) =>
     return material.clippingPlanes[0].distanceToPoint(center) > 0;
   }, name);
 
-test('covers: the slats of a blind turn with its tilt, a roller shade shortens, a shutter that opens downward is cut on the right side', { timeout: TIMEOUT }, async () => {
-  const entities = [
-    { entity: 'cover.blind', type3d: 'cover', object_id: 'blind', cover: { side: 'up', motion: 'none', slats: 'blind' } },
-    { entity: 'cover.shade', type3d: 'cover', object_id: 'shade*', cover: { pane: 'shade', side: 'up', motion: 'shrink' } },
-    { entity: 'cover.shutter', type3d: 'cover', object_id: 'shutter', cover: { side: 'down' } },
-  ];
-  const coverStates = states({
-    'cover.blind': { state: 'open', attributes: { current_tilt_position: 100 } },
-    'cover.shade': { state: 'open', attributes: { current_position: 50 } },
-    'cover.shutter': { state: 'closed', attributes: { current_position: 0 } },
-  });
-  const { page, errors } = await open(house({ objfile: 'covers.obj', entities }), coverStates);
-  const slats = () =>
-    page.evaluate(() => {
-      const card = window.__card;
-      const i = card._config.entities.findIndex((e) => e.entity === 'cover.blind');
-      const set = card._slatSets.get(i)[0];
-      const lowest = set.slats.reduce((a, b) => (a.center[1] < b.center[1] ? a : b));
-      const position = set.geometry.getAttribute('position');
-      const ys = lowest.vertices.map((v) => position.getY(v));
-      return { count: set.slats.length, height: Math.round((Math.max(...ys) - Math.min(...ys)) * 100) / 100 };
+test(
+  'covers: the slats of a blind turn with its tilt, a roller shade shortens, a shutter that opens downward is cut on the right side',
+  { timeout: TIMEOUT },
+  async () => {
+    const entities = [
+      {
+        entity: 'cover.blind',
+        type3d: 'cover',
+        object_id: 'blind',
+        cover: { side: 'up', motion: 'none', slats: 'blind' },
+      },
+      {
+        entity: 'cover.shade',
+        type3d: 'cover',
+        object_id: 'shade*',
+        cover: { pane: 'shade', side: 'up', motion: 'shrink' },
+      },
+      { entity: 'cover.shutter', type3d: 'cover', object_id: 'shutter', cover: { side: 'down' } },
+    ];
+    const coverStates = states({
+      'cover.blind': { state: 'open', attributes: { current_tilt_position: 100 } },
+      'cover.shade': { state: 'open', attributes: { current_position: 50 } },
+      'cover.shutter': { state: 'closed', attributes: { current_position: 0 } },
     });
-  const blindBefore = await worldBox(page, 'blind');
-  assert.deepEqual(await slats(), { count: 12, height: 0.4 }, 'open: as in the model');
-  await page.evaluate(() => window.__setState('cover.blind', 'closed', { current_tilt_position: 0 }));
-  await still(page);
-  assert.equal((await slats()).height, 9.92, 'closed: turned by 80°');
-  await page.evaluate(() => window.__setState('cover.blind', 'open', { current_tilt_position: 50 }));
-  await still(page);
-  assert.equal((await slats()).height, 6.73, 'half: 40°');
-  assert.deepEqual((await worldBox(page, 'blind'))[1][1], blindBefore[1][1], 'motion none: the head rail stays');
+    const { page, errors } = await open(house({ objfile: 'covers.obj', entities }), coverStates);
+    const slats = () =>
+      page.evaluate(() => {
+        const card = window.__card;
+        const i = card._config.entities.findIndex((e) => e.entity === 'cover.blind');
+        const set = card._slatSets.get(i)[0];
+        const lowest = set.slats.reduce((a, b) => (a.center[1] < b.center[1] ? a : b));
+        const position = set.geometry.getAttribute('position');
+        const ys = lowest.vertices.map((v) => position.getY(v));
+        return { count: set.slats.length, height: Math.round((Math.max(...ys) - Math.min(...ys)) * 100) / 100 };
+      });
+    const blindBefore = await worldBox(page, 'blind');
+    assert.deepEqual(await slats(), { count: 12, height: 0.4 }, 'open: as in the model');
+    await page.evaluate(() => window.__setState('cover.blind', 'closed', { current_tilt_position: 0 }));
+    await still(page);
+    assert.equal((await slats()).height, 9.92, 'closed: turned by 80°');
+    await page.evaluate(() => window.__setState('cover.blind', 'open', { current_tilt_position: 50 }));
+    await still(page);
+    assert.equal((await slats()).height, 6.73, 'half: 40°');
+    assert.deepEqual((await worldBox(page, 'blind'))[1][1], blindBefore[1][1], 'motion none: the head rail stays');
 
-  // Roller shade at 50 %: half as long, from its top; the bar follows the bottom edge.
-  const shade = await worldBox(page, 'shade');
-  const bar = await worldBox(page, 'shade_bar');
-  const height = 218 - 93;
-  assert.ok(Math.abs(shade[1][1] - shade[0][1] - height / 2) < 0.2, 'half the fabric: ' + shade);
-  assert.ok(Math.abs(bar[1][1] - bar[0][1] - 3) < 0.2, 'the bar keeps its size');
-  assert.ok(Math.abs(bar[1][1] - shade[0][1]) < 0.2, 'the bar at the bottom edge of the fabric');
-  const material = await page.evaluate(() => [].concat(window.__card._scene.getObjectByName('shade').material)[0].clippingPlanes);
-  assert.ok(!material || material.length === 0, 'no plane cuts a shade that shortens');
-  await page.evaluate(() => window.__setState('cover.shade', 'closed', { current_position: 0 }));
-  await still(page);
-  const closed = await worldBox(page, 'shade');
-  assert.ok(Math.abs(closed[1][1] - closed[0][1] - height) < 0.2, 'closed: full length');
-  assert.ok(Math.abs(closed[1][1] - shade[1][1]) < 0.2, 'the top stays');
+    // Roller shade at 50 %: half as long, from its top; the bar follows the bottom edge.
+    const shade = await worldBox(page, 'shade');
+    const bar = await worldBox(page, 'shade_bar');
+    const height = 218 - 93;
+    assert.ok(Math.abs(shade[1][1] - shade[0][1] - height / 2) < 0.2, 'half the fabric: ' + shade);
+    assert.ok(Math.abs(bar[1][1] - bar[0][1] - 3) < 0.2, 'the bar keeps its size');
+    assert.ok(Math.abs(bar[1][1] - shade[0][1]) < 0.2, 'the bar at the bottom edge of the fabric');
+    const material = await page.evaluate(
+      () => [].concat(window.__card._scene.getObjectByName('shade').material)[0].clippingPlanes,
+    );
+    assert.ok(!material || material.length === 0, 'no plane cuts a shade that shortens');
+    await page.evaluate(() => window.__setState('cover.shade', 'closed', { current_position: 0 }));
+    await still(page);
+    const closed = await worldBox(page, 'shade');
+    assert.ok(Math.abs(closed[1][1] - closed[0][1] - height) < 0.2, 'closed: full length');
+    assert.ok(Math.abs(closed[1][1] - shade[1][1]) < 0.2, 'the top stays');
 
-  // Shutter opening downward: shown while closed, hidden once open.
-  assert.equal(await keeps(page, 'shutter'), true, 'closed: shown');
-  await page.evaluate(() => window.__setState('cover.shutter', 'open', { current_position: 100 }));
-  await still(page);
-  assert.equal(await keeps(page, 'shutter'), false, 'open: under the edge, cut');
-  assert.deepEqual(errors, []);
-  await page.close();
-});
+    // Shutter opening downward: shown while closed, hidden once open.
+    assert.equal(await keeps(page, 'shutter'), true, 'closed: shown');
+    await page.evaluate(() => window.__setState('cover.shutter', 'open', { current_position: 100 }));
+    await still(page);
+    assert.equal(await keeps(page, 'shutter'), false, 'open: under the edge, cut');
+    assert.deepEqual(errors, []);
+    await page.close();
+  },
+);
 
-test('covers: sliding up and to the left are cut past their edge; tilt_open and tilt_closed', { timeout: TIMEOUT }, async () => {
-  const entities = [
-    { entity: 'cover.shade', type3d: 'cover', object_id: 'shade', cover: { side: 'up' } },
-    { entity: 'cover.blind', type3d: 'cover', object_id: 'blind', cover: { side: 'left', slats: 'blind', tilt_closed: -60, tilt_open: 30 } },
-  ];
-  const coverStates = states({
-    'cover.shade': { state: 'closed', attributes: { current_position: 0 } },
-    'cover.blind': { state: 'closed', attributes: { current_position: 0, current_tilt_position: 0 } },
-  });
-  const { page, errors } = await open(house({ objfile: 'covers.obj', entities }), coverStates);
-  assert.equal(await keeps(page, 'shade'), true);
-  assert.equal(await keeps(page, 'blind'), true);
-  const angle = () => page.evaluate(() => Math.round(window.__card._slatAngles.get(1)));
-  assert.equal(await angle(), -60, 'tilt 0: tilt_closed');
-  await page.evaluate(() => {
-    window.__setState('cover.shade', 'open', { current_position: 100 });
-    window.__setState('cover.blind', 'open', { current_position: 100, current_tilt_position: 100 });
-  });
-  await still(page);
-  assert.equal(await keeps(page, 'shade'), false, 'up: past the top, cut');
-  assert.equal(await keeps(page, 'blind'), false, 'left: past the left edge, cut');
-  assert.equal(await angle(), 30, 'tilt 100: tilt_open');
-  assert.deepEqual(errors, []);
-  await page.close();
-});
+test(
+  'covers: sliding up and to the left are cut past their edge; tilt_open and tilt_closed',
+  { timeout: TIMEOUT },
+  async () => {
+    const entities = [
+      { entity: 'cover.shade', type3d: 'cover', object_id: 'shade', cover: { side: 'up' } },
+      {
+        entity: 'cover.blind',
+        type3d: 'cover',
+        object_id: 'blind',
+        cover: { side: 'left', slats: 'blind', tilt_closed: -60, tilt_open: 30 },
+      },
+    ];
+    const coverStates = states({
+      'cover.shade': { state: 'closed', attributes: { current_position: 0 } },
+      'cover.blind': { state: 'closed', attributes: { current_position: 0, current_tilt_position: 0 } },
+    });
+    const { page, errors } = await open(house({ objfile: 'covers.obj', entities }), coverStates);
+    assert.equal(await keeps(page, 'shade'), true);
+    assert.equal(await keeps(page, 'blind'), true);
+    const angle = () => page.evaluate(() => Math.round(window.__card._slatAngles.get(1)));
+    assert.equal(await angle(), -60, 'tilt 0: tilt_closed');
+    await page.evaluate(() => {
+      window.__setState('cover.shade', 'open', { current_position: 100 });
+      window.__setState('cover.blind', 'open', { current_position: 100, current_tilt_position: 100 });
+    });
+    await still(page);
+    assert.equal(await keeps(page, 'shade'), false, 'up: past the top, cut');
+    assert.equal(await keeps(page, 'blind'), false, 'left: past the left edge, cut');
+    assert.equal(await angle(), 30, 'tilt 100: tilt_open');
+    assert.deepEqual(errors, []);
+    await page.close();
+  },
+);
 
 // --- Sky and weather ---------------------------------------------------------------------------
 
@@ -833,100 +1028,141 @@ const gradientColors = (css) => [...css.matchAll(/rgb\((\d+), (\d+), (\d+)\)/g)]
 const lightness = ([r, g, b]) => (r + g + b) / 3;
 const colorfulness = ([r, g, b]) => Math.max(r, g, b) - Math.min(r, g, b);
 
-test('sky background: follows the elevation of the sun, greyer with the clouds of the weather entity', { timeout: TIMEOUT }, async () => {
-  const skyStates = states({ 'weather.home': { state: 'sunny', attributes: { temperature: 21.4, supported_features: 1 } } });
-  const { page, errors } = await open(house({ backgroundColor: 'sky', weather: 'weather.home', weather_count: 0 }), skyStates);
-  const background = () =>
-    page.evaluate(() => ({ css: window.__card._renderer.domElement.style.background, alpha: window.__card._renderer.getClearAlpha() }));
-  let b = await background();
-  assert.equal(b.alpha, 0, 'the canvas lets the sky through');
-  const [dayTop, dayHorizon] = gradientColors(b.css);
-  assert.ok(dayTop[2] > dayTop[0] && lightness(dayHorizon) > lightness(dayTop), 'day, at 35°: blue, lighter at the horizon: ' + b.css);
-  await page.evaluate(() => window.__setState('sun.sun', 'below_horizon', { azimuth: 300, elevation: 0 }));
-  const [, sunsetHorizon] = gradientColors((await background()).css);
-  assert.ok(sunsetHorizon[0] > sunsetHorizon[1] && sunsetHorizon[1] > sunsetHorizon[2], 'sunset: orange at the horizon');
-  await page.evaluate(() => window.__setState('sun.sun', 'below_horizon', { azimuth: 340, elevation: -25 }));
-  const [nightTop] = gradientColors((await background()).css);
-  assert.ok(lightness(nightTop) < 50, 'night: dark');
-  await page.evaluate(() => {
-    window.__setState('sun.sun', 'above_horizon', { azimuth: 200, elevation: 35 });
-    window.__setState('weather.home', 'cloudy', { cloud_coverage: 100 });
-  });
-  const [cloudyTop] = gradientColors((await background()).css);
-  assert.ok(colorfulness(cloudyTop) < colorfulness(dayTop) / 2, 'clouds: grey');
-  assert.deepEqual(errors, []);
-  await page.close();
-});
-
-test('weather box: the weather now and the next forecasts in the language of the card; a tap opens the entity', { timeout: TIMEOUT }, async () => {
-  const weatherStates = states({ 'weather.home': { state: 'rainy', attributes: { temperature: 12.6, supported_features: 3, friendly_name: 'Home' } } });
-  const { page, errors } = await open(house({ weather: 'weather.home', weather_count: 3, language: 'it' }), weatherStates);
-  const subscriptions = () => page.evaluate(() => window.__subscriptions.map((s) => ({ ...s.message, active: s.active })));
-  assert.deepEqual(await subscriptions(), [{ type: 'weather/subscribe_forecast', forecast_type: 'daily', entity_id: 'weather.home', active: true }]);
-  const day = (d, condition, temperature, templow, rain) => ({
-    datetime: `2026-10-${d}T12:00:00+00:00`,
-    condition,
-    temperature,
-    templow,
-    precipitation_probability: rain,
-  });
-  await page.evaluate(
-    (forecast) => window.__forecast('weather.home', forecast),
-    [day(12, 'sunny', 18.2, 9.6, 0), day(13, 'rainy', 15, 10, 60), day(14, 'cloudy', 16, 11, 5), day(15, 'snowy', 2, -3, 80)],
-  );
-  const box = () =>
-    page.evaluate(() => {
-      const el = window.__card.shadowRoot.querySelector('.f3d-weather');
-      return {
-        shown: !!el && el.isConnected,
-        corner: el.parentElement.className,
-        label: el.getAttribute('aria-label'),
-        now: [el.querySelector('.now ha-icon').getAttribute('icon'), el.querySelector('.now span').textContent],
-        items: [...el.querySelectorAll('.item')].map((i) => [
-          i.querySelector('.when').textContent,
-          i.querySelector('ha-icon').getAttribute('icon'),
-          i.querySelector('.temp').textContent.replace(/\s+/g, ' ').trim(),
-          i.querySelector('.rain') ? i.querySelector('.rain').textContent : '',
-        ]),
-      };
+test(
+  'sky background: follows the elevation of the sun, greyer with the clouds of the weather entity',
+  { timeout: TIMEOUT },
+  async () => {
+    const skyStates = states({
+      'weather.home': { state: 'sunny', attributes: { temperature: 21.4, supported_features: 1 } },
     });
-  assert.deepEqual(await box(), {
-    shown: true,
-    corner: 'f3d-corner f3d-corner-bottom-left',
-    label: 'Previsioni meteo',
-    now: ['mdi:weather-rainy', '13°'],
-    items: [
-      ['lun', 'mdi:weather-sunny', '18° 10°', ''],
-      ['mar', 'mdi:weather-rainy', '15° 10°', '60%'],
-      ['mer', 'mdi:weather-cloudy', '16° 11°', ''],
-    ],
-  });
-  // The weather now changes; then the entity only has hourly forecasts: the box asks for those.
-  await page.evaluate(() => window.__setState('weather.home', 'sunny', { temperature: 14 }));
-  assert.deepEqual((await box()).now, ['mdi:weather-sunny', '14°']);
-  await page.evaluate(() => window.__setState('weather.home', 'sunny', { supported_features: 2 }));
-  assert.deepEqual(
-    (await subscriptions()).map((s) => [s.forecast_type, s.active]),
-    [
-      ['daily', false],
-      ['hourly', true],
-    ],
-  );
-  // A tap opens the weather entity, not an object of the model.
-  const opened = await page.evaluate(() => {
-    const seen = [];
-    window.__card.addEventListener('hass-more-info', (e) => seen.push(e.detail.entityId));
-    window.__card.shadowRoot.querySelector('.f3d-weather').click();
-    return seen;
-  });
-  assert.deepEqual(opened, ['weather.home']);
-  // Removed from the page: no more forecasts.
-  await page.evaluate(() => window.__card.remove());
-  await page.waitForTimeout(50);
-  assert.deepEqual((await subscriptions()).map((s) => s.active), [false, false]);
-  assert.deepEqual(errors, []);
-  await page.close();
-});
+    const { page, errors } = await open(
+      house({ backgroundColor: 'sky', weather: 'weather.home', weather_count: 0 }),
+      skyStates,
+    );
+    const background = () =>
+      page.evaluate(() => ({
+        css: window.__card._renderer.domElement.style.background,
+        alpha: window.__card._renderer.getClearAlpha(),
+      }));
+    let b = await background();
+    assert.equal(b.alpha, 0, 'the canvas lets the sky through');
+    const [dayTop, dayHorizon] = gradientColors(b.css);
+    assert.ok(
+      dayTop[2] > dayTop[0] && lightness(dayHorizon) > lightness(dayTop),
+      'day, at 35°: blue, lighter at the horizon: ' + b.css,
+    );
+    await page.evaluate(() => window.__setState('sun.sun', 'below_horizon', { azimuth: 300, elevation: 0 }));
+    const [, sunsetHorizon] = gradientColors((await background()).css);
+    assert.ok(
+      sunsetHorizon[0] > sunsetHorizon[1] && sunsetHorizon[1] > sunsetHorizon[2],
+      'sunset: orange at the horizon',
+    );
+    await page.evaluate(() => window.__setState('sun.sun', 'below_horizon', { azimuth: 340, elevation: -25 }));
+    const [nightTop] = gradientColors((await background()).css);
+    assert.ok(lightness(nightTop) < 50, 'night: dark');
+    await page.evaluate(() => {
+      window.__setState('sun.sun', 'above_horizon', { azimuth: 200, elevation: 35 });
+      window.__setState('weather.home', 'cloudy', { cloud_coverage: 100 });
+    });
+    const [cloudyTop] = gradientColors((await background()).css);
+    assert.ok(colorfulness(cloudyTop) < colorfulness(dayTop) / 2, 'clouds: grey');
+    assert.deepEqual(errors, []);
+    await page.close();
+  },
+);
+
+test(
+  'weather box: the weather now and the next forecasts in the language of the card; a tap opens the entity',
+  { timeout: TIMEOUT },
+  async () => {
+    const weatherStates = states({
+      'weather.home': {
+        state: 'rainy',
+        attributes: { temperature: 12.6, supported_features: 3, friendly_name: 'Home' },
+      },
+    });
+    const { page, errors } = await open(
+      house({ weather: 'weather.home', weather_count: 3, language: 'it' }),
+      weatherStates,
+    );
+    const subscriptions = () =>
+      page.evaluate(() => window.__subscriptions.map((s) => ({ ...s.message, active: s.active })));
+    assert.deepEqual(await subscriptions(), [
+      { type: 'weather/subscribe_forecast', forecast_type: 'daily', entity_id: 'weather.home', active: true },
+    ]);
+    const day = (d, condition, temperature, templow, rain) => ({
+      datetime: `2026-10-${d}T12:00:00+00:00`,
+      condition,
+      temperature,
+      templow,
+      precipitation_probability: rain,
+    });
+    await page.evaluate(
+      (forecast) => window.__forecast('weather.home', forecast),
+      [
+        day(12, 'sunny', 18.2, 9.6, 0),
+        day(13, 'rainy', 15, 10, 60),
+        day(14, 'cloudy', 16, 11, 5),
+        day(15, 'snowy', 2, -3, 80),
+      ],
+    );
+    const box = () =>
+      page.evaluate(() => {
+        const el = window.__card.shadowRoot.querySelector('.f3d-weather');
+        return {
+          shown: !!el && el.isConnected,
+          corner: el.parentElement.className,
+          label: el.getAttribute('aria-label'),
+          now: [el.querySelector('.now ha-icon').getAttribute('icon'), el.querySelector('.now span').textContent],
+          items: [...el.querySelectorAll('.item')].map((i) => [
+            i.querySelector('.when').textContent,
+            i.querySelector('ha-icon').getAttribute('icon'),
+            i.querySelector('.temp').textContent.replace(/\s+/g, ' ').trim(),
+            i.querySelector('.rain') ? i.querySelector('.rain').textContent : '',
+          ]),
+        };
+      });
+    assert.deepEqual(await box(), {
+      shown: true,
+      corner: 'f3d-corner f3d-corner-bottom-left',
+      label: 'Previsioni meteo',
+      now: ['mdi:weather-rainy', '13°'],
+      items: [
+        ['lun', 'mdi:weather-sunny', '18° 10°', ''],
+        ['mar', 'mdi:weather-rainy', '15° 10°', '60%'],
+        ['mer', 'mdi:weather-cloudy', '16° 11°', ''],
+      ],
+    });
+    // The weather now changes; then the entity only has hourly forecasts: the box asks for those.
+    await page.evaluate(() => window.__setState('weather.home', 'sunny', { temperature: 14 }));
+    assert.deepEqual((await box()).now, ['mdi:weather-sunny', '14°']);
+    await page.evaluate(() => window.__setState('weather.home', 'sunny', { supported_features: 2 }));
+    assert.deepEqual(
+      (await subscriptions()).map((s) => [s.forecast_type, s.active]),
+      [
+        ['daily', false],
+        ['hourly', true],
+      ],
+    );
+    // A tap opens the weather entity, not an object of the model.
+    const opened = await page.evaluate(() => {
+      const seen = [];
+      window.__card.addEventListener('hass-more-info', (e) => seen.push(e.detail.entityId));
+      window.__card.shadowRoot.querySelector('.f3d-weather').click();
+      return seen;
+    });
+    assert.deepEqual(opened, ['weather.home']);
+    // Removed from the page: no more forecasts.
+    await page.evaluate(() => window.__card.remove());
+    await page.waitForTimeout(50);
+    assert.deepEqual(
+      (await subscriptions()).map((s) => s.active),
+      [false, false],
+    );
+    assert.deepEqual(errors, []);
+    await page.close();
+  },
+);
 
 // --- Boxes in the corners ----------------------------------------------------------------------
 
@@ -948,174 +1184,231 @@ const boxOf = (page, kind) =>
     };
   }, kind);
 const cameraTarget = (page) => page.evaluate(() => window.__card._controls.target.toArray().map(Math.round));
-const helpers = (page) => page.evaluate(() => window.__card._highlightHelpers.map((h) => '#' + h.material.color.getHexString()));
+const helpers = (page) =>
+  page.evaluate(() => window.__card._highlightHelpers.map((h) => '#' + h.material.color.getHexString()));
 const moreInfo = (page) =>
   page.evaluate(() => {
     window.__moreInfo = [];
     window.__card.addEventListener('hass-more-info', (e) => window.__moreInfo.push(e.detail.entityId));
   });
 
-test('status box: what is on or open; a tap outlines those objects and frames them, a second tap ends it', { timeout: TIMEOUT }, async () => {
-  const entities = [
-    ...lamps(3),
-    { entity: 'binary_sensor.window', type3d: 'color', object_id: 'wardrobe', colorcondition: [{ state: 'on', color: '#ff0000' }] },
-    { entity: 'lock.front', type3d: 'color', object_id: 'table', colorcondition: [{ state: 'unlocked', color: '#ff0000' }] },
-  ];
-  const boxStates = states({
-    'light.lamp_1': { state: 'on', attributes: { brightness: 200 } },
-    'light.lamp_2': { state: 'on', attributes: { brightness: 200 } },
-    'light.lamp_3': { state: 'off', attributes: {} },
-    'binary_sensor.window': { state: 'on', attributes: { device_class: 'window' } },
-    'lock.front': { state: 'unlocked', attributes: {} },
-  });
-  const { page, errors } = await open(house({ status_show: 'yes', entities }), boxStates);
-  let box = await boxOf(page, 'status');
-  assert.equal(box.corner, 'top-left');
-  assert.deepEqual(box.icons, ['mdi:lightbulb-on', 'mdi:door-open', 'mdi:lock-open-variant']);
-  assert.equal(box.text, '2 1 1');
-  const before = await cameraTarget(page);
-  await page.evaluate(() => window.__card.shadowRoot.querySelector('.f3d-status .chip').click());
-  await flown(page);
-  assert.deepEqual(await helpers(page), ['#ffd54f', '#ffd54f'], 'the two lamps on, outlined in yellow');
-  assert.notDeepEqual(await cameraTarget(page), before, 'the camera goes to them');
-  assert.match((await boxOf(page, 'status')).classes, /f3d-status/);
-  assert.equal(await page.evaluate(() => window.__card.shadowRoot.querySelectorAll('.f3d-status .chip.active').length), 1);
-  await page.evaluate(() => window.__card.shadowRoot.querySelector('.f3d-status .chip').click());
-  assert.deepEqual(await helpers(page), [], 'a second tap ends it');
-  // Everything off and closed.
-  await page.evaluate(() => {
-    ['light.lamp_1', 'light.lamp_2'].forEach((id) => window.__setState(id, 'off'));
-    window.__setState('binary_sensor.window', 'off');
-    window.__setState('lock.front', 'locked');
-  });
-  box = await boxOf(page, 'status');
-  assert.deepEqual(box.icons, ['mdi:check-circle-outline']);
-  assert.equal(box.text, 'All off');
-  assert.deepEqual(errors, []);
-  await page.close();
-});
+test(
+  'status box: what is on or open; a tap outlines those objects and frames them, a second tap ends it',
+  { timeout: TIMEOUT },
+  async () => {
+    const entities = [
+      ...lamps(3),
+      {
+        entity: 'binary_sensor.window',
+        type3d: 'color',
+        object_id: 'wardrobe',
+        colorcondition: [{ state: 'on', color: '#ff0000' }],
+      },
+      {
+        entity: 'lock.front',
+        type3d: 'color',
+        object_id: 'table',
+        colorcondition: [{ state: 'unlocked', color: '#ff0000' }],
+      },
+    ];
+    const boxStates = states({
+      'light.lamp_1': { state: 'on', attributes: { brightness: 200 } },
+      'light.lamp_2': { state: 'on', attributes: { brightness: 200 } },
+      'light.lamp_3': { state: 'off', attributes: {} },
+      'binary_sensor.window': { state: 'on', attributes: { device_class: 'window' } },
+      'lock.front': { state: 'unlocked', attributes: {} },
+    });
+    const { page, errors } = await open(house({ status_show: 'yes', entities }), boxStates);
+    let box = await boxOf(page, 'status');
+    assert.equal(box.corner, 'top-left');
+    assert.deepEqual(box.icons, ['mdi:lightbulb-on', 'mdi:door-open', 'mdi:lock-open-variant']);
+    assert.equal(box.text, '2 1 1');
+    const before = await cameraTarget(page);
+    await page.evaluate(() => window.__card.shadowRoot.querySelector('.f3d-status .chip').click());
+    await flown(page);
+    assert.deepEqual(await helpers(page), ['#ffd54f', '#ffd54f'], 'the two lamps on, outlined in yellow');
+    assert.notDeepEqual(await cameraTarget(page), before, 'the camera goes to them');
+    assert.match((await boxOf(page, 'status')).classes, /f3d-status/);
+    assert.equal(
+      await page.evaluate(() => window.__card.shadowRoot.querySelectorAll('.f3d-status .chip.active').length),
+      1,
+    );
+    await page.evaluate(() => window.__card.shadowRoot.querySelector('.f3d-status .chip').click());
+    assert.deepEqual(await helpers(page), [], 'a second tap ends it');
+    // Everything off and closed.
+    await page.evaluate(() => {
+      ['light.lamp_1', 'light.lamp_2'].forEach((id) => window.__setState(id, 'off'));
+      window.__setState('binary_sensor.window', 'off');
+      window.__setState('lock.front', 'locked');
+    });
+    box = await boxOf(page, 'status');
+    assert.deepEqual(box.icons, ['mdi:check-circle-outline']);
+    assert.equal(box.text, 'All off');
+    assert.deepEqual(errors, []);
+    await page.close();
+  },
+);
 
-test('boxes: energy, people, alarm panel and chips, each in its corner, stacked without covering each other or the menus', { timeout: TIMEOUT }, async () => {
-  const rooms = [
-    { name: 'Living room', object_id: 'floor_living', power: ['sensor.washer', 'sensor.tv'] },
-    { name: 'Bedroom', object_id: 'floor_bed', power: 'sensor.heater' },
-  ];
-  const config = house({
-    rooms,
-    zoom_areas: [{ zoom: 'Living', camera_position: { x: -200, y: 500, z: 300 }, camera_target: { x: -200, y: 0, z: 0 } }],
-    status_show: 'yes',
-    weather: 'weather.home',
-    energy_power: 'sensor.house_power',
-    energy_solar: 'sensor.solar_power',
-    energy_grid: 'sensor.grid_power',
-    energy_battery: 'sensor.battery',
-    energy_top: 2,
-    people: [{ entity: 'person.anna', room: 'sensor.anna_area' }, 'person.marco', 'person.lucia'],
-    alarm_panel: 'alarm_control_panel.home',
-    chips: ['sensor.outdoor', { entity: 'binary_sensor.front_door', name: 'Door' }],
-  });
-  const boxStates = states({
-    'weather.home': { state: 'sunny', attributes: { temperature: 20, supported_features: 1 } },
-    'sensor.house_power': { state: '1234', attributes: { unit_of_measurement: 'W' } },
-    'sensor.solar_power': { state: '3.4', attributes: { unit_of_measurement: 'kW' } },
-    'sensor.grid_power': { state: '-500', attributes: { unit_of_measurement: 'W' } },
-    'sensor.battery': { state: '80', attributes: { unit_of_measurement: '%' } },
-    'sensor.washer': { state: '1900', attributes: { unit_of_measurement: 'W', friendly_name: 'Washer' } },
-    'sensor.tv': { state: '120', attributes: { unit_of_measurement: 'W', friendly_name: 'TV' } },
-    'sensor.heater': { state: '800', attributes: { unit_of_measurement: 'W', friendly_name: 'Heater' } },
-    'person.anna': { state: 'home', attributes: { friendly_name: 'Anna Rossi', entity_picture: PICTURE } },
-    'sensor.anna_area': { state: 'Bedroom', attributes: {} },
-    'person.marco': { state: 'not_home', attributes: { friendly_name: 'Marco' } },
-    'person.lucia': { state: 'Work', attributes: { friendly_name: 'Lucia' } },
-    'alarm_control_panel.home': { state: 'armed_away', attributes: {} },
-    'sensor.outdoor': { state: '12.5', attributes: { unit_of_measurement: '°C', friendly_name: 'Outdoor' } },
-    'binary_sensor.front_door': { state: 'off', attributes: { device_class: 'door' } },
-  });
-  const { page, errors } = await open(config, boxStates);
-  await moreInfo(page);
+test(
+  'boxes: energy, people, alarm panel and chips, each in its corner, stacked without covering each other or the menus',
+  { timeout: TIMEOUT },
+  async () => {
+    const rooms = [
+      { name: 'Living room', object_id: 'floor_living', power: ['sensor.washer', 'sensor.tv'] },
+      { name: 'Bedroom', object_id: 'floor_bed', power: 'sensor.heater' },
+    ];
+    const config = house({
+      rooms,
+      zoom_areas: [
+        { zoom: 'Living', camera_position: { x: -200, y: 500, z: 300 }, camera_target: { x: -200, y: 0, z: 0 } },
+      ],
+      status_show: 'yes',
+      weather: 'weather.home',
+      energy_power: 'sensor.house_power',
+      energy_solar: 'sensor.solar_power',
+      energy_grid: 'sensor.grid_power',
+      energy_battery: 'sensor.battery',
+      energy_top: 2,
+      people: [{ entity: 'person.anna', room: 'sensor.anna_area' }, 'person.marco', 'person.lucia'],
+      alarm_panel: 'alarm_control_panel.home',
+      chips: ['sensor.outdoor', { entity: 'binary_sensor.front_door', name: 'Door' }],
+    });
+    const boxStates = states({
+      'weather.home': { state: 'sunny', attributes: { temperature: 20, supported_features: 1 } },
+      'sensor.house_power': { state: '1234', attributes: { unit_of_measurement: 'W' } },
+      'sensor.solar_power': { state: '3.4', attributes: { unit_of_measurement: 'kW' } },
+      'sensor.grid_power': { state: '-500', attributes: { unit_of_measurement: 'W' } },
+      'sensor.battery': { state: '80', attributes: { unit_of_measurement: '%' } },
+      'sensor.washer': { state: '1900', attributes: { unit_of_measurement: 'W', friendly_name: 'Washer' } },
+      'sensor.tv': { state: '120', attributes: { unit_of_measurement: 'W', friendly_name: 'TV' } },
+      'sensor.heater': { state: '800', attributes: { unit_of_measurement: 'W', friendly_name: 'Heater' } },
+      'person.anna': { state: 'home', attributes: { friendly_name: 'Anna Rossi', entity_picture: PICTURE } },
+      'sensor.anna_area': { state: 'Bedroom', attributes: {} },
+      'person.marco': { state: 'not_home', attributes: { friendly_name: 'Marco' } },
+      'person.lucia': { state: 'Work', attributes: { friendly_name: 'Lucia' } },
+      'alarm_control_panel.home': { state: 'armed_away', attributes: {} },
+      'sensor.outdoor': { state: '12.5', attributes: { unit_of_measurement: '°C', friendly_name: 'Outdoor' } },
+      'binary_sensor.front_door': { state: 'off', attributes: { device_class: 'door' } },
+    });
+    const { page, errors } = await open(config, boxStates);
+    await moreInfo(page);
 
-  // Corners: the defaults, stacked from the corner, under the menus at the top right.
-  const kinds = ['status', 'people', 'alarm_panel', 'energy', 'weather', 'chips'];
-  const boxes = Object.fromEntries(await Promise.all(kinds.map(async (k) => [k, await boxOf(page, k)])));
-  assert.deepEqual(
-    kinds.map((k) => boxes[k].corner),
-    ['top-left', 'top-left', 'top-right', 'bottom-left', 'bottom-left', 'bottom-right'],
-  );
-  const overlap = (a, b) => a[0] < b[2] && b[0] < a[2] && a[1] < b[3] && b[1] < a[3];
-  kinds.forEach((a, i) => kinds.slice(i + 1).forEach((b) => assert.ok(!overlap(boxes[a].rect, boxes[b].rect), a + ' covers ' + b)));
-  const menus = await page.evaluate(() => window.__card._zoommenu.getBoundingClientRect().bottom);
-  assert.ok(boxes.alarm_panel.rect[1] > menus, 'the alarm panel under the menus');
-  assert.ok(boxes.people.rect[1] > boxes.status.rect[3], 'people under the status, from the top');
-  assert.ok(boxes.weather.rect[3] < boxes.energy.rect[1], 'energy at the bottom, the weather above it');
+    // Corners: the defaults, stacked from the corner, under the menus at the top right.
+    const kinds = ['status', 'people', 'alarm_panel', 'energy', 'weather', 'chips'];
+    const boxes = Object.fromEntries(await Promise.all(kinds.map(async (k) => [k, await boxOf(page, k)])));
+    assert.deepEqual(
+      kinds.map((k) => boxes[k].corner),
+      ['top-left', 'top-left', 'top-right', 'bottom-left', 'bottom-left', 'bottom-right'],
+    );
+    const overlap = (a, b) => a[0] < b[2] && b[0] < a[2] && a[1] < b[3] && b[1] < a[3];
+    kinds.forEach((a, i) =>
+      kinds.slice(i + 1).forEach((b) => assert.ok(!overlap(boxes[a].rect, boxes[b].rect), a + ' covers ' + b)),
+    );
+    const menus = await page.evaluate(() => window.__card._zoommenu.getBoundingClientRect().bottom);
+    assert.ok(boxes.alarm_panel.rect[1] > menus, 'the alarm panel under the menus');
+    assert.ok(boxes.people.rect[1] > boxes.status.rect[3], 'people under the status, from the top');
+    assert.ok(boxes.weather.rect[3] < boxes.energy.rect[1], 'energy at the bottom, the weather above it');
 
-  // Energy: values, the export to the grid, the two plugs that use the most.
-  assert.deepEqual(boxes.energy.icons, ['mdi:home-lightning-bolt', 'mdi:solar-power', 'mdi:transmission-tower-export', 'mdi:battery-80']);
-  assert.equal(boxes.energy.text, '1.2 kW 3.4 kW 500 W 80% Washer1.9 kW Heater800 W');
-  const living = await page.evaluate(() => window.__card._roomViews.find((r) => r.name === 'Living room').box.getCenter(window.__card._controls.target.clone()).toArray().map(Math.round));
-  await page.evaluate(() => window.__card.shadowRoot.querySelector('.f3d-energy .consumer').click());
-  await flown(page);
-  assert.deepEqual(await cameraTarget(page), living, 'the washer: to its room');
-  await page.evaluate(() => window.__card.shadowRoot.querySelector('.f3d-energy .value').click());
+    // Energy: values, the export to the grid, the two plugs that use the most.
+    assert.deepEqual(boxes.energy.icons, [
+      'mdi:home-lightning-bolt',
+      'mdi:solar-power',
+      'mdi:transmission-tower-export',
+      'mdi:battery-80',
+    ]);
+    assert.equal(boxes.energy.text, '1.2 kW 3.4 kW 500 W 80% Washer1.9 kW Heater800 W');
+    const living = await page.evaluate(() =>
+      window.__card._roomViews
+        .find((r) => r.name === 'Living room')
+        .box.getCenter(window.__card._controls.target.clone())
+        .toArray()
+        .map(Math.round),
+    );
+    await page.evaluate(() => window.__card.shadowRoot.querySelector('.f3d-energy .consumer').click());
+    await flown(page);
+    assert.deepEqual(await cameraTarget(page), living, 'the washer: to its room');
+    await page.evaluate(() => window.__card.shadowRoot.querySelector('.f3d-energy .value').click());
 
-  // People: the room of Anna from her area sensor, Marco away, Lucia in a zone.
-  assert.equal(boxes.people.text, 'Anna Bedroom M Marco Away L Lucia Work');
-  assert.equal(await page.evaluate(() => window.__card.shadowRoot.querySelector('.f3d-people img').getAttribute('src')), PICTURE);
-  assert.equal(await page.evaluate(() => window.__card.shadowRoot.querySelectorAll('.f3d-people .away').length), 2);
-  const bedroom = await page.evaluate(() => window.__card._roomViews.find((r) => r.name === 'Bedroom').box.getCenter(window.__card._controls.target.clone()).toArray().map(Math.round));
-  await page.evaluate(() => window.__card.shadowRoot.querySelector('.f3d-people .place.link').click());
-  await flown(page);
-  assert.deepEqual(await cameraTarget(page), bedroom, 'her room');
-  assert.deepEqual(await helpers(page), ['#ffffff'], 'its floor outlined');
+    // People: the room of Anna from her area sensor, Marco away, Lucia in a zone.
+    assert.equal(boxes.people.text, 'Anna Bedroom M Marco Away L Lucia Work');
+    assert.equal(
+      await page.evaluate(() => window.__card.shadowRoot.querySelector('.f3d-people img').getAttribute('src')),
+      PICTURE,
+    );
+    assert.equal(await page.evaluate(() => window.__card.shadowRoot.querySelectorAll('.f3d-people .away').length), 2);
+    const bedroom = await page.evaluate(() =>
+      window.__card._roomViews
+        .find((r) => r.name === 'Bedroom')
+        .box.getCenter(window.__card._controls.target.clone())
+        .toArray()
+        .map(Math.round),
+    );
+    await page.evaluate(() => window.__card.shadowRoot.querySelector('.f3d-people .place.link').click());
+    await flown(page);
+    assert.deepEqual(await cameraTarget(page), bedroom, 'her room');
+    assert.deepEqual(await helpers(page), ['#ffffff'], 'its floor outlined');
 
-  // Alarm panel: its state; red and blinking when triggered; a tap opens it.
-  assert.deepEqual([boxes.alarm_panel.icons, boxes.alarm_panel.text], [['mdi:shield-lock'], 'Armed away']);
-  await page.evaluate(() => window.__setState('alarm_control_panel.home', 'triggered'));
-  const triggered = await boxOf(page, 'alarm_panel');
-  assert.deepEqual([triggered.icons, triggered.text], [['mdi:bell-ring'], 'Triggered']);
-  assert.match(triggered.classes, /pulse/);
-  await page.evaluate(() => window.__card.shadowRoot.querySelector('.f3d-alarm_panel').click());
+    // Alarm panel: its state; red and blinking when triggered; a tap opens it.
+    assert.deepEqual([boxes.alarm_panel.icons, boxes.alarm_panel.text], [['mdi:shield-lock'], 'Armed away']);
+    await page.evaluate(() => window.__setState('alarm_control_panel.home', 'triggered'));
+    const triggered = await boxOf(page, 'alarm_panel');
+    assert.deepEqual([triggered.icons, triggered.text], [['mdi:bell-ring'], 'Triggered']);
+    assert.match(triggered.classes, /pulse/);
+    await page.evaluate(() => window.__card.shadowRoot.querySelector('.f3d-alarm_panel').click());
 
-  // Chips: the state with its unit; a name when given; a tap opens the entity.
-  assert.equal(boxes.chips.text, '12.5 °C Door off');
-  await page.evaluate(() => window.__card.shadowRoot.querySelector('.f3d-chips .chip').click());
+    // Chips: the state with its unit; a name when given; a tap opens the entity.
+    assert.equal(boxes.chips.text, '12.5 °C Door off');
+    await page.evaluate(() => window.__card.shadowRoot.querySelector('.f3d-chips .chip').click());
 
-  assert.deepEqual(await page.evaluate(() => window.__moreInfo), ['sensor.house_power', 'alarm_control_panel.home', 'sensor.outdoor']);
-  // On a narrow card (a phone) the corners of a side don't cover each other or the menus.
-  await page.addStyleTag({ content: '#wrap { width: 380px !important; }' });
-  await resized(page);
-  const narrow = Object.fromEntries(await Promise.all(kinds.map(async (k) => [k, (await boxOf(page, k)).rect])));
-  narrow.menus = await page.evaluate(() => {
-    const r = window.__card._zoommenu.getBoundingClientRect();
-    return [r.left, r.top, r.right, r.bottom].map(Math.round);
-  });
-  Object.keys(narrow).forEach((a, i) =>
-    Object.keys(narrow)
-      .slice(i + 1)
-      .forEach((b) => assert.ok(!overlap(narrow[a], narrow[b]), 'narrow: ' + a + ' covers ' + b + ' ' + narrow[a] + ' / ' + narrow[b])),
-  );
+    assert.deepEqual(await page.evaluate(() => window.__moreInfo), [
+      'sensor.house_power',
+      'alarm_control_panel.home',
+      'sensor.outdoor',
+    ]);
+    // On a narrow card (a phone) the corners of a side don't cover each other or the menus.
+    await page.addStyleTag({ content: '#wrap { width: 380px !important; }' });
+    await resized(page);
+    const narrow = Object.fromEntries(await Promise.all(kinds.map(async (k) => [k, (await boxOf(page, k)).rect])));
+    narrow.menus = await page.evaluate(() => {
+      const r = window.__card._zoommenu.getBoundingClientRect();
+      return [r.left, r.top, r.right, r.bottom].map(Math.round);
+    });
+    Object.keys(narrow).forEach((a, i) =>
+      Object.keys(narrow)
+        .slice(i + 1)
+        .forEach((b) =>
+          assert.ok(
+            !overlap(narrow[a], narrow[b]),
+            'narrow: ' + a + ' covers ' + b + ' ' + narrow[a] + ' / ' + narrow[b],
+          ),
+        ),
+    );
 
-  // A box left out of the configuration goes away; so does a box switched off, with its settings
-  // kept (the weather stops asking for the forecast); hideMapMenu hides the Map menu.
-  await page.evaluate(() => {
-    const card = window.__card;
-    card._config = { ...card._config, chips: undefined, energy_show: 'no', weather_show: false, hideMapMenu: 'yes' };
-    card._renderBoxes(true);
-    card._subscribeWeather();
-    card._renderMenus();
-  });
-  assert.equal(await boxOf(page, 'chips'), null);
-  assert.equal(await boxOf(page, 'energy'), null);
-  assert.equal(await boxOf(page, 'weather'), null);
-  assert.deepEqual(await page.evaluate(() => window.__subscriptions.map((s) => s.active)), [false]);
-  assert.deepEqual(
-    await page.evaluate(() => [...window.__card._zoommenu.querySelectorAll('select')].map((s) => s.getAttribute('aria-label'))),
-    ['Views'],
-    'only the Views menu',
-  );
-  assert.ok(await boxOf(page, 'people'), 'the other boxes stay');
-  assert.deepEqual(errors, []);
-  await page.close();
-});
+    // A box left out of the configuration goes away; so does a box switched off, with its settings
+    // kept (the weather stops asking for the forecast); hideMapMenu hides the Map menu.
+    await page.evaluate(() => {
+      const card = window.__card;
+      card._config = { ...card._config, chips: undefined, energy_show: 'no', weather_show: false, hideMapMenu: 'yes' };
+      card._renderBoxes(true);
+      card._subscribeWeather();
+      card._renderMenus();
+    });
+    assert.equal(await boxOf(page, 'chips'), null);
+    assert.equal(await boxOf(page, 'energy'), null);
+    assert.equal(await boxOf(page, 'weather'), null);
+    assert.deepEqual(await page.evaluate(() => window.__subscriptions.map((s) => s.active)), [false]);
+    assert.deepEqual(
+      await page.evaluate(() =>
+        [...window.__card._zoommenu.querySelectorAll('select')].map((s) => s.getAttribute('aria-label')),
+      ),
+      ['Views'],
+      'only the Views menu',
+    );
+    assert.ok(await boxOf(page, 'people'), 'the other boxes stay');
+    assert.deepEqual(errors, []);
+    await page.close();
+  },
+);
 
 // --- Cameras and the night sky -------------------------------------------------------------------
 
@@ -1149,211 +1442,263 @@ const pinsOf = (page) =>
 const projected = (page, p) =>
   page.evaluate((p) => {
     const card = window.__card;
-    const v = new card._camera.position.constructor(...p).applyMatrix4(card._bboxmodel.matrixWorld).project(card._camera);
+    const v = new card._camera.position.constructor(...p)
+      .applyMatrix4(card._bboxmodel.matrixWorld)
+      .project(card._camera);
     const r = card._renderer.domElement.getBoundingClientRect();
     return [Math.round(r.left + ((v.x + 1) / 2) * r.width), Math.round(r.top + ((1 - v.y) / 2) * r.height)];
   }, p);
 
-test('cameras: an icon over its point of the model that follows the view, hidden with its level; a tap opens the camera', { timeout: TIMEOUT }, async () => {
-  const config = house({
-    objfile: 'levels.obj',
-    cameras: [
-      { entity: 'camera.door', position: [510, 240, 990] },
-      { entity: 'camera.garden', position: [900, 100, 550], level: 1, icon: 'mdi:cctv-off', name: 'Garden cam' },
-      'camera.door', // without a position: no icon
-    ],
-  });
-  const { page, errors } = await open(config, cameraStates());
-  let pins = await pinsOf(page);
-  assert.deepEqual(pins.map((p) => [p.title, p.icon]), [['Front door', 'mdi:cctv'], ['Garden cam', 'mdi:cctv-off']]);
-  assert.deepEqual(pins.map((p) => p.visible), [true, true], 'both levels shown');
-  assert.match(pins[1].classes, /\boff\b/, 'unavailable: faded');
-  const near = (pin, at) => Math.abs(pin.x - at[0]) <= 1 && Math.abs(pin.y - at[1]) <= 1;
-  const at = await projected(page, [510, 240, 990]);
-  assert.ok(near(pins[0], at), 'over its point: ' + [pins[0].x, pins[0].y] + ' / ' + at);
-  // The view turns: the icon goes with its point.
-  await page.evaluate(() => {
-    const card = window.__card;
-    card._camera.position.set(-900, 700, 300);
-    card._controls.update();
-    card._render();
-  });
-  pins = await pinsOf(page);
-  const moved = await projected(page, [510, 240, 990]);
-  assert.notDeepEqual(moved, at);
-  assert.ok(near(pins[0], moved), 'follows the view: ' + [pins[0].x, pins[0].y] + ' / ' + moved);
-  // Only level 0 shown: the camera of level 1 hides.
-  await page.evaluate(() => {
-    window.__card._setVisibleLevel(0);
-    window.__card._render();
-  });
-  assert.deepEqual((await pinsOf(page)).map((p) => p.visible), [true, false]);
-  // A tap opens the camera; the model under it gets nothing.
-  await moreInfo(page);
-  await page.mouse.click(pins[0].x, pins[0].y);
-  assert.deepEqual(await page.evaluate(() => window.__moreInfo), ['camera.door']);
-  assert.deepEqual(await page.evaluate(() => window.__calls), []);
-  // cameras_show: no.
-  await page.evaluate(() => {
-    const card = window.__card;
-    card._config = { ...card._config, cameras_show: 'no' };
-    card._renderBoxes(true);
-  });
-  assert.deepEqual(await pinsOf(page), []);
-  assert.deepEqual(errors, []);
-  await page.close();
-});
-
-test('camera pop-up: the picture comes in its corner when a sensor goes off, a new one every second; the cross closes it; it goes after the duration', { timeout: TIMEOUT }, async () => {
-  const config = house({
-    cameras: [{ entity: 'camera.door', position: [510, 240, 990], popup_on: ['binary_sensor.doorbell', 'event.ring'] }],
-    camera_popup_duration: 2,
-  });
-  const { page, errors } = await open(config, cameraStates());
-  const picture = () =>
-    page.evaluate(() => {
-      const box = window.__card.shadowRoot.querySelector('.f3d-camera_popup');
-      return box && { src: box.querySelector('img').getAttribute('src'), loaded: box.classList.contains('loaded'), width: box.offsetWidth };
+test(
+  'cameras: an icon over its point of the model that follows the view, hidden with its level; a tap opens the camera',
+  { timeout: TIMEOUT },
+  async () => {
+    const config = house({
+      objfile: 'levels.obj',
+      cameras: [
+        { entity: 'camera.door', position: [510, 240, 990] },
+        { entity: 'camera.garden', position: [900, 100, 550], level: 1, icon: 'mdi:cctv-off', name: 'Garden cam' },
+        'camera.door', // without a position: no icon
+      ],
     });
-  assert.equal(await boxOf(page, 'camera_popup'), null, 'nothing yet');
-  const proxy = () => server.hits('/api/camera_proxy/camera.door');
-  const before = proxy();
-  await page.evaluate(() => window.__setState('binary_sensor.doorbell', 'on'));
-  let box = await boxOf(page, 'camera_popup');
-  assert.equal(box.corner, 'bottom-right');
-  assert.equal(box.text, 'Front door Doorbell');
-  assert.match((await pinsOf(page))[0].classes, /\balert\b/, 'the icon blinks');
-  const first = await picture();
-  assert.ok(first.src.startsWith(DOOR_PICTURE + '&t='), first.src);
-  assert.equal(first.width, Math.round(Math.min(320, 860 * 0.45)), '45% of the card');
-  // A new picture every second, asked again of the camera proxy.
-  const later = await eventually(async () => {
-    const p = await picture();
-    return p.loaded && p.src !== first.src && proxy() - before >= 2 && p;
-  }, 'a new picture');
-  assert.ok(later.loaded, 'the picture arrived');
-  assert.notEqual(later.src, first.src, 'a new picture');
-  assert.ok(proxy() - before >= 2, 'asked again: ' + (proxy() - before));
-  // A tap on the picture opens the camera (its live).
-  await moreInfo(page);
-  await page.evaluate(() => window.__card.shadowRoot.querySelector('.f3d-camera_popup .picture').click());
-  assert.deepEqual(await page.evaluate(() => window.__moreInfo), ['camera.door']);
-  // The cross: closed, though the doorbell is still on; the pictures stop.
-  await page.evaluate(() => window.__card.shadowRoot.querySelector('.f3d-camera_popup .close').click());
-  assert.equal(await boxOf(page, 'camera_popup'), null);
-  assert.doesNotMatch((await pinsOf(page))[0].classes, /\balert\b/);
-  const closed = proxy();
-  await page.waitForTimeout(1500);
-  assert.ok(proxy() - closed <= 1, 'no more pictures');
-  // The doorbell event of another ring: back, then gone after the duration.
-  await page.evaluate(() => {
-    window.__setState('binary_sensor.doorbell', 'off');
-    window.__setState('event.ring', '2026-10-09T17:00:00.000+00:00');
-  });
-  box = await boxOf(page, 'camera_popup');
-  assert.equal(box.text, 'Front door Ring');
-  await eventually(async () => (await boxOf(page, 'camera_popup')) === null, 'gone after 2 s');
-  // camera_popup_show: no: no picture, the icon still blinks.
-  await page.evaluate(() => {
-    const card = window.__card;
-    card._config = { ...card._config, camera_popup_show: 'no' };
-    window.__setState('binary_sensor.doorbell', 'on');
-  });
-  assert.equal(await boxOf(page, 'camera_popup'), null);
-  assert.match((await pinsOf(page))[0].classes, /\balert\b/);
-  assert.deepEqual(errors, []);
-  await page.close();
-});
-
-test('card editor: the place of a camera picked with a tap on the model, with its level', { timeout: TIMEOUT }, async () => {
-  const config = house({ objfile: 'levels.obj', cameras: [{ entity: 'camera.door' }] });
-  const { page, errors } = await open(config, cameraStates());
-  await page.evaluate(async () => {
-    const card = window.__card;
-    card.preview = true;
-    const ed = await card.constructor.getConfigElement();
-    ed.hass = window.__hass();
-    ed.setConfig(JSON.parse(JSON.stringify(card._config)));
-    document.body.append(ed);
-    await new Promise((r) => setTimeout(r, 300));
-    ed._mode = 'ready';
-    ed._edit('cameras', 0);
-    await ed.updateComplete;
-    ed._startPick({ path: ['cameras', 0, 'position'], point: true });
-    window.__ed = ed;
-  });
-  assert.equal(await page.evaluate(() => window.__card._pickMode), true);
-  // The top of the bed, on level 1, and what the card finds under that point of the page.
-  const [x, y] = await projected(page, [900, 55, 480]);
-  const expected = await page.evaluate(
-    ({ x, y }) => {
+    const { page, errors } = await open(config, cameraStates());
+    let pins = await pinsOf(page);
+    assert.deepEqual(
+      pins.map((p) => [p.title, p.icon]),
+      [
+        ['Front door', 'mdi:cctv'],
+        ['Garden cam', 'mdi:cctv-off'],
+      ],
+    );
+    assert.deepEqual(
+      pins.map((p) => p.visible),
+      [true, true],
+      'both levels shown',
+    );
+    assert.match(pins[1].classes, /\boff\b/, 'unavailable: faded');
+    const near = (pin, at) => Math.abs(pin.x - at[0]) <= 1 && Math.abs(pin.y - at[1]) <= 1;
+    const at = await projected(page, [510, 240, 990]);
+    assert.ok(near(pins[0], at), 'over its point: ' + [pins[0].x, pins[0].y] + ' / ' + at);
+    // The view turns: the icon goes with its point.
+    await page.evaluate(() => {
       const card = window.__card;
-      const hit = card._getintersect(x, y).find((i) => i.object.name);
-      const p = card._bboxmodel.worldToLocal(hit.point.clone());
-      return { name: hit.object.name, position: [p.x, p.y, p.z].map(Math.round), level: hit.object.userData.level };
-    },
-    { x, y },
-  );
-  assert.deepEqual([expected.name, expected.level], ['bed', 1]);
-  await page.mouse.click(x, y);
-  const result = await page.evaluate(() => ({
-    camera: window.__ed._config.cameras[0],
-    picking: !!window.__ed._picking,
-    pickMode: window.__card._pickMode,
-    line: window.__ed._describe('cameras', window.__ed._config.cameras[0], 0).secondary,
-  }));
-  assert.deepEqual(result, {
-    camera: { entity: 'camera.door', position: expected.position, level: 1 },
-    picking: false,
-    pickMode: false,
-    line: 'On the map',
-  });
-  assert.deepEqual(errors, []);
-  await page.close();
-});
-
-test('night sky: stars and the moon come out after the sunset over the gradient, fewer with clouds; stars_show and moon_show', { timeout: TIMEOUT }, async () => {
-  const skyStates = states({ 'weather.home': { state: 'sunny', attributes: { temperature: 12, supported_features: 1 } } });
-  const { page, errors } = await open(house({ backgroundColor: 'sky', weather: 'weather.home', weather_count: 0 }), skyStates);
-  const layers = () =>
-    page.evaluate(() => {
-      const css = window.__card._renderer.domElement.style.background;
-      return (css.match(/url\("data:image\/svg\+xml,[^"]*"\)[^,]*/g) || []).map((l) => (l.includes('repeat-x') ? 'stars' : 'moon'));
+      card._camera.position.set(-900, 700, 300);
+      card._controls.update();
+      card._render();
     });
-  assert.deepEqual(await layers(), [], 'day: only the gradient');
-  await page.evaluate(() => window.__setState('sun.sun', 'below_horizon', { azimuth: 340, elevation: -20 }));
-  assert.deepEqual(await layers(), ['moon', 'stars'], 'night: the moon over the stars');
-  assert.ok((await page.evaluate(() => window.__card._renderer.domElement.style.background)).includes('linear-gradient'), 'over the gradient');
-  await page.evaluate(() => window.__setState('weather.home', 'cloudy', { cloud_coverage: 100 }));
-  assert.deepEqual(await layers(), ['moon'], 'overcast: no stars, a glow of the moon');
-  // sky_clouds: no: the sky ignores the clouds; moon_size: the width of the moon.
-  await page.evaluate(() => {
-    const card = window.__card;
-    card._config = { ...card._config, sky_clouds: 'no', moon_size: 60 };
-    window.__setState('sun.sun', 'below_horizon', { azimuth: 340, elevation: -20.5 });
-  });
-  assert.deepEqual(await layers(), ['moon', 'stars'], 'stars and moon through the clouds');
-  assert.ok((await page.evaluate(() => window.__card._renderer.domElement.style.background)).includes('167px 167px'), 'a moon of 60 px');
-  await page.evaluate(() => {
-    const card = window.__card;
-    card._config = { ...card._config, sky_clouds: 'yes', moon_size: undefined };
-  });
-  await page.evaluate(() => {
-    const card = window.__card;
-    window.__setState('weather.home', 'sunny', { cloud_coverage: 0 });
-    card._config = { ...card._config, moon_show: 'no' };
-    window.__setState('sun.sun', 'below_horizon', { azimuth: 340, elevation: -21 });
-  });
-  assert.deepEqual(await layers(), ['stars']);
-  await page.evaluate(() => {
-    const card = window.__card;
-    card._config = { ...card._config, stars_show: false };
-    window.__setState('sun.sun', 'below_horizon', { azimuth: 340, elevation: -22 });
-  });
-  assert.deepEqual(await layers(), []);
-  assert.deepEqual(errors, []);
-  await page.close();
-});
+    pins = await pinsOf(page);
+    const moved = await projected(page, [510, 240, 990]);
+    assert.notDeepEqual(moved, at);
+    assert.ok(near(pins[0], moved), 'follows the view: ' + [pins[0].x, pins[0].y] + ' / ' + moved);
+    // Only level 0 shown: the camera of level 1 hides.
+    await page.evaluate(() => {
+      window.__card._setVisibleLevel(0);
+      window.__card._render();
+    });
+    assert.deepEqual(
+      (await pinsOf(page)).map((p) => p.visible),
+      [true, false],
+    );
+    // A tap opens the camera; the model under it gets nothing.
+    await moreInfo(page);
+    await page.mouse.click(pins[0].x, pins[0].y);
+    assert.deepEqual(await page.evaluate(() => window.__moreInfo), ['camera.door']);
+    assert.deepEqual(await page.evaluate(() => window.__calls), []);
+    // cameras_show: no.
+    await page.evaluate(() => {
+      const card = window.__card;
+      card._config = { ...card._config, cameras_show: 'no' };
+      card._renderBoxes(true);
+    });
+    assert.deepEqual(await pinsOf(page), []);
+    assert.deepEqual(errors, []);
+    await page.close();
+  },
+);
+
+test(
+  'camera pop-up: the picture comes in its corner when a sensor goes off, a new one every second; the cross closes it; it goes after the duration',
+  { timeout: TIMEOUT },
+  async () => {
+    const config = house({
+      cameras: [
+        { entity: 'camera.door', position: [510, 240, 990], popup_on: ['binary_sensor.doorbell', 'event.ring'] },
+      ],
+      camera_popup_duration: 2,
+    });
+    const { page, errors } = await open(config, cameraStates());
+    const picture = () =>
+      page.evaluate(() => {
+        const box = window.__card.shadowRoot.querySelector('.f3d-camera_popup');
+        return (
+          box && {
+            src: box.querySelector('img').getAttribute('src'),
+            loaded: box.classList.contains('loaded'),
+            width: box.offsetWidth,
+          }
+        );
+      });
+    assert.equal(await boxOf(page, 'camera_popup'), null, 'nothing yet');
+    const proxy = () => server.hits('/api/camera_proxy/camera.door');
+    const before = proxy();
+    await page.evaluate(() => window.__setState('binary_sensor.doorbell', 'on'));
+    let box = await boxOf(page, 'camera_popup');
+    assert.equal(box.corner, 'bottom-right');
+    assert.equal(box.text, 'Front door Doorbell');
+    assert.match((await pinsOf(page))[0].classes, /\balert\b/, 'the icon blinks');
+    const first = await picture();
+    assert.ok(first.src.startsWith(DOOR_PICTURE + '&t='), first.src);
+    assert.equal(first.width, Math.round(Math.min(320, 860 * 0.45)), '45% of the card');
+    // A new picture every second, asked again of the camera proxy.
+    const later = await eventually(async () => {
+      const p = await picture();
+      return p.loaded && p.src !== first.src && proxy() - before >= 2 && p;
+    }, 'a new picture');
+    assert.ok(later.loaded, 'the picture arrived');
+    assert.notEqual(later.src, first.src, 'a new picture');
+    assert.ok(proxy() - before >= 2, 'asked again: ' + (proxy() - before));
+    // A tap on the picture opens the camera (its live).
+    await moreInfo(page);
+    await page.evaluate(() => window.__card.shadowRoot.querySelector('.f3d-camera_popup .picture').click());
+    assert.deepEqual(await page.evaluate(() => window.__moreInfo), ['camera.door']);
+    // The cross: closed, though the doorbell is still on; the pictures stop.
+    await page.evaluate(() => window.__card.shadowRoot.querySelector('.f3d-camera_popup .close').click());
+    assert.equal(await boxOf(page, 'camera_popup'), null);
+    assert.doesNotMatch((await pinsOf(page))[0].classes, /\balert\b/);
+    const closed = proxy();
+    await page.waitForTimeout(1500);
+    assert.ok(proxy() - closed <= 1, 'no more pictures');
+    // The doorbell event of another ring: back, then gone after the duration.
+    await page.evaluate(() => {
+      window.__setState('binary_sensor.doorbell', 'off');
+      window.__setState('event.ring', '2026-10-09T17:00:00.000+00:00');
+    });
+    box = await boxOf(page, 'camera_popup');
+    assert.equal(box.text, 'Front door Ring');
+    await eventually(async () => (await boxOf(page, 'camera_popup')) === null, 'gone after 2 s');
+    // camera_popup_show: no: no picture, the icon still blinks.
+    await page.evaluate(() => {
+      const card = window.__card;
+      card._config = { ...card._config, camera_popup_show: 'no' };
+      window.__setState('binary_sensor.doorbell', 'on');
+    });
+    assert.equal(await boxOf(page, 'camera_popup'), null);
+    assert.match((await pinsOf(page))[0].classes, /\balert\b/);
+    assert.deepEqual(errors, []);
+    await page.close();
+  },
+);
+
+test(
+  'card editor: the place of a camera picked with a tap on the model, with its level',
+  { timeout: TIMEOUT },
+  async () => {
+    const config = house({ objfile: 'levels.obj', cameras: [{ entity: 'camera.door' }] });
+    const { page, errors } = await open(config, cameraStates());
+    await page.evaluate(async () => {
+      const card = window.__card;
+      card.preview = true;
+      const ed = await card.constructor.getConfigElement();
+      ed.hass = window.__hass();
+      ed.setConfig(JSON.parse(JSON.stringify(card._config)));
+      document.body.append(ed);
+      await new Promise((r) => setTimeout(r, 300));
+      ed._mode = 'ready';
+      ed._edit('cameras', 0);
+      await ed.updateComplete;
+      ed._startPick({ path: ['cameras', 0, 'position'], point: true });
+      window.__ed = ed;
+    });
+    assert.equal(await page.evaluate(() => window.__card._pickMode), true);
+    // The top of the bed, on level 1, and what the card finds under that point of the page.
+    const [x, y] = await projected(page, [900, 55, 480]);
+    const expected = await page.evaluate(
+      ({ x, y }) => {
+        const card = window.__card;
+        const hit = card._getintersect(x, y).find((i) => i.object.name);
+        const p = card._bboxmodel.worldToLocal(hit.point.clone());
+        return { name: hit.object.name, position: [p.x, p.y, p.z].map(Math.round), level: hit.object.userData.level };
+      },
+      { x, y },
+    );
+    assert.deepEqual([expected.name, expected.level], ['bed', 1]);
+    await page.mouse.click(x, y);
+    const result = await page.evaluate(() => ({
+      camera: window.__ed._config.cameras[0],
+      picking: !!window.__ed._picking,
+      pickMode: window.__card._pickMode,
+      line: window.__ed._describe('cameras', window.__ed._config.cameras[0], 0).secondary,
+    }));
+    assert.deepEqual(result, {
+      camera: { entity: 'camera.door', position: expected.position, level: 1 },
+      picking: false,
+      pickMode: false,
+      line: 'On the map',
+    });
+    assert.deepEqual(errors, []);
+    await page.close();
+  },
+);
+
+test(
+  'night sky: stars and the moon come out after the sunset over the gradient, fewer with clouds; stars_show and moon_show',
+  { timeout: TIMEOUT },
+  async () => {
+    const skyStates = states({
+      'weather.home': { state: 'sunny', attributes: { temperature: 12, supported_features: 1 } },
+    });
+    const { page, errors } = await open(
+      house({ backgroundColor: 'sky', weather: 'weather.home', weather_count: 0 }),
+      skyStates,
+    );
+    const layers = () =>
+      page.evaluate(() => {
+        const css = window.__card._renderer.domElement.style.background;
+        return (css.match(/url\("data:image\/svg\+xml,[^"]*"\)[^,]*/g) || []).map((l) =>
+          l.includes('repeat-x') ? 'stars' : 'moon',
+        );
+      });
+    assert.deepEqual(await layers(), [], 'day: only the gradient');
+    await page.evaluate(() => window.__setState('sun.sun', 'below_horizon', { azimuth: 340, elevation: -20 }));
+    assert.deepEqual(await layers(), ['moon', 'stars'], 'night: the moon over the stars');
+    assert.ok(
+      (await page.evaluate(() => window.__card._renderer.domElement.style.background)).includes('linear-gradient'),
+      'over the gradient',
+    );
+    await page.evaluate(() => window.__setState('weather.home', 'cloudy', { cloud_coverage: 100 }));
+    assert.deepEqual(await layers(), ['moon'], 'overcast: no stars, a glow of the moon');
+    // sky_clouds: no: the sky ignores the clouds; moon_size: the width of the moon.
+    await page.evaluate(() => {
+      const card = window.__card;
+      card._config = { ...card._config, sky_clouds: 'no', moon_size: 60 };
+      window.__setState('sun.sun', 'below_horizon', { azimuth: 340, elevation: -20.5 });
+    });
+    assert.deepEqual(await layers(), ['moon', 'stars'], 'stars and moon through the clouds');
+    assert.ok(
+      (await page.evaluate(() => window.__card._renderer.domElement.style.background)).includes('167px 167px'),
+      'a moon of 60 px',
+    );
+    await page.evaluate(() => {
+      const card = window.__card;
+      card._config = { ...card._config, sky_clouds: 'yes', moon_size: undefined };
+    });
+    await page.evaluate(() => {
+      const card = window.__card;
+      window.__setState('weather.home', 'sunny', { cloud_coverage: 0 });
+      card._config = { ...card._config, moon_show: 'no' };
+      window.__setState('sun.sun', 'below_horizon', { azimuth: 340, elevation: -21 });
+    });
+    assert.deepEqual(await layers(), ['stars']);
+    await page.evaluate(() => {
+      const card = window.__card;
+      card._config = { ...card._config, stars_show: false };
+      window.__setState('sun.sun', 'below_horizon', { azimuth: 340, elevation: -22 });
+    });
+    assert.deepEqual(await layers(), []);
+    assert.deepEqual(errors, []);
+    await page.close();
+  },
+);
 
 // The colour of the picture at a point of the canvas (fractions of its width and height).
 const pixelAt = (page, fx, fy) =>
@@ -1367,604 +1712,1015 @@ const pixelAt = (page, fx, fy) =>
       canvas.height = source.height;
       const g = canvas.getContext('2d');
       g.drawImage(source, 0, 0);
-      return Array.from(g.getImageData(Math.round(fx * source.width), Math.round(fy * source.height), 1, 1).data.slice(0, 3));
+      return Array.from(
+        g.getImageData(Math.round(fx * source.width), Math.round(fy * source.height), 1, 1).data.slice(0, 3),
+      );
     },
     { fx, fy },
   );
 
-test('ground: a lawn under the house that takes the shadows of the sun, outside the model; or a colour', { timeout: TIMEOUT }, async () => {
-  const ground = (page) =>
-    page.evaluate(() => {
-      const card = window.__card;
-      const g = card._scene.getObjectByName('f3d_ground');
-      return {
-        sunBox: Math.round((card._sun.shadow.camera.right / card._modelRadius) * 10) / 10,
-        units: card._textureUnits.units,
-        ...(g && {
-          receiveShadow: g.receiveShadow,
-          castShadow: g.castShadow,
-          lawn: !!g.material.map,
-          color: '#' + g.material.color.getHexString(),
-          inModel: !!card._bboxmodel.getObjectById(g.id),
-          pickable: card._raycasting.includes(g),
-          listed: card._modelObjectNames().includes('f3d_ground'),
-          y: g.position.y, // the house stands on 0
-          wide: g.geometry.boundingSphere ? g.geometry.boundingSphere.radius >= 2.5 * card._modelRadius * 0.99 : true,
-        }),
-      };
+test(
+  'ground: a lawn under the house that takes the shadows of the sun, outside the model; or a colour',
+  { timeout: TIMEOUT },
+  async () => {
+    const ground = (page) =>
+      page.evaluate(() => {
+        const card = window.__card;
+        const g = card._scene.getObjectByName('f3d_ground');
+        return {
+          sunBox: Math.round((card._sun.shadow.camera.right / card._modelRadius) * 10) / 10,
+          units: card._textureUnits.units,
+          ...(g && {
+            receiveShadow: g.receiveShadow,
+            castShadow: g.castShadow,
+            lawn: !!g.material.map,
+            color: '#' + g.material.color.getHexString(),
+            inModel: !!card._bboxmodel.getObjectById(g.id),
+            pickable: card._raycasting.includes(g),
+            listed: card._modelObjectNames().includes('f3d_ground'),
+            y: g.position.y, // the house stands on 0
+            wide: g.geometry.boundingSphere ? g.geometry.boundingSphere.radius >= 2.5 * card._modelRadius * 0.99 : true,
+          }),
+        };
+      });
+    // Without ground: the background where the model ends.
+    let { page, errors } = await open(house());
+    const before = await pixelAt(page, 0.5, 0.04);
+    const without = await ground(page);
+    assert.deepEqual(without.sunBox, 1, 'the shadow of the sun fits the model');
+    await page.close();
+    assert.deepEqual(errors, []);
+
+    ({ page, errors } = await open(house({ ground: 'grass' })));
+    const lawn = await ground(page);
+    assert.deepEqual(lawn, {
+      sunBox: 1.5,
+      units: without.units,
+      receiveShadow: true,
+      castShadow: false,
+      lawn: true,
+      color: '#ffffff',
+      inModel: false,
+      pickable: false,
+      listed: false,
+      y: -0.5,
+      wide: true,
     });
-  // Without ground: the background where the model ends.
-  let { page, errors } = await open(house());
-  const before = await pixelAt(page, 0.5, 0.04);
-  const without = await ground(page);
-  assert.deepEqual(without.sunBox, 1, 'the shadow of the sun fits the model');
-  await page.close();
-  assert.deepEqual(errors, []);
+    const [r, g, b] = await pixelAt(page, 0.5, 0.04);
+    assert.ok(
+      g > r && g > b && g > before[1] + 10,
+      'far from the house, the lawn instead of the background: ' + [r, g, b] + ' / ' + before,
+    );
+    await page.close();
+    assert.deepEqual(errors, []);
 
-  ({ page, errors } = await open(house({ ground: 'grass' })));
-  const lawn = await ground(page);
-  assert.deepEqual(lawn, {
-    sunBox: 1.5,
-    units: without.units,
-    receiveShadow: true,
-    castShadow: false,
-    lawn: true,
-    color: '#ffffff',
-    inModel: false,
-    pickable: false,
-    listed: false,
-    y: -0.5,
-    wide: true,
-  });
-  const [r, g, b] = await pixelAt(page, 0.5, 0.04);
-  assert.ok(g > r && g > b && g > before[1] + 10, 'far from the house, the lawn instead of the background: ' + [r, g, b] + ' / ' + before);
-  await page.close();
-  assert.deepEqual(errors, []);
+    ({ page, errors } = await open(house({ ground: '#806040', shadow: 'no' })));
+    const colour = await ground(page);
+    assert.deepEqual([colour.color, colour.lawn, colour.receiveShadow], ['#806040', false, false]);
+    assert.deepEqual(errors, []);
+    await page.close();
+  },
+);
 
-  ({ page, errors } = await open(house({ ground: '#806040', shadow: 'no' })));
-  const colour = await ground(page);
-  assert.deepEqual([colour.color, colour.lawn, colour.receiveShadow], ['#806040', false, false]);
-  assert.deepEqual(errors, []);
-  await page.close();
-});
-
-test('boxes: weather and people fold to what matters and open with a tap, remembered on the device; on a phone a narrow box stays beside the menus', { timeout: TIMEOUT }, async () => {
-  const config = house({
-    rooms: [{ name: 'Living room', object_id: 'floor_living', temperature: 'sensor.t_living' }],
-    zoom_areas: [{ zoom: 'Living', camera_position: { x: -200, y: 500, z: 300 }, camera_target: { x: -200, y: 0, z: 0 } }],
-    status_show: 'yes',
-    weather: 'weather.home',
-    people: ['person.anna', 'person.marco', 'person.lucia'],
-    entities: lamps(2),
-  });
-  const boxStates = states({
-    'weather.home': { state: 'rainy', attributes: { temperature: 11, supported_features: 1 } },
-    'person.anna': { state: 'home', attributes: { friendly_name: 'Anna Rossi', entity_picture: PICTURE } },
-    'person.marco': { state: 'not_home', attributes: { friendly_name: 'Marco' } },
-    'person.lucia': { state: 'Work', attributes: { friendly_name: 'Lucia' } },
-  });
-  const { page, errors } = await open(config, boxStates);
-  await page.evaluate(() =>
-    window.__forecast('weather.home', [
-      { datetime: '2026-10-12T12:00:00+00:00', condition: 'sunny', temperature: 19, templow: 9 },
-      { datetime: '2026-10-13T12:00:00+00:00', condition: 'cloudy', temperature: 16, templow: 10 },
-    ]),
-  );
-  await moreInfo(page);
-  const tap = (selector) => page.evaluate((selector) => window.__card.shadowRoot.querySelector(selector).click(), selector);
-  const parts = () =>
-    page.evaluate(() => {
-      const root = window.__card.shadowRoot;
-      return {
-        avatars: root.querySelectorAll('.f3d-people .avatar').length,
-        names: root.querySelectorAll('.f3d-people .name').length,
-        forecasts: root.querySelectorAll('.f3d-weather .item').length,
-      };
+test(
+  'boxes: weather and people fold to what matters and open with a tap, remembered on the device; on a phone a narrow box stays beside the menus',
+  { timeout: TIMEOUT },
+  async () => {
+    const config = house({
+      rooms: [{ name: 'Living room', object_id: 'floor_living', temperature: 'sensor.t_living' }],
+      zoom_areas: [
+        { zoom: 'Living', camera_position: { x: -200, y: 500, z: 300 }, camera_target: { x: -200, y: 0, z: 0 } },
+      ],
+      status_show: 'yes',
+      weather: 'weather.home',
+      people: ['person.anna', 'person.marco', 'person.lucia'],
+      entities: lamps(2),
     });
-  assert.deepEqual(await parts(), { avatars: 3, names: 3, forecasts: 2 });
-  // The chevrons fold them: the weather now, the faces; nothing opens.
-  await tap('.f3d-weather .fold');
-  await tap('.f3d-people .fold');
-  let weather = await boxOf(page, 'weather');
-  let people = await boxOf(page, 'people');
-  assert.match(weather.classes, /\bcollapsed\b/);
-  assert.match(people.classes, /\bcollapsed\b/);
-  assert.equal(weather.text, '11°');
-  assert.deepEqual(await parts(), { avatars: 3, names: 0, forecasts: 0 });
-  assert.deepEqual(await page.evaluate(() => window.__moreInfo), []);
-  // Remembered on this device: a card that reads it again starts folded.
-  assert.deepEqual(await page.evaluate(() => JSON.parse(localStorage.getItem('floor3d-card-collapsed:/local/floor3d/home.obj'))), ['weather', 'people']);
-  await page.evaluate(() => {
-    window.__card._collapsed = undefined;
-    window.__card._renderBoxes(true);
-  });
-  assert.match((await boxOf(page, 'weather')).classes, /\bcollapsed\b/);
-  // A tap on a folded box opens it, and only that; open, a tap on the weather opens the entity.
-  await tap('.f3d-weather');
-  weather = await boxOf(page, 'weather');
-  assert.doesNotMatch(weather.classes, /\bcollapsed\b/);
-  assert.equal((await parts()).forecasts, 2);
-  assert.deepEqual(await page.evaluate(() => window.__moreInfo), []);
-  await tap('.f3d-weather');
-  assert.deepEqual(await page.evaluate(() => window.__moreInfo), ['weather.home']);
-  await tap('.f3d-people');
-  assert.equal((await parts()).names, 3);
-
-  // On a phone: the status box stays at the top beside the menus, the people (wider) under it.
-  const rects = () =>
-    page.evaluate(() => {
-      const c = window.__card;
-      const r = (el) => {
-        const b = el.getBoundingClientRect();
-        return [b.left, b.top, b.right, b.bottom].map(Math.round);
-      };
-      return { menus: r(c._zoommenu), status: r(c.shadowRoot.querySelector('.f3d-status')), people: r(c.shadowRoot.querySelector('.f3d-people')) };
+    const boxStates = states({
+      'weather.home': { state: 'rainy', attributes: { temperature: 11, supported_features: 1 } },
+      'person.anna': { state: 'home', attributes: { friendly_name: 'Anna Rossi', entity_picture: PICTURE } },
+      'person.marco': { state: 'not_home', attributes: { friendly_name: 'Marco' } },
+      'person.lucia': { state: 'Work', attributes: { friendly_name: 'Lucia' } },
     });
-  const overlap = (a, b) => a[0] < b[2] && b[0] < a[2] && a[1] < b[3] && b[1] < a[3];
-  await page.addStyleTag({ content: '#wrap { width: 420px !important; }' });
-  await resized(page);
-  let r = await rects();
-  assert.equal(r.status[1], r.menus[1], 'the status box at the height of the menus: ' + JSON.stringify(r));
-  assert.ok(!overlap(r.status, r.menus) && !overlap(r.people, r.menus) && r.people[1] > r.status[3], JSON.stringify(r));
-  // Narrower, the status box meets the menus too: it goes under them.
-  await page.addStyleTag({ content: '#wrap { width: 300px !important; }' });
-  await resized(page);
-  r = await rects();
-  assert.ok(r.status[1] >= r.menus[3], 'under the menus: ' + JSON.stringify(r));
-  assert.ok(!overlap(r.status, r.menus) && !overlap(r.people, r.menus), JSON.stringify(r));
-  assert.deepEqual(errors, []);
-  await page.close();
-});
+    const { page, errors } = await open(config, boxStates);
+    await page.evaluate(() =>
+      window.__forecast('weather.home', [
+        { datetime: '2026-10-12T12:00:00+00:00', condition: 'sunny', temperature: 19, templow: 9 },
+        { datetime: '2026-10-13T12:00:00+00:00', condition: 'cloudy', temperature: 16, templow: 10 },
+      ]),
+    );
+    await moreInfo(page);
+    const tap = (selector) =>
+      page.evaluate((selector) => window.__card.shadowRoot.querySelector(selector).click(), selector);
+    const parts = () =>
+      page.evaluate(() => {
+        const root = window.__card.shadowRoot;
+        return {
+          avatars: root.querySelectorAll('.f3d-people .avatar').length,
+          names: root.querySelectorAll('.f3d-people .name').length,
+          forecasts: root.querySelectorAll('.f3d-weather .item').length,
+        };
+      });
+    assert.deepEqual(await parts(), { avatars: 3, names: 3, forecasts: 2 });
+    // The chevrons fold them: the weather now, the faces; nothing opens.
+    await tap('.f3d-weather .fold');
+    await tap('.f3d-people .fold');
+    let weather = await boxOf(page, 'weather');
+    let people = await boxOf(page, 'people');
+    assert.match(weather.classes, /\bcollapsed\b/);
+    assert.match(people.classes, /\bcollapsed\b/);
+    assert.equal(weather.text, '11°');
+    assert.deepEqual(await parts(), { avatars: 3, names: 0, forecasts: 0 });
+    assert.deepEqual(await page.evaluate(() => window.__moreInfo), []);
+    // Remembered on this device: a card that reads it again starts folded.
+    assert.deepEqual(
+      await page.evaluate(() => JSON.parse(localStorage.getItem('floor3d-card-collapsed:/local/floor3d/home.obj'))),
+      ['weather', 'people'],
+    );
+    await page.evaluate(() => {
+      window.__card._collapsed = undefined;
+      window.__card._renderBoxes(true);
+    });
+    assert.match((await boxOf(page, 'weather')).classes, /\bcollapsed\b/);
+    // A tap on a folded box opens it, and only that; open, a tap on the weather opens the entity.
+    await tap('.f3d-weather');
+    weather = await boxOf(page, 'weather');
+    assert.doesNotMatch(weather.classes, /\bcollapsed\b/);
+    assert.equal((await parts()).forecasts, 2);
+    assert.deepEqual(await page.evaluate(() => window.__moreInfo), []);
+    await tap('.f3d-weather');
+    assert.deepEqual(await page.evaluate(() => window.__moreInfo), ['weather.home']);
+    await tap('.f3d-people');
+    assert.equal((await parts()).names, 3);
+
+    // On a phone: the status box stays at the top beside the menus, the people (wider) under it.
+    const rects = () =>
+      page.evaluate(() => {
+        const c = window.__card;
+        const r = (el) => {
+          const b = el.getBoundingClientRect();
+          return [b.left, b.top, b.right, b.bottom].map(Math.round);
+        };
+        return {
+          menus: r(c._zoommenu),
+          status: r(c.shadowRoot.querySelector('.f3d-status')),
+          people: r(c.shadowRoot.querySelector('.f3d-people')),
+        };
+      });
+    const overlap = (a, b) => a[0] < b[2] && b[0] < a[2] && a[1] < b[3] && b[1] < a[3];
+    await page.addStyleTag({ content: '#wrap { width: 420px !important; }' });
+    await resized(page);
+    let r = await rects();
+    assert.equal(r.status[1], r.menus[1], 'the status box at the height of the menus: ' + JSON.stringify(r));
+    assert.ok(
+      !overlap(r.status, r.menus) && !overlap(r.people, r.menus) && r.people[1] > r.status[3],
+      JSON.stringify(r),
+    );
+    // Narrower, the status box meets the menus too: it goes under them.
+    await page.addStyleTag({ content: '#wrap { width: 300px !important; }' });
+    await resized(page);
+    r = await rects();
+    assert.ok(r.status[1] >= r.menus[3], 'under the menus: ' + JSON.stringify(r));
+    assert.ok(!overlap(r.status, r.menus) && !overlap(r.people, r.menus), JSON.stringify(r));
+    assert.deepEqual(errors, []);
+    await page.close();
+  },
+);
 
 // --- 2.11.3: issue #25 ---------------------------------------------------------------------------
 
-test('ground_floor_level: the ground at the floor of the ground floor, hidden when only the levels under it are shown', { timeout: TIMEOUT }, async () => {
-  const ground = (page) =>
-    page.evaluate(() => {
-      const g = window.__card._scene.getObjectByName('f3d_ground');
-      return { y: Math.round(g.position.y * 10) / 10, visible: g.visible };
-    });
-  // basement.obj: the basement on level 0, 270 deep, its stairs up through the ground floor (290);
-  // the house on level 1.
-  let { page, errors } = await open(house({ objfile: 'basement.obj', ground: 'grass', ground_floor_level: '270' }));
-  assert.deepEqual(await ground(page), { y: 269.5, visible: true }, 'the value of the option, not its name');
-  await page.evaluate(() => window.__card._setVisibleLevel(0));
-  assert.equal((await ground(page)).visible, false, 'only the basement: no ground over it, though its stairs reach above it');
-  await page.evaluate(() => window.__card._setVisibleLevel(1));
-  assert.equal((await ground(page)).visible, true);
-  await page.evaluate(() => window.__card._toggleVisibleLevel(1));
-  assert.equal((await ground(page)).visible, false, 'the buttons of the levels too');
-  await page.evaluate(() => window.__card._setVisibleLevel(-1));
-  assert.equal((await ground(page)).visible, true);
-  assert.deepEqual(errors, []);
-  await page.close();
-
-  ({ page, errors } = await open(house({ ground: 'grass' })));
-  assert.deepEqual(await ground(page), { y: -0.5, visible: true }, 'without it: just under the model');
-  assert.deepEqual(errors, []);
-  await page.close();
-});
-
-test('cameras: the icons over the model also with overlay: yes, under the menus; a tap on an icon is not a tap on the model', { timeout: TIMEOUT }, async () => {
-  const config = house({
-    overlay: 'yes',
-    click: 'yes',
-    zoom_areas: [{ zoom: 'Living', camera_position: { x: -200, y: 500, z: 300 }, camera_target: { x: -200, y: 0, z: 0 } }],
-    entities: [{ entity: 'light.lamp_1', type3d: 'light', object_id: 'table', light: { lumens: 300 } }],
-    cameras: [{ entity: 'camera.door', position: [510, 80, 650] }],
-  });
-  const { page, errors } = await open(config, cameraStates());
-  const [pin] = await pinsOf(page);
-  assert.ok(pin && pin.visible, 'shown');
-  // What is on top at the middle of the icon: the icon (with overlay: yes the model covered it).
-  const onTop = await page.evaluate(({ x, y }) => {
-    const el = window.__card.shadowRoot.elementFromPoint(x, y);
-    return el && (el.closest('.f3d-pin') ? 'pin' : el.localName);
-  }, pin);
-  assert.equal(onTop, 'pin');
-  // The layer of the icons comes before the menus in the box of the model, after a reload too.
-  const order = () =>
-    page.evaluate(() => {
-      const card = window.__card;
-      const kids = [...card._content.children];
-      return { pins: kids.indexOf(card._pinsEl), canvas: kids.indexOf(card._renderer.domElement), levelbar: kids.indexOf(card._levelbar) };
-    });
-  let o = await order();
-  assert.ok(o.pins === 0 && o.levelbar > 0 && o.canvas > 0, JSON.stringify(o));
-  // A tap on the icon opens the camera; the light of the table under it is not switched.
-  await moreInfo(page);
-  await page.mouse.click(pin.x, pin.y);
-  assert.deepEqual(await page.evaluate(() => window.__moreInfo), ['camera.door']);
-  assert.deepEqual(await page.evaluate(() => window.__calls), []);
-  await page.evaluate(() => {
-    window.__before = window.__card._renderer;
-    window.__card.rerender(); // the refresh button of the editor: the box of the model is emptied
-  });
-  const back = () => {
-    const card = window.__card;
-    return card._renderer && card._renderer !== window.__before && card._modelready && card._pinsEl && card._pinsEl.isConnected;
-  };
-  await until(page, back, null, 'the icons come back after a reload', 120000);
-  o = await order();
-  assert.equal(o.pins, 0, JSON.stringify(o));
-  assert.deepEqual(errors, []);
-  await page.close();
-});
-
-test('info boxes: over their object once the model is centred, hidden with its level, with the font and colours of the info block', { timeout: TIMEOUT }, async () => {
-  const config = house({
-    objfile: 'levels.obj',
-    entities: [
-      { entity: 'sensor.t_living', type3d: 'info', object_id: 'table', info: { size: 40, textfgcolor: 'yellow', textbgcolor: 'rgb(0, 0, 255)' } },
-      // A position of its own (a point of the scene): it still hides with the level of its object.
-      { entity: 'sensor.t_living', type3d: 'info', object_id: 'bed', info: { position: [100, 300, 100] } },
-    ],
-  });
-  const { page, errors } = await open(config);
-  const sprites = () =>
-    page.evaluate(() => {
-      const card = window.__card;
-      return card._sprites.map((name) => {
-        const s = card._scene.getObjectByName(name);
-        const canvas = s.material.map.image;
-        const corner = Array.from(canvas.getContext('2d').getImageData(0, 0, 1, 1).data);
-        return { position: s.position.toArray().map(Math.round), visible: s.visible, level: s.userData.level, corner };
+test(
+  'ground_floor_level: the ground at the floor of the ground floor, hidden when only the levels under it are shown',
+  { timeout: TIMEOUT },
+  async () => {
+    const ground = (page) =>
+      page.evaluate(() => {
+        const g = window.__card._scene.getObjectByName('f3d_ground');
+        return { y: Math.round(g.position.y * 10) / 10, visible: g.visible };
       });
-    });
-  const table = await worldBox(page, 'table');
-  let [onTable, onBed] = await sprites();
-  const middle = (i) => Math.round((table[0][i] + table[1][i]) / 2);
-  assert.deepEqual(onTable.position, [middle(0), Math.round(table[1][1] + 40 / 2 + 10), middle(2)], 'over the table, where it is now');
-  assert.deepEqual(onTable.corner, [0, 0, 255, 255], 'the background of the info block');
-  assert.deepEqual(onBed.position, [100, 300, 100]);
-  assert.deepEqual([onTable.level, onBed.level], [0, 1]);
-  await page.evaluate(() => window.__card._setVisibleLevel(0));
-  [onTable, onBed] = await sprites();
-  assert.deepEqual([onTable.visible, onBed.visible], [true, false], 'the bedroom hidden: its box too');
-  await page.evaluate(() => window.__card._toggleVisibleLevel(0));
-  [onTable, onBed] = await sprites();
-  assert.deepEqual([onTable.visible, onBed.visible], [false, false]);
-  // A new state: drawn again with the same colours, and still hidden.
-  await page.evaluate(() => window.__setState('sensor.t_living', '22.5'));
-  [onTable] = await sprites();
-  assert.deepEqual([onTable.visible, onTable.corner], [false, [0, 0, 255, 255]]);
-  // The initial view centres the model as the loading did: the boxes stay over their objects.
-  await page.evaluate(() => window.__card._goToView(-1, false));
-  assert.deepEqual(await worldBox(page, 'table'), table);
-  assert.deepEqual(errors, []);
-  await page.close();
-});
-
-test('text: font and colours from the text block (also those the editor wrote on the entity), flat on the screen, readable, the right way up', { timeout: TIMEOUT }, async () => {
-  // The texture of the text on tv_screen, and the u, v at the corners of its front (facing the room, +z).
-  const screen = (page) =>
-    page.evaluate(() => {
-      const card = window.__card;
-      const mesh = card._scene.getObjectByName('tv_screen');
-      mesh.updateWorldMatrix(true, false);
-      const picture = mesh.material.map.image;
-      const ctx = picture.getContext('2d');
-      const px = (x, y) => Array.from(ctx.getImageData(x, y, 1, 1).data);
-      const position = mesh.geometry.getAttribute('position');
-      const uv = mesh.geometry.getAttribute('uv');
-      const v = new card._camera.position.constructor();
-      const corners = {};
-      for (let k = 0; k < position.count; k++) {
-        v.fromBufferAttribute(position, k).applyMatrix4(mesh.matrixWorld);
-        if (Math.round(v.z + 700) !== 429) continue; // the front
-        const key = (Math.round(v.x + 700) === 420 ? 'left' : 'right') + '-' + (Math.round(v.y) === 205 ? 'top' : 'bottom');
-        corners[key] = [uv.getX(k), uv.getY(k)].map((n) => Math.round(n * 100) / 100);
-      }
-      return { aspect: Math.round((picture.width / picture.height) * 100) / 100, corner: px(0, 0), corners, flipY: mesh.material.map.flipY };
-    });
-  const text = { entity: 'sensor.t_living', type3d: 'text', object_id: 'tv_screen' };
-  let { page, errors } = await open(house({ entities: [{ ...text, text: { textbgcolor: 'rgb(0, 0, 255)', textfgcolor: 'yellow', span: 50 } }] }));
-  let s = await screen(page);
-  assert.equal(s.aspect, Math.round((200 / 110) * 100) / 100, 'the shape of the screen: the text not stretched');
-  assert.deepEqual(s.corner, [0, 0, 255, 255], 'the background colour');
-  assert.deepEqual(s.corners, { 'left-top': [0, 1], 'right-top': [1, 1], 'left-bottom': [0, 0], 'right-bottom': [1, 0] }, 'readable from the room');
-  assert.equal(s.flipY, true);
-  assert.deepEqual(errors, []);
-  await page.close();
-
-  // Font and colours at the level of the entity, as the editor of 2.4 to 2.11.2 wrote them.
-  ({ page, errors } = await open(house({ entities: [{ ...text, textbgcolor: 'rgb(0, 0, 255)', textfgcolor: 'yellow', text: {} }] })));
-  s = await screen(page);
-  assert.deepEqual(s.corner, [0, 0, 255, 255], 'read from the text block they went into');
-  // A new state keeps them (_updatetext drew it with the defaults).
-  await page.evaluate(() => window.__setState('sensor.t_living', '23.5'));
-  assert.deepEqual((await screen(page)).corner, [0, 0, 255, 255]);
-  assert.deepEqual(errors, []);
-  await page.close();
-
-  // The same in a GLB, and mapping: model on the mapping of the model.
-  ({ page, errors } = await open(house({ objfile: 'home.glb', mtlfile: undefined, entities: [{ ...text, text: { textbgcolor: 'rgb(0, 0, 255)' } }] })));
-  s = await screen(page);
-  assert.deepEqual(s.corners, { 'left-top': [0, 1], 'right-top': [1, 1], 'left-bottom': [0, 0], 'right-bottom': [1, 0] });
-  assert.deepEqual(errors, []);
-  await page.close();
-  ({ page, errors } = await open(house({ objfile: 'home.glb', mtlfile: undefined, entities: [{ ...text, text: { mapping: 'model' } }] })));
-  s = await screen(page);
-  assert.deepEqual(s.corners, { 'left-top': [0, 0], 'right-top': [1, 0], 'left-bottom': [0, 1], 'right-bottom': [1, 1] }, 'the UV of the GLB');
-  assert.equal(s.flipY, false);
-  assert.deepEqual(errors, []);
-  await page.close();
-});
-
-test('rotate: angle_entity turns the object to the angle of the sensor, the shorter way, and stops there', { timeout: TIMEOUT }, async () => {
-  const vane = { entity: 'sensor.wind', type3d: 'rotate', object_id: 'table', rotate: { axis: 'y', round_per_second: 1, angle_entity: 'sensor.direction' } };
-  const { page, errors } = await open(house({ entities: [vane] }), states({ 'sensor.wind': { state: '12', attributes: {} }, 'sensor.direction': { state: '90', attributes: { unit_of_measurement: '°' } } }));
-  const angle = (degrees) => ({ degrees });
-  const at = (degrees) =>
-    until(
-      page,
-      ({ degrees }) => {
-        const card = window.__card;
-        const r = card._scene.getObjectByName('table').rotation.y;
-        // Clockwise seen from above: minus; a whole turn looks the same.
-        const d = ((((-r * 180) / Math.PI - degrees) % 360) + 540) % 360 - 180;
-        return Math.abs(d) < 0.5 && !card._to_animate;
-      },
-      angle(degrees),
-      'turned to ' + degrees + ' and stopped',
+    // basement.obj: the basement on level 0, 270 deep, its stairs up through the ground floor (290);
+    // the house on level 1.
+    let { page, errors } = await open(house({ objfile: 'basement.obj', ground: 'grass', ground_floor_level: '270' }));
+    assert.deepEqual(await ground(page), { y: 269.5, visible: true }, 'the value of the option, not its name');
+    await page.evaluate(() => window.__card._setVisibleLevel(0));
+    assert.equal(
+      (await ground(page)).visible,
+      false,
+      'only the basement: no ground over it, though its stairs reach above it',
     );
-  await at(90);
-  // A new angle: it turns there in a moment (a quarter turn at 1 turn a second), then stops.
-  await page.evaluate(() => window.__setState('sensor.direction', '180'));
-  await at(180);
-  await page.evaluate(() => window.__setState('sensor.direction', '350'));
-  await at(350);
-  // From 350 to 10: through 0, never through 180.
-  await page.evaluate(() => {
-    window.__seen = [];
-    const card = window.__card;
-    const loop = () => {
-      window.__seen.push((-card._scene.getObjectByName('table').rotation.y * 180) / Math.PI);
-      if (window.__seen.length < 200) requestAnimationFrame(loop);
-    };
-    loop();
-    window.__setState('sensor.direction', '10');
-  });
-  await at(10);
-  const far = await page.evaluate(() => window.__seen.some((d) => {
-    const n = ((d % 360) + 360) % 360;
-    return n > 20 && n < 340;
-  }));
-  assert.equal(far, false, 'the shorter way');
-  // Unavailable: it stays where it is.
-  await page.evaluate(() => window.__setState('sensor.direction', 'unavailable'));
-  await at(10);
-  assert.deepEqual(errors, []);
-  await page.close();
-});
+    await page.evaluate(() => window.__card._setVisibleLevel(1));
+    assert.equal((await ground(page)).visible, true);
+    await page.evaluate(() => window.__card._toggleVisibleLevel(1));
+    assert.equal((await ground(page)).visible, false, 'the buttons of the levels too');
+    await page.evaluate(() => window.__card._setVisibleLevel(-1));
+    assert.equal((await ground(page)).visible, true);
+    assert.deepEqual(errors, []);
+    await page.close();
 
-test('card editor: while an object group is open nothing goes to Home Assistant (picked, chosen in the menu, a tap on the editor); it goes when it is closed, or with a tap elsewhere', { timeout: TIMEOUT }, async () => {
-  const config = house({ object_groups: [{ object_group: 'furniture', objects: [] }] });
-  const { page, errors } = await open(config);
-  await page.evaluate(async () => {
-    const card = window.__card;
-    card.preview = true;
-    const ed = await card.constructor.getConfigElement();
-    ed.hass = window.__hass();
-    ed.setConfig(JSON.parse(JSON.stringify(card._config)));
-    window.__sent = [];
-    ed.addEventListener('config-changed', (ev) => window.__sent.push(ev.detail.config));
-    document.body.append(ed);
-    await new Promise((r) => setTimeout(r, 300));
-    ed._mode = 'ready';
-    ed._edit('object_groups', 0);
-    await ed.updateComplete;
-    ed._startPick({ path: ['object_groups', 0, 'objects'], add: true });
-    window.__ed = ed;
-  });
-  const objects = () => page.evaluate(() => (window.__ed._config.object_groups[0].objects || []).map((o) => o.object_id || o));
-  for (const [name, point] of [['table', [510, 80, 650]], ['bed', [950, 55, 550]]]) {
-    const [x, y] = await projected(page, point);
-    await page.mouse.click(x, y);
-    await until(page, (name) => (window.__ed._config.object_groups[0].objects || []).some((o) => (o.object_id || o) === name), name, name + ' added');
-  }
-  // The end of the picking, one more from the menu, a tap on the editor, leaving a field.
-  await page.evaluate(async () => {
-    const ed = window.__ed;
-    ed._startPick({ path: ['object_groups', 0, 'objects'], add: true });
-    const group = ed._config.object_groups[0];
-    ed._setItem('object_groups', 0, { ...group, objects: [...group.objects, { object_id: 'sofa' }] });
-    ed.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, composed: true }));
-    ed.dispatchEvent(new FocusEvent('focusout', { bubbles: true, composed: true }));
-    await ed.updateComplete;
-  });
-  assert.deepEqual(await objects(), ['table', 'bed', 'sofa']);
-  // Longer than the delay of the editor (1 s): nothing sent, the preview as it was.
-  await page.waitForTimeout(1300);
-  assert.deepEqual(await page.evaluate(() => window.__sent), []);
-  assert.deepEqual(await page.evaluate(() => window.__card._highlightHelpers.length), 3, 'the objects of the group outlined');
-  // Closed: it goes, once.
-  await page.evaluate(async () => {
-    window.__ed._back();
-    await window.__ed.updateComplete;
-  });
-  let sent = await page.evaluate(() => window.__sent);
-  assert.equal(sent.length, 1);
-  assert.deepEqual(sent[0].object_groups, [{ object_group: 'furniture', objects: ['table', 'bed', 'sofa'] }]);
-  // Open again: a tap outside the editor and the preview (the Save button of the dialog) sends it.
-  await page.evaluate(async () => {
-    const ed = window.__ed;
-    ed._edit('object_groups', 0);
-    await ed.updateComplete;
-    const group = ed._config.object_groups[0];
-    ed._setItem('object_groups', 0, { ...group, objects: group.objects.slice(0, 1) });
-    document.body.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, composed: true }));
-  });
-  sent = await page.evaluate(() => window.__sent);
-  assert.equal(sent.length, 2);
-  assert.deepEqual(sent[1].object_groups, [{ object_group: 'furniture', objects: ['table'] }]);
-  assert.deepEqual(errors, []);
-  await page.close();
-});
+    ({ page, errors } = await open(house({ ground: 'grass' })));
+    assert.deepEqual(await ground(page), { y: -0.5, visible: true }, 'without it: just under the model');
+    assert.deepEqual(errors, []);
+    await page.close();
+  },
+);
+
+test(
+  'cameras: the icons over the model also with overlay: yes, under the menus; a tap on an icon is not a tap on the model',
+  { timeout: TIMEOUT },
+  async () => {
+    const config = house({
+      overlay: 'yes',
+      click: 'yes',
+      zoom_areas: [
+        { zoom: 'Living', camera_position: { x: -200, y: 500, z: 300 }, camera_target: { x: -200, y: 0, z: 0 } },
+      ],
+      entities: [{ entity: 'light.lamp_1', type3d: 'light', object_id: 'table', light: { lumens: 300 } }],
+      cameras: [{ entity: 'camera.door', position: [510, 80, 650] }],
+    });
+    const { page, errors } = await open(config, cameraStates());
+    const [pin] = await pinsOf(page);
+    assert.ok(pin && pin.visible, 'shown');
+    // What is on top at the middle of the icon: the icon (with overlay: yes the model covered it).
+    const onTop = await page.evaluate(({ x, y }) => {
+      const el = window.__card.shadowRoot.elementFromPoint(x, y);
+      return el && (el.closest('.f3d-pin') ? 'pin' : el.localName);
+    }, pin);
+    assert.equal(onTop, 'pin');
+    // The layer of the icons comes before the menus in the box of the model, after a reload too.
+    const order = () =>
+      page.evaluate(() => {
+        const card = window.__card;
+        const kids = [...card._content.children];
+        return {
+          pins: kids.indexOf(card._pinsEl),
+          canvas: kids.indexOf(card._renderer.domElement),
+          levelbar: kids.indexOf(card._levelbar),
+        };
+      });
+    let o = await order();
+    assert.ok(o.pins === 0 && o.levelbar > 0 && o.canvas > 0, JSON.stringify(o));
+    // A tap on the icon opens the camera; the light of the table under it is not switched.
+    await moreInfo(page);
+    await page.mouse.click(pin.x, pin.y);
+    assert.deepEqual(await page.evaluate(() => window.__moreInfo), ['camera.door']);
+    assert.deepEqual(await page.evaluate(() => window.__calls), []);
+    await page.evaluate(() => {
+      window.__before = window.__card._renderer;
+      window.__card.rerender(); // the refresh button of the editor: the box of the model is emptied
+    });
+    const back = () => {
+      const card = window.__card;
+      return (
+        card._renderer &&
+        card._renderer !== window.__before &&
+        card._modelready &&
+        card._pinsEl &&
+        card._pinsEl.isConnected
+      );
+    };
+    await until(page, back, null, 'the icons come back after a reload', 120000);
+    o = await order();
+    assert.equal(o.pins, 0, JSON.stringify(o));
+    assert.deepEqual(errors, []);
+    await page.close();
+  },
+);
+
+test(
+  'info boxes: over their object once the model is centred, hidden with its level, with the font and colours of the info block',
+  { timeout: TIMEOUT },
+  async () => {
+    const config = house({
+      objfile: 'levels.obj',
+      entities: [
+        {
+          entity: 'sensor.t_living',
+          type3d: 'info',
+          object_id: 'table',
+          info: { size: 40, textfgcolor: 'yellow', textbgcolor: 'rgb(0, 0, 255)' },
+        },
+        // A position of its own (a point of the scene): it still hides with the level of its object.
+        { entity: 'sensor.t_living', type3d: 'info', object_id: 'bed', info: { position: [100, 300, 100] } },
+      ],
+    });
+    const { page, errors } = await open(config);
+    const sprites = () =>
+      page.evaluate(() => {
+        const card = window.__card;
+        return card._sprites.map((name) => {
+          const s = card._scene.getObjectByName(name);
+          const canvas = s.material.map.image;
+          const corner = Array.from(canvas.getContext('2d').getImageData(0, 0, 1, 1).data);
+          return {
+            position: s.position.toArray().map(Math.round),
+            visible: s.visible,
+            level: s.userData.level,
+            corner,
+          };
+        });
+      });
+    const table = await worldBox(page, 'table');
+    let [onTable, onBed] = await sprites();
+    const middle = (i) => Math.round((table[0][i] + table[1][i]) / 2);
+    assert.deepEqual(
+      onTable.position,
+      [middle(0), Math.round(table[1][1] + 40 / 2 + 10), middle(2)],
+      'over the table, where it is now',
+    );
+    assert.deepEqual(onTable.corner, [0, 0, 255, 255], 'the background of the info block');
+    assert.deepEqual(onBed.position, [100, 300, 100]);
+    assert.deepEqual([onTable.level, onBed.level], [0, 1]);
+    await page.evaluate(() => window.__card._setVisibleLevel(0));
+    [onTable, onBed] = await sprites();
+    assert.deepEqual([onTable.visible, onBed.visible], [true, false], 'the bedroom hidden: its box too');
+    await page.evaluate(() => window.__card._toggleVisibleLevel(0));
+    [onTable, onBed] = await sprites();
+    assert.deepEqual([onTable.visible, onBed.visible], [false, false]);
+    // A new state: drawn again with the same colours, and still hidden.
+    await page.evaluate(() => window.__setState('sensor.t_living', '22.5'));
+    [onTable] = await sprites();
+    assert.deepEqual([onTable.visible, onTable.corner], [false, [0, 0, 255, 255]]);
+    // The initial view centres the model as the loading did: the boxes stay over their objects.
+    await page.evaluate(() => window.__card._goToView(-1, false));
+    assert.deepEqual(await worldBox(page, 'table'), table);
+    assert.deepEqual(errors, []);
+    await page.close();
+  },
+);
+
+test(
+  'text: font and colours from the text block (also those the editor wrote on the entity), flat on the screen, readable, the right way up',
+  { timeout: TIMEOUT },
+  async () => {
+    // The texture of the text on tv_screen, and the u, v at the corners of its front (facing the room, +z).
+    const screen = (page) =>
+      page.evaluate(() => {
+        const card = window.__card;
+        const mesh = card._scene.getObjectByName('tv_screen');
+        mesh.updateWorldMatrix(true, false);
+        const picture = mesh.material.map.image;
+        const ctx = picture.getContext('2d');
+        const px = (x, y) => Array.from(ctx.getImageData(x, y, 1, 1).data);
+        const position = mesh.geometry.getAttribute('position');
+        const uv = mesh.geometry.getAttribute('uv');
+        const v = new card._camera.position.constructor();
+        const corners = {};
+        for (let k = 0; k < position.count; k++) {
+          v.fromBufferAttribute(position, k).applyMatrix4(mesh.matrixWorld);
+          if (Math.round(v.z + 700) !== 429) continue; // the front
+          const key =
+            (Math.round(v.x + 700) === 420 ? 'left' : 'right') + '-' + (Math.round(v.y) === 205 ? 'top' : 'bottom');
+          corners[key] = [uv.getX(k), uv.getY(k)].map((n) => Math.round(n * 100) / 100);
+        }
+        return {
+          aspect: Math.round((picture.width / picture.height) * 100) / 100,
+          corner: px(0, 0),
+          corners,
+          flipY: mesh.material.map.flipY,
+        };
+      });
+    const text = { entity: 'sensor.t_living', type3d: 'text', object_id: 'tv_screen' };
+    let { page, errors } = await open(
+      house({ entities: [{ ...text, text: { textbgcolor: 'rgb(0, 0, 255)', textfgcolor: 'yellow', span: 50 } }] }),
+    );
+    let s = await screen(page);
+    assert.equal(s.aspect, Math.round((200 / 110) * 100) / 100, 'the shape of the screen: the text not stretched');
+    assert.deepEqual(s.corner, [0, 0, 255, 255], 'the background colour');
+    assert.deepEqual(
+      s.corners,
+      { 'left-top': [0, 1], 'right-top': [1, 1], 'left-bottom': [0, 0], 'right-bottom': [1, 0] },
+      'readable from the room',
+    );
+    assert.equal(s.flipY, true);
+    assert.deepEqual(errors, []);
+    await page.close();
+
+    // Font and colours at the level of the entity, as the editor of 2.4 to 2.11.2 wrote them.
+    ({ page, errors } = await open(
+      house({ entities: [{ ...text, textbgcolor: 'rgb(0, 0, 255)', textfgcolor: 'yellow', text: {} }] }),
+    ));
+    s = await screen(page);
+    assert.deepEqual(s.corner, [0, 0, 255, 255], 'read from the text block they went into');
+    // A new state keeps them (_updatetext drew it with the defaults).
+    await page.evaluate(() => window.__setState('sensor.t_living', '23.5'));
+    assert.deepEqual((await screen(page)).corner, [0, 0, 255, 255]);
+    assert.deepEqual(errors, []);
+    await page.close();
+
+    // The same in a GLB, and mapping: model on the mapping of the model.
+    ({ page, errors } = await open(
+      house({
+        objfile: 'home.glb',
+        mtlfile: undefined,
+        entities: [{ ...text, text: { textbgcolor: 'rgb(0, 0, 255)' } }],
+      }),
+    ));
+    s = await screen(page);
+    assert.deepEqual(s.corners, {
+      'left-top': [0, 1],
+      'right-top': [1, 1],
+      'left-bottom': [0, 0],
+      'right-bottom': [1, 0],
+    });
+    assert.deepEqual(errors, []);
+    await page.close();
+    ({ page, errors } = await open(
+      house({ objfile: 'home.glb', mtlfile: undefined, entities: [{ ...text, text: { mapping: 'model' } }] }),
+    ));
+    s = await screen(page);
+    assert.deepEqual(
+      s.corners,
+      { 'left-top': [0, 0], 'right-top': [1, 0], 'left-bottom': [0, 1], 'right-bottom': [1, 1] },
+      'the UV of the GLB',
+    );
+    assert.equal(s.flipY, false);
+    assert.deepEqual(errors, []);
+    await page.close();
+  },
+);
+
+test(
+  'rotate: angle_entity turns the object to the angle of the sensor, the shorter way, and stops there',
+  { timeout: TIMEOUT },
+  async () => {
+    const vane = {
+      entity: 'sensor.wind',
+      type3d: 'rotate',
+      object_id: 'table',
+      rotate: { axis: 'y', round_per_second: 1, angle_entity: 'sensor.direction' },
+    };
+    const { page, errors } = await open(
+      house({ entities: [vane] }),
+      states({
+        'sensor.wind': { state: '12', attributes: {} },
+        'sensor.direction': { state: '90', attributes: { unit_of_measurement: '°' } },
+      }),
+    );
+    const angle = (degrees) => ({ degrees });
+    const at = (degrees) =>
+      until(
+        page,
+        ({ degrees }) => {
+          const card = window.__card;
+          const r = card._scene.getObjectByName('table').rotation.y;
+          // Clockwise seen from above: minus; a whole turn looks the same.
+          const d = (((((-r * 180) / Math.PI - degrees) % 360) + 540) % 360) - 180;
+          return Math.abs(d) < 0.5 && !card._to_animate;
+        },
+        angle(degrees),
+        'turned to ' + degrees + ' and stopped',
+      );
+    await at(90);
+    // A new angle: it turns there in a moment (a quarter turn at 1 turn a second), then stops.
+    await page.evaluate(() => window.__setState('sensor.direction', '180'));
+    await at(180);
+    await page.evaluate(() => window.__setState('sensor.direction', '350'));
+    await at(350);
+    // From 350 to 10: through 0, never through 180.
+    await page.evaluate(() => {
+      window.__seen = [];
+      const card = window.__card;
+      const loop = () => {
+        window.__seen.push((-card._scene.getObjectByName('table').rotation.y * 180) / Math.PI);
+        if (window.__seen.length < 200) requestAnimationFrame(loop);
+      };
+      loop();
+      window.__setState('sensor.direction', '10');
+    });
+    await at(10);
+    const far = await page.evaluate(() =>
+      window.__seen.some((d) => {
+        const n = ((d % 360) + 360) % 360;
+        return n > 20 && n < 340;
+      }),
+    );
+    assert.equal(far, false, 'the shorter way');
+    // Unavailable: it stays where it is.
+    await page.evaluate(() => window.__setState('sensor.direction', 'unavailable'));
+    await at(10);
+    assert.deepEqual(errors, []);
+    await page.close();
+  },
+);
+
+test(
+  'card editor: while an object group is open nothing goes to Home Assistant (picked, chosen in the menu, a tap on the editor); it goes when it is closed, or with a tap elsewhere',
+  { timeout: TIMEOUT },
+  async () => {
+    const config = house({ object_groups: [{ object_group: 'furniture', objects: [] }] });
+    const { page, errors } = await open(config);
+    await page.evaluate(async () => {
+      const card = window.__card;
+      card.preview = true;
+      const ed = await card.constructor.getConfigElement();
+      ed.hass = window.__hass();
+      ed.setConfig(JSON.parse(JSON.stringify(card._config)));
+      window.__sent = [];
+      ed.addEventListener('config-changed', (ev) => window.__sent.push(ev.detail.config));
+      document.body.append(ed);
+      await new Promise((r) => setTimeout(r, 300));
+      ed._mode = 'ready';
+      ed._edit('object_groups', 0);
+      await ed.updateComplete;
+      ed._startPick({ path: ['object_groups', 0, 'objects'], add: true });
+      window.__ed = ed;
+    });
+    const objects = () =>
+      page.evaluate(() => (window.__ed._config.object_groups[0].objects || []).map((o) => o.object_id || o));
+    for (const [name, point] of [
+      ['table', [510, 80, 650]],
+      ['bed', [950, 55, 550]],
+    ]) {
+      const [x, y] = await projected(page, point);
+      await page.mouse.click(x, y);
+      await until(
+        page,
+        (name) => (window.__ed._config.object_groups[0].objects || []).some((o) => (o.object_id || o) === name),
+        name,
+        name + ' added',
+      );
+    }
+    // The end of the picking, one more from the menu, a tap on the editor, leaving a field.
+    await page.evaluate(async () => {
+      const ed = window.__ed;
+      ed._startPick({ path: ['object_groups', 0, 'objects'], add: true });
+      const group = ed._config.object_groups[0];
+      ed._setItem('object_groups', 0, { ...group, objects: [...group.objects, { object_id: 'sofa' }] });
+      ed.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, composed: true }));
+      ed.dispatchEvent(new FocusEvent('focusout', { bubbles: true, composed: true }));
+      await ed.updateComplete;
+    });
+    assert.deepEqual(await objects(), ['table', 'bed', 'sofa']);
+    // Longer than the delay of the editor (1 s): nothing sent, the preview as it was.
+    await page.waitForTimeout(1300);
+    assert.deepEqual(await page.evaluate(() => window.__sent), []);
+    assert.deepEqual(
+      await page.evaluate(() => window.__card._highlightHelpers.length),
+      3,
+      'the objects of the group outlined',
+    );
+    // Closed: it goes, once.
+    await page.evaluate(async () => {
+      window.__ed._back();
+      await window.__ed.updateComplete;
+    });
+    let sent = await page.evaluate(() => window.__sent);
+    assert.equal(sent.length, 1);
+    assert.deepEqual(sent[0].object_groups, [{ object_group: 'furniture', objects: ['table', 'bed', 'sofa'] }]);
+    // Open again: a tap outside the editor and the preview (the Save button of the dialog) sends it.
+    await page.evaluate(async () => {
+      const ed = window.__ed;
+      ed._edit('object_groups', 0);
+      await ed.updateComplete;
+      const group = ed._config.object_groups[0];
+      ed._setItem('object_groups', 0, { ...group, objects: group.objects.slice(0, 1) });
+      document.body.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, composed: true }));
+    });
+    sent = await page.evaluate(() => window.__sent);
+    assert.equal(sent.length, 2);
+    assert.deepEqual(sent[1].object_groups, [{ object_group: 'furniture', objects: ['table'] }]);
+    assert.deepEqual(errors, []);
+    await page.close();
+  },
+);
 
 // --- 2.11.4: issue #25 again ---------------------------------------------------------------------
 
-test('info boxes: their text follows the state (it kept the first one); info.text with $entity or a template', { timeout: TIMEOUT }, async () => {
-  const config = house({
-    entities: [
-      { entity: 'sensor.t_living', type3d: 'info', object_id: 'table' },
-      { entity: 'sensor.t_living', type3d: 'info', object_id: 'sofa', info: { text: 'Living $entity' } },
-      { entity: 'sensor.t_living', type3d: 'info', object_id: 'bed', info: { text: '[[[ $entity > 22 ? "warm" : "cool" ]]]' } },
-    ],
-  });
-  const { page, errors } = await open(config);
-  const boxes = () =>
-    page.evaluate(() => {
+test(
+  'info boxes: their text follows the state (it kept the first one); info.text with $entity or a template',
+  { timeout: TIMEOUT },
+  async () => {
+    const config = house({
+      entities: [
+        { entity: 'sensor.t_living', type3d: 'info', object_id: 'table' },
+        { entity: 'sensor.t_living', type3d: 'info', object_id: 'sofa', info: { text: 'Living $entity' } },
+        {
+          entity: 'sensor.t_living',
+          type3d: 'info',
+          object_id: 'bed',
+          info: { text: '[[[ $entity > 22 ? "warm" : "cool" ]]]' },
+        },
+      ],
+    });
+    const { page, errors } = await open(config);
+    const boxes = () =>
+      page.evaluate(() => {
+        const card = window.__card;
+        return card._sprites.map((name, i) => ({
+          text: card._info[i] + card._unit_of_measurement[i],
+          picture: card._scene.getObjectByName(name).material.map.image.toDataURL(),
+        }));
+      });
+    const before = await boxes();
+    assert.deepEqual(
+      before.map((b) => b.text),
+      ['21.5°C', 'Living 21.5', 'cool'],
+    );
+    await page.evaluate(() => window.__setState('sensor.t_living', '23.5'));
+    const after = await boxes();
+    assert.deepEqual(
+      after.map((b) => b.text),
+      ['23.5°C', 'Living 23.5', 'warm'],
+    );
+    after.forEach((b, i) => assert.notEqual(b.picture, before[i].picture, 'drawn again: ' + b.text));
+    assert.deepEqual(errors, []);
+    await page.close();
+  },
+);
+
+test(
+  'card editor: an option at its default shows its value in its field, though the YAML leaves it out',
+  { timeout: TIMEOUT },
+  async () => {
+    const config = house({
+      cameras: [{ entity: 'camera.door', position: [510, 240, 990] }],
+      camera_popup_duration: 20,
+      moon_size: 45,
+    });
+    const { page, errors } = await open(config, cameraStates());
+    const data = await page.evaluate(async () => {
       const card = window.__card;
-      return card._sprites.map((name, i) => ({ text: card._info[i] + card._unit_of_measurement[i], picture: card._scene.getObjectByName(name).material.map.image.toDataURL() }));
+      const ed = await card.constructor.getConfigElement();
+      ed.hass = window.__hass();
+      ed.setConfig(JSON.parse(JSON.stringify(card._config)));
+      document.body.append(ed);
+      await new Promise((r) => setTimeout(r, 200));
+      ed._mode = 'ready';
+      ed._expanded = ['cameras'];
+      await ed.updateComplete;
+      // The data of the forms of the section (the test page has no ha-form: its data is still set).
+      return Object.assign({}, ...[...ed.shadowRoot.querySelectorAll('ha-form')].map((f) => f.data || {}));
     });
-  const before = await boxes();
-  assert.deepEqual(before.map((b) => b.text), ['21.5°C', 'Living 21.5', 'cool']);
-  await page.evaluate(() => window.__setState('sensor.t_living', '23.5'));
-  const after = await boxes();
-  assert.deepEqual(after.map((b) => b.text), ['23.5°C', 'Living 23.5', 'warm']);
-  after.forEach((b, i) => assert.notEqual(b.picture, before[i].picture, 'drawn again: ' + b.text));
-  assert.deepEqual(errors, []);
-  await page.close();
-});
+    assert.equal(data.camera_popup_position, 'bottom-right', 'the corner it is in');
+    assert.equal(data.camera_popup_duration, 20);
+    assert.equal(data.moon_size, 45, 'a value set stays');
+    assert.equal(data.cameras_button, true);
+    assert.deepEqual(errors, []);
+    await page.close();
+  },
+);
 
-test('card editor: an option at its default shows its value in its field, though the YAML leaves it out', { timeout: TIMEOUT }, async () => {
-  const config = house({ cameras: [{ entity: 'camera.door', position: [510, 240, 990] }], camera_popup_duration: 20, moon_size: 45 });
-  const { page, errors } = await open(config, cameraStates());
-  const data = await page.evaluate(async () => {
-    const card = window.__card;
-    const ed = await card.constructor.getConfigElement();
-    ed.hass = window.__hass();
-    ed.setConfig(JSON.parse(JSON.stringify(card._config)));
-    document.body.append(ed);
-    await new Promise((r) => setTimeout(r, 200));
-    ed._mode = 'ready';
-    ed._expanded = ['cameras'];
-    await ed.updateComplete;
-    // The data of the forms of the section (the test page has no ha-form: its data is still set).
-    return Object.assign({}, ...[...ed.shadowRoot.querySelectorAll('ha-form')].map((f) => f.data || {}));
-  });
-  assert.equal(data.camera_popup_position, 'bottom-right', 'the corner it is in');
-  assert.equal(data.camera_popup_duration, 20);
-  assert.equal(data.moon_size, 45, 'a value set stays');
-  assert.equal(data.cameras_button, true);
-  assert.deepEqual(errors, []);
-  await page.close();
-});
-
-test('rotate: round_per_second empty, the entity a number (its speed), a speed with a comma, an angle with its unit', { timeout: TIMEOUT }, async () => {
-  const fan = (object_id, rotate, entity = 'sensor.wind') => ({ entity, type3d: 'rotate', object_id, rotate: { axis: 'y', ramp: 0, ...rotate } });
-  const config = house({
-    entities: [
-      fan('table', {}), // the entity is a number: its speed, at round_per_second 1 (empty)
-      fan('sofa', { speed_entity: 'sensor.gust' }), // '12,5'
-      fan('bed', { angle_entity: 'sensor.direction' }), // '90 °'
-      fan('wardrobe', { round_per_second: 1 }, 'light.lamp_3'), // on: full speed
-    ],
-  });
-  const { page, errors } = await open(
-    config,
-    states({
-      'sensor.wind': { state: '50', attributes: { unit_of_measurement: '%' } },
-      'sensor.gust': { state: '12,5', attributes: {} },
-      'sensor.direction': { state: '90 °', attributes: {} },
-    }),
-  );
-  const turns = () =>
-    page.evaluate(() => ['table', 'sofa', 'bed', 'wardrobe'].map((name) => window.__card._scene.getObjectByName(name).rotation.y));
-  await until(page, () => Math.abs(window.__card._scene.getObjectByName('bed').rotation.y + Math.PI / 2) < 0.01, null, 'the bed turned to 90');
-  const first = await turns();
-  first.forEach((r, i) => assert.ok(isFinite(r), 'a number, not NaN (the object vanished): ' + i));
-  await page.waitForTimeout(400);
-  const later = await turns();
-  assert.ok(later[0] !== first[0], 'the sensor itself sets the speed');
-  assert.ok(later[1] !== first[1], '12,5 is a speed');
-  assert.ok(Math.abs(later[1] - first[1]) < Math.abs(later[0] - first[0]), 'slower than 50');
-  assert.ok(later[3] !== first[3], 'on: turning');
-  const speed = await page.evaluate(() => window.__card._rotation_state.slice());
-  assert.deepEqual(speed, [0.5, 0.125, 0, 1]);
-  await page.evaluate(() => window.__setState('sensor.wind', '0'));
-  assert.equal(await page.evaluate(() => window.__card._rotation_state[0]), 0, '0: stopped');
-  assert.deepEqual(errors, []);
-  await page.close();
-});
-
-test('rotate: an object of a GLB with a position of its own and a mesh shared with another turns around its middle, the other stays', { timeout: TIMEOUT }, async () => {
-  const blade = { entity: 'light.lamp_1', type3d: 'rotate', object_id: 'fan_a', rotate: { axis: 'y', round_per_second: 1, ramp: 0 } };
-  const { page, errors } = await open(house({ objfile: 'home.glb', mtlfile: undefined, entities: [blade, { ...blade, entity: 'sensor.direction', rotate: { axis: 'y', angle_entity: 'sensor.direction' } }] }), states({ 'sensor.direction': { state: '10', attributes: {} } }));
-  const middle = async (name) => {
-    const [min, max] = await worldBox(page, name);
-    return min.map((v, i) => Math.round((v + max[i]) / 2));
-  };
-  // Centred by the card: 1400 / 2 off; the blades at 500 and 900, 240 to 242 high.
-  const a = await middle('fan_a');
-  const b = await middle('fan_b');
-  assert.deepEqual(a, [500 - 700, 241, 700 - 700], 'fan_a where it is in the model (it jumped away)');
-  assert.deepEqual(b, [900 - 700, 241, 700 - 700], 'fan_b stays where it is (it moved with the shared mesh)');
-  await page.waitForTimeout(500);
-  assert.deepEqual(await middle('fan_a'), a, 'turning around its middle');
-  assert.deepEqual(await middle('fan_b'), b);
-  assert.ok(Math.abs(await page.evaluate(() => window.__card._scene.getObjectByName('fan_b').rotation.y)) < 1e-9, 'fan_b does not turn');
-  assert.deepEqual(errors, []);
-  await page.close();
-});
-
-test('cameras: a button by the menus hides their icons and shows them again, remembered on the device; cameras_button: no', { timeout: TIMEOUT }, async () => {
-  const config = house({ cameras: [{ entity: 'camera.door', position: [510, 240, 990] }] });
-  let { page, errors } = await open(config, cameraStates());
-  const button = () =>
-    page.evaluate(() => {
-      const b = window.__card._zoommenu.querySelector('.f3d-menu-button');
-      return b && { pressed: b.getAttribute('aria-pressed'), icon: b.querySelector('ha-icon').getAttribute('icon'), label: b.getAttribute('aria-label') };
+test(
+  'rotate: round_per_second empty, the entity a number (its speed), a speed with a comma, an angle with its unit',
+  { timeout: TIMEOUT },
+  async () => {
+    const fan = (object_id, rotate, entity = 'sensor.wind') => ({
+      entity,
+      type3d: 'rotate',
+      object_id,
+      rotate: { axis: 'y', ramp: 0, ...rotate },
     });
-  assert.deepEqual(await button(), { pressed: 'true', icon: 'mdi:cctv', label: 'Camera icons' });
-  assert.equal((await pinsOf(page)).length, 1);
-  await page.evaluate(() => window.__card._zoommenu.querySelector('.f3d-menu-button').click());
-  assert.deepEqual(await pinsOf(page), [], 'hidden');
-  assert.deepEqual(await button(), { pressed: 'false', icon: 'mdi:cctv-off', label: 'Camera icons' });
-  // Remembered: read again, as a new card on this device does.
-  await page.evaluate(() => {
-    window.__card._collapsed = undefined;
-    window.__card._renderBoxes(true);
-  });
-  assert.deepEqual(await pinsOf(page), []);
-  await page.evaluate(() => window.__card._zoommenu.querySelector('.f3d-menu-button').click());
-  assert.equal((await pinsOf(page)).length, 1, 'shown again');
-  assert.deepEqual(errors, []);
-  await page.close();
+    const config = house({
+      entities: [
+        fan('table', {}), // the entity is a number: its speed, at round_per_second 1 (empty)
+        fan('sofa', { speed_entity: 'sensor.gust' }), // '12,5'
+        fan('bed', { angle_entity: 'sensor.direction' }), // '90 °'
+        fan('wardrobe', { round_per_second: 1 }, 'light.lamp_3'), // on: full speed
+      ],
+    });
+    const { page, errors } = await open(
+      config,
+      states({
+        'sensor.wind': { state: '50', attributes: { unit_of_measurement: '%' } },
+        'sensor.gust': { state: '12,5', attributes: {} },
+        'sensor.direction': { state: '90 °', attributes: {} },
+      }),
+    );
+    const turns = () =>
+      page.evaluate(() =>
+        ['table', 'sofa', 'bed', 'wardrobe'].map((name) => window.__card._scene.getObjectByName(name).rotation.y),
+      );
+    await until(
+      page,
+      () => Math.abs(window.__card._scene.getObjectByName('bed').rotation.y + Math.PI / 2) < 0.01,
+      null,
+      'the bed turned to 90',
+    );
+    const first = await turns();
+    first.forEach((r, i) => assert.ok(isFinite(r), 'a number, not NaN (the object vanished): ' + i));
+    await page.waitForTimeout(400);
+    const later = await turns();
+    assert.ok(later[0] !== first[0], 'the sensor itself sets the speed');
+    assert.ok(later[1] !== first[1], '12,5 is a speed');
+    assert.ok(Math.abs(later[1] - first[1]) < Math.abs(later[0] - first[0]), 'slower than 50');
+    assert.ok(later[3] !== first[3], 'on: turning');
+    const speed = await page.evaluate(() => window.__card._rotation_state.slice());
+    assert.deepEqual(speed, [0.5, 0.125, 0, 1]);
+    await page.evaluate(() => window.__setState('sensor.wind', '0'));
+    assert.equal(await page.evaluate(() => window.__card._rotation_state[0]), 0, '0: stopped');
+    assert.deepEqual(errors, []);
+    await page.close();
+  },
+);
 
-  ({ page, errors } = await open({ ...config, cameras_button: 'no' }, cameraStates()));
-  assert.equal(await button(), null);
-  assert.equal((await pinsOf(page)).length, 1);
-  assert.deepEqual(errors, []);
-  await page.close();
-});
+test(
+  'rotate: an object of a GLB with a position of its own and a mesh shared with another turns around its middle, the other stays',
+  { timeout: TIMEOUT },
+  async () => {
+    const blade = {
+      entity: 'light.lamp_1',
+      type3d: 'rotate',
+      object_id: 'fan_a',
+      rotate: { axis: 'y', round_per_second: 1, ramp: 0 },
+    };
+    const { page, errors } = await open(
+      house({
+        objfile: 'home.glb',
+        mtlfile: undefined,
+        entities: [
+          blade,
+          { ...blade, entity: 'sensor.direction', rotate: { axis: 'y', angle_entity: 'sensor.direction' } },
+        ],
+      }),
+      states({ 'sensor.direction': { state: '10', attributes: {} } }),
+    );
+    const middle = async (name) => {
+      const [min, max] = await worldBox(page, name);
+      return min.map((v, i) => Math.round((v + max[i]) / 2));
+    };
+    // Centred by the card: 1400 / 2 off; the blades at 500 and 900, 240 to 242 high.
+    const a = await middle('fan_a');
+    const b = await middle('fan_b');
+    assert.deepEqual(a, [500 - 700, 241, 700 - 700], 'fan_a where it is in the model (it jumped away)');
+    assert.deepEqual(b, [900 - 700, 241, 700 - 700], 'fan_b stays where it is (it moved with the shared mesh)');
+    await page.waitForTimeout(500);
+    assert.deepEqual(await middle('fan_a'), a, 'turning around its middle');
+    assert.deepEqual(await middle('fan_b'), b);
+    assert.ok(
+      Math.abs(await page.evaluate(() => window.__card._scene.getObjectByName('fan_b').rotation.y)) < 1e-9,
+      'fan_b does not turn',
+    );
+    assert.deepEqual(errors, []);
+    await page.close();
+  },
+);
 
-test('text: two text entities on one object, one under the other; each updates its line', { timeout: TIMEOUT }, async () => {
-  const text = (entity) => ({ entity, type3d: 'text', object_id: 'tv_screen', text: { textbgcolor: 'rgb(0, 0, 255)', textfgcolor: 'rgb(255, 255, 0)' } });
-  const { page, errors } = await open(house({ entities: [text('sensor.t_living'), text('sensor.t_bed')] }), states({ 'sensor.t_bed': { state: '18.0', attributes: { unit_of_measurement: '°C' } } }));
-  // How many yellow pixels each row of the picture on the screen has, at a quarter, half and three
-  // quarters of its height: the two lines, and the gap between them.
-  const rows = () =>
-    page.evaluate(() => {
-      const picture = window.__card._scene.getObjectByName('tv_screen').material.map.image;
-      const ctx = picture.getContext('2d');
-      const yellow = (y) => {
-        const d = ctx.getImageData(0, Math.round(y), picture.width, 1).data;
-        let n = 0;
-        for (let i = 0; i < d.length; i += 4) if (d[i] > 150 && d[i + 1] > 150 && d[i + 2] < 100) n++;
-        return n;
+test(
+  'cameras: a button by the menus hides their icons and shows them again, remembered on the device; cameras_button: no',
+  { timeout: TIMEOUT },
+  async () => {
+    const config = house({ cameras: [{ entity: 'camera.door', position: [510, 240, 990] }] });
+    let { page, errors } = await open(config, cameraStates());
+    const button = () =>
+      page.evaluate(() => {
+        const b = window.__card._zoommenu.querySelector('.f3d-menu-button');
+        return (
+          b && {
+            pressed: b.getAttribute('aria-pressed'),
+            icon: b.querySelector('ha-icon').getAttribute('icon'),
+            label: b.getAttribute('aria-label'),
+          }
+        );
+      });
+    assert.deepEqual(await button(), { pressed: 'true', icon: 'mdi:cctv', label: 'Camera icons' });
+    assert.equal((await pinsOf(page)).length, 1);
+    await page.evaluate(() => window.__card._zoommenu.querySelector('.f3d-menu-button').click());
+    assert.deepEqual(await pinsOf(page), [], 'hidden');
+    assert.deepEqual(await button(), { pressed: 'false', icon: 'mdi:cctv-off', label: 'Camera icons' });
+    // Remembered: read again, as a new card on this device does.
+    await page.evaluate(() => {
+      window.__card._collapsed = undefined;
+      window.__card._renderBoxes(true);
+    });
+    assert.deepEqual(await pinsOf(page), []);
+    await page.evaluate(() => window.__card._zoommenu.querySelector('.f3d-menu-button').click());
+    assert.equal((await pinsOf(page)).length, 1, 'shown again');
+    assert.deepEqual(errors, []);
+    await page.close();
+
+    ({ page, errors } = await open({ ...config, cameras_button: 'no' }, cameraStates()));
+    assert.equal(await button(), null);
+    assert.equal((await pinsOf(page)).length, 1);
+    assert.deepEqual(errors, []);
+    await page.close();
+  },
+);
+
+test(
+  'text: two text entities on one object, one under the other; each updates its line',
+  { timeout: TIMEOUT },
+  async () => {
+    const text = (entity) => ({
+      entity,
+      type3d: 'text',
+      object_id: 'tv_screen',
+      text: { textbgcolor: 'rgb(0, 0, 255)', textfgcolor: 'rgb(255, 255, 0)' },
+    });
+    const { page, errors } = await open(
+      house({ entities: [text('sensor.t_living'), text('sensor.t_bed')] }),
+      states({ 'sensor.t_bed': { state: '18.0', attributes: { unit_of_measurement: '°C' } } }),
+    );
+    // How many yellow pixels each row of the picture on the screen has, at a quarter, half and three
+    // quarters of its height: the two lines, and the gap between them.
+    const rows = () =>
+      page.evaluate(() => {
+        const picture = window.__card._scene.getObjectByName('tv_screen').material.map.image;
+        const ctx = picture.getContext('2d');
+        const yellow = (y) => {
+          const d = ctx.getImageData(0, Math.round(y), picture.width, 1).data;
+          let n = 0;
+          for (let i = 0; i < d.length; i += 4) if (d[i] > 150 && d[i + 1] > 150 && d[i + 2] < 100) n++;
+          return n;
+        };
+        return {
+          top: yellow(picture.height * 0.25),
+          middle: yellow(picture.height * 0.5),
+          bottom: yellow(picture.height * 0.75),
+          picture: picture.toDataURL(),
+        };
+      });
+    let r = await rows();
+    assert.ok(r.top > 0 && r.bottom > 0, 'two lines: ' + JSON.stringify({ top: r.top, bottom: r.bottom }));
+    assert.equal(r.middle, 0, 'the gap between them');
+    const before = r.picture;
+    await page.evaluate(() => window.__setState('sensor.t_bed', '19.5'));
+    r = await rows();
+    assert.notEqual(r.picture, before, 'the second line updated');
+    assert.ok(r.top > 0 && r.bottom > 0 && r.middle === 0, 'still both');
+    assert.deepEqual(errors, []);
+    await page.close();
+  },
+);
+
+// --- 2.12.0: cleanup ------------------------------------------------------------------------------
+
+test(
+  'doors of a GLB with a position of their own and a shared mesh: they stay where they are when closed, open around their hinge, and the other object stays',
+  { timeout: TIMEOUT },
+  async () => {
+    const swing = {
+      entity: 'binary_sensor.door',
+      type3d: 'door',
+      object_id: 'fan_a',
+      door: { doortype: 'swing', side: 'left', direction: 'inner', degrees: 90 },
+    };
+    const slide = {
+      entity: 'binary_sensor.door',
+      type3d: 'door',
+      object_id: 'fan_a',
+      door: { doortype: 'slide', side: 'left', percentage: 100 },
+    };
+    const box = async (page, name) => {
+      const [min, max] = await worldBox(page, name);
+      return [...min, ...max].map(Math.round);
+    };
+    // Centred by the card: 1400 / 2 off. fan_a: 80 x 2 x 10 around (500, 241, 700); fan_b at 900.
+    const closedA = [460 - 700, 240, 695 - 700, 540 - 700, 242, 705 - 700];
+    const closedB = [860 - 700, 240, 695 - 700, 940 - 700, 242, 705 - 700];
+    for (const door of [swing, slide]) {
+      const doorStates = states({ 'binary_sensor.door': { state: 'off', attributes: {} } });
+      const { page, errors } = await open(
+        house({ objfile: 'home.glb', mtlfile: undefined, entities: [door] }),
+        doorStates,
+      );
+      assert.deepEqual(
+        await box(page, 'fan_a'),
+        closedA,
+        door.door.doortype + ': where it is in the model (it jumped away)',
+      );
+      assert.deepEqual(
+        await box(page, 'fan_b'),
+        closedB,
+        door.door.doortype + ': the other blade stays (it moved with the shared mesh)',
+      );
+      await page.evaluate(() => window.__setState('binary_sensor.door', 'on'));
+      await still(page);
+      const opened = await box(page, 'fan_a');
+      if (door.door.doortype == 'swing') {
+        // Turned by 90 degrees around its left end (x 460): now along z, from 700 for 80.
+        assert.deepEqual([opened[0], opened[3]], [460 - 700 - 5, 460 - 700 + 5], 'around the hinge: ' + opened);
+        assert.equal(opened[5] - opened[2], 80, 'turned a quarter: ' + opened);
+      } else {
+        assert.deepEqual(
+          opened,
+          [closedA[0] - 80, 240, closedA[2], closedA[3] - 80, 242, closedA[5]],
+          'slid by its width to the left',
+        );
+      }
+      assert.deepEqual(await box(page, 'fan_b'), closedB, 'the other blade still there');
+      assert.deepEqual(errors, []);
+      await page.close();
+    }
+  },
+);
+
+test(
+  'the old buttons of the views (hideZoomMenu: yes) and of selectionMode are plain buttons: no Lit 2 or Material in the card',
+  { timeout: TIMEOUT },
+  async () => {
+    const zoom_areas = [
+      { zoom: 'Living', camera_position: { x: -200, y: 500, z: 300 }, camera_target: { x: -200, y: 0, z: 0 } },
+    ];
+    const { page, errors } = await open(house({ zoom_areas, hideZoomMenu: 'yes', selectionMode: 'yes' }));
+    const bars = await page.evaluate(() => {
+      const card = window.__card;
+      const texts = (el) => [...el.querySelectorAll('button')].map((b) => b.textContent.trim());
+      return {
+        zoom: texts(card._zoombar),
+        selection: texts(card._selectionbar),
+        material: !!customElements.get('floor3d-button'),
       };
-      return { top: yellow(picture.height * 0.25), middle: yellow(picture.height * 0.5), bottom: yellow(picture.height * 0.75), picture: picture.toDataURL() };
     });
-  let r = await rows();
-  assert.ok(r.top > 0 && r.bottom > 0, 'two lines: ' + JSON.stringify({ top: r.top, bottom: r.bottom }));
-  assert.equal(r.middle, 0, 'the gap between them');
-  const before = r.picture;
-  await page.evaluate(() => window.__setState('sensor.t_bed', '19.5'));
-  r = await rows();
-  assert.notEqual(r.picture, before, 'the second line updated');
-  assert.ok(r.top > 0 && r.bottom > 0 && r.middle === 0, 'still both');
-  assert.deepEqual(errors, []);
-  await page.close();
-});
+    assert.deepEqual(bars.zoom, ['reset', 'Living'], 'shown in capitals by the style, as before');
+    assert.equal(bars.selection.length, 2);
+    assert.equal(bars.material, false, 'floor3d-button is no longer defined');
+    // The view button flies there (at once, as before).
+    await page.evaluate(() => [...window.__card._zoombar.querySelectorAll('button')][1].click());
+    assert.deepEqual(
+      await page.evaluate(() => window.__card._camera.position.toArray().map(Math.round)),
+      [-200, 500, 300],
+    );
+    assert.deepEqual(errors, []);
+    await page.close();
+  },
+);
+
+test(
+  'card editor: on a Home Assistant without its forms (older than 2024.1) a message points to the code editor, and the editor comes if they arrive',
+  { timeout: TIMEOUT },
+  async () => {
+    const { page, errors } = await open(house());
+    const loading = await page.evaluate(async () => {
+      const card = window.__card;
+      const ed = await card.constructor.getConfigElement();
+      ed.hass = window.__hass();
+      ed.setConfig(JSON.parse(JSON.stringify(card._config)));
+      document.body.append(ed);
+      await ed.updateComplete;
+      window.__ed = ed;
+      return { mode: ed._mode, text: ed.shadowRoot.textContent.trim(), expected: ed._t('ui.loading') };
+    });
+    assert.equal(loading.mode, 'loading');
+    assert.equal(loading.text, loading.expected);
+    // The test page has no ha-form: after 5 seconds, the message.
+    await until(page, () => window.__ed._mode === 'unsupported', null, 'the message after 5 s');
+    const message = await page.evaluate(async () => {
+      const ed = window.__ed;
+      await ed.updateComplete;
+      return {
+        text: ed.shadowRoot.textContent.trim(),
+        expected: ed._t('ui.unsupported'),
+        panels: ed.shadowRoot.querySelectorAll('ha-expansion-panel').length,
+        classic: !!customElements.get('floor3d-card-editor-classic'),
+      };
+    });
+    assert.equal(message.text, message.expected);
+    assert.match(message.text, /2024\.1/);
+    assert.equal(message.panels, 0);
+    assert.equal(message.classic, false, 'no classic editor any more');
+    // Home Assistant defines its components late after all: the editor shows up.
+    await page.evaluate(() => {
+      for (const name of ['ha-form', 'ha-expansion-panel']) customElements.define(name, class extends HTMLElement {});
+    });
+    await until(
+      page,
+      () => window.__ed._mode === 'ready' && window.__ed.shadowRoot.querySelectorAll('ha-expansion-panel').length > 0,
+      null,
+      'the editor once the components are there',
+    );
+    assert.deepEqual(errors, []);
+    await page.close();
+  },
+);
+
+test(
+  'the events for Home Assistant (hass-more-info, haptic, config-changed) bubble up to its root out of the shadow roots, with their detail',
+  { timeout: TIMEOUT },
+  async () => {
+    const entities = [
+      {
+        entity: 'binary_sensor.window',
+        type3d: 'color',
+        object_id: 'wardrobe',
+        long_press_action: 'more-info',
+        colorcondition: [],
+      },
+    ];
+    const { page, errors } = await open(house({ entities }));
+    const seen = await page.evaluate(async () => {
+      const seen = [];
+      for (const type of ['hass-more-info', 'haptic', 'config-changed']) {
+        window.addEventListener(type, (e) =>
+          seen.push({ type, detail: e.detail, bubbles: e.bubbles, composed: e.composed }),
+        );
+      }
+      // A long press on the object of the entity: a vibration and its details.
+      window.__card._longPressEvent([{ object: { name: 'wardrobe' } }]);
+      // A change in the editor, sent at once.
+      const ed = await window.__card.constructor.getConfigElement();
+      ed.hass = window.__hass();
+      ed.setConfig(JSON.parse(JSON.stringify(window.__card._config)));
+      document.body.append(ed);
+      ed._update({ ...ed._config, name: 'Home' });
+      ed._flush();
+      return seen.map((s) => ({ ...s, detail: s.type === 'config-changed' ? s.detail.config.name : s.detail }));
+    });
+    assert.deepEqual(seen, [
+      { type: 'haptic', detail: 'medium', bubbles: true, composed: true },
+      { type: 'hass-more-info', detail: { entityId: 'binary_sensor.window' }, bubbles: true, composed: true },
+      { type: 'config-changed', detail: 'Home', bubbles: true, composed: true },
+    ]);
+    assert.deepEqual(errors, []);
+    await page.close();
+  },
+);

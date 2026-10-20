@@ -15,7 +15,14 @@ test('cameras: ids or objects, positions as lists or x y z', () => {
   assert.deepEqual(
     cameraList([
       'camera.a',
-      { entity: 'camera.b', position: [10, 240, -30], level: '1', name: 'Door', icon: 'mdi:doorbell-video', popup_on: 'binary_sensor.bell' },
+      {
+        entity: 'camera.b',
+        position: [10, 240, -30],
+        level: '1',
+        name: 'Door',
+        icon: 'mdi:doorbell-video',
+        popup_on: 'binary_sensor.bell',
+      },
       { entity: 'camera.c', position: { x: 1, y: 2 }, level: 'x', popup_on: ['binary_sensor.m', '', 'event.e'] },
       { position: [1, 2, 3] },
       '',
@@ -23,8 +30,22 @@ test('cameras: ids or objects, positions as lists or x y z', () => {
     ]),
     [
       { entity: 'camera.a', popup_on: [] },
-      { entity: 'camera.b', position: [10, 240, -30], level: 1, name: 'Door', icon: 'mdi:doorbell-video', popup_on: ['binary_sensor.bell'] },
-      { entity: 'camera.c', position: undefined, level: undefined, name: undefined, icon: undefined, popup_on: ['binary_sensor.m', 'event.e'] },
+      {
+        entity: 'camera.b',
+        position: [10, 240, -30],
+        level: 1,
+        name: 'Door',
+        icon: 'mdi:doorbell-video',
+        popup_on: ['binary_sensor.bell'],
+      },
+      {
+        entity: 'camera.c',
+        position: undefined,
+        level: undefined,
+        name: undefined,
+        icon: undefined,
+        popup_on: ['binary_sensor.m', 'event.e'],
+      },
     ],
   );
   assert.deepEqual(cameraList('camera.a'), [{ entity: 'camera.a', popup_on: [] }]);
@@ -36,7 +57,10 @@ test('cameras: name and picture', () => {
   assert.equal(cameraName(camera, st('idle', { friendly_name: 'Garden' })), 'Garden');
   assert.equal(cameraName({ ...camera, name: 'Gate' }, st('idle', { friendly_name: 'Garden' })), 'Gate');
   assert.equal(cameraName(camera, undefined), 'camera.a');
-  assert.equal(snapshotUrl(st('idle', { entity_picture: '/api/camera_proxy/camera.a?token=abc' }), 42), '/api/camera_proxy/camera.a?token=abc&t=42');
+  assert.equal(
+    snapshotUrl(st('idle', { entity_picture: '/api/camera_proxy/camera.a?token=abc' }), 42),
+    '/api/camera_proxy/camera.a?token=abc&t=42',
+  );
   assert.equal(snapshotUrl(st('idle', { entity_picture: '/local/a.jpg' }), 42), '/local/a.jpg?t=42');
   assert.equal(snapshotUrl(st('unavailable'), 42), undefined);
 });
@@ -46,9 +70,16 @@ test('pop-up: a sensor keeps the picture while on, and for the duration once off
   const memory = newPopupMemory();
   const step = (state, now) => popupStep(memory, cameras, { 'binary_sensor.motion': st(state) }, now, 20000);
   assert.deepEqual(step('off', 0), { showing: [], next: undefined });
-  assert.deepEqual(step('on', 1000), { showing: [{ entity: 'camera.door', trigger: 'binary_sensor.motion' }], next: undefined }, 'on: no end yet');
+  assert.deepEqual(
+    step('on', 1000),
+    { showing: [{ entity: 'camera.door', trigger: 'binary_sensor.motion' }], next: undefined },
+    'on: no end yet',
+  );
   assert.deepEqual(step('on', 60000).showing.length, 1, 'still on a minute later');
-  assert.deepEqual(step('off', 61000), { showing: [{ entity: 'camera.door', trigger: 'binary_sensor.motion' }], next: 81000 });
+  assert.deepEqual(step('off', 61000), {
+    showing: [{ entity: 'camera.door', trigger: 'binary_sensor.motion' }],
+    next: 81000,
+  });
   assert.equal(step('off', 80999).showing.length, 1);
   assert.deepEqual(step('off', 81000), { showing: [], next: undefined }, 'gone after the duration');
 });
@@ -60,14 +91,24 @@ test('pop-up: a sensor already on when the card opens counts, an old event does 
   ]);
   const memory = newPopupMemory();
   const states = { 'binary_sensor.garden': st('on'), 'event.doorbell': st('2026-10-09T10:00:00.000+00:00') };
-  assert.deepEqual(popupStep(memory, cameras, states, 0, 20000).showing, [{ entity: 'camera.garden', trigger: 'binary_sensor.garden' }]);
+  assert.deepEqual(popupStep(memory, cameras, states, 0, 20000).showing, [
+    { entity: 'camera.garden', trigger: 'binary_sensor.garden' },
+  ]);
   // The doorbell rings: its event changes; the last to go off comes first.
   states['event.doorbell'] = st('2026-10-09T17:00:00.000+00:00');
   const rang = popupStep(memory, cameras, states, 5000, 20000);
-  assert.deepEqual(rang.showing.map((s) => s.entity), ['camera.door', 'camera.garden']);
+  assert.deepEqual(
+    rang.showing.map((s) => s.entity),
+    ['camera.door', 'camera.garden'],
+  );
   assert.equal(rang.next, 25000, 'the event stays for the duration');
   // The same state again (another update of Home Assistant): no new ring.
-  assert.equal(popupStep(memory, cameras, states, 26000, 20000).showing.map((s) => s.entity).join(), 'camera.garden');
+  assert.equal(
+    popupStep(memory, cameras, states, 26000, 20000)
+      .showing.map((s) => s.entity)
+      .join(),
+    'camera.garden',
+  );
   // unavailable, then back to the same time: not a ring either.
   states['event.doorbell'] = st('unavailable');
   popupStep(memory, cameras, states, 27000, 20000);
@@ -78,7 +119,9 @@ test('pop-up: a sensor already on when the card opens counts, an old event does 
   const doorOnly = { 'event.doorbell': st('unknown') };
   assert.deepEqual(popupStep(fresh, cameras, doorOnly, 0, 20000).showing, []);
   doorOnly['event.doorbell'] = st('2026-10-09T18:00:00.000+00:00');
-  assert.deepEqual(popupStep(fresh, cameras, doorOnly, 1000, 20000).showing, [{ entity: 'camera.door', trigger: 'event.doorbell' }]);
+  assert.deepEqual(popupStep(fresh, cameras, doorOnly, 1000, 20000).showing, [
+    { entity: 'camera.door', trigger: 'event.doorbell' },
+  ]);
 });
 
 test('pop-up: closed until the next time a sensor goes off; one sensor for two cameras', () => {
@@ -93,7 +136,9 @@ test('pop-up: closed until the next time a sensor goes off; one sensor for two c
   memory.dismissed = 2000;
   assert.deepEqual(popupStep(memory, cameras, states, 3000, 10000).showing, [], 'closed, though still on');
   states['binary_sensor.b'] = st('on');
-  assert.deepEqual(popupStep(memory, cameras, states, 4000, 10000).showing, [{ entity: 'camera.b', trigger: 'binary_sensor.b' }]);
+  assert.deepEqual(popupStep(memory, cameras, states, 4000, 10000).showing, [
+    { entity: 'camera.b', trigger: 'binary_sensor.b' },
+  ]);
   states['binary_sensor.m'] = st('off');
   states['binary_sensor.b'] = st('off');
   popupStep(memory, cameras, states, 4500, 10000);

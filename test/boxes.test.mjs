@@ -64,8 +64,15 @@ test('status: lamps on, doors and windows open, locks open, heaters working; eac
     ],
   );
   states['switch.boiler'] = st('switch.boiler', 'on');
-  assert.deepEqual(statusGroups(entities, states, climateAction).find((g) => g.kind === 'climate').entities, ['climate.living', 'switch.boiler']);
-  assert.deepEqual(statusGroups([{ entity: 'light.b', type3d: 'light' }], states, climateAction), [], 'nothing on: no group');
+  assert.deepEqual(statusGroups(entities, states, climateAction).find((g) => g.kind === 'climate').entities, [
+    'climate.living',
+    'switch.boiler',
+  ]);
+  assert.deepEqual(
+    statusGroups([{ entity: 'light.b', type3d: 'light' }], states, climateAction),
+    [],
+    'nothing on: no group',
+  );
 });
 
 test('energy: watts from W, kW and MW, written in the language', () => {
@@ -88,7 +95,15 @@ test('energy: the plugs that use the most, highest first, without the ones at 0 
     'sensor.oven': st('sensor.oven', 'unavailable', { unit_of_measurement: 'W' }),
     'sensor.pc': st('sensor.pc', '310', { unit_of_measurement: 'W' }),
   };
-  const ids = ['sensor.washer', 'sensor.fridge', 'sensor.tv', 'sensor.oven', 'sensor.pc', 'sensor.washer', 'sensor.missing'];
+  const ids = [
+    'sensor.washer',
+    'sensor.fridge',
+    'sensor.tv',
+    'sensor.oven',
+    'sensor.pc',
+    'sensor.washer',
+    'sensor.missing',
+  ];
   assert.deepEqual(topConsumers(states, ids, 2), [
     { entity: 'sensor.washer', watts: 1900 },
     { entity: 'sensor.pc', watts: 310 },
@@ -114,7 +129,10 @@ test('alarm panel: green while armed, orange while it changes, red and blinking 
 });
 
 test('people: home in a room, away, in a zone; initials', () => {
-  const rooms = [{ name: 'Living room', object_id: 'floor_living' }, { name: 'Bedroom', object_id: 'floor_bed' }];
+  const rooms = [
+    { name: 'Living room', object_id: 'floor_living' },
+    { name: 'Bedroom', object_id: 'floor_bed' },
+  ];
   assert.equal(matchRoom('living_room', rooms), 0);
   assert.equal(matchRoom('Living-Room', rooms), 0);
   assert.equal(matchRoom('floor_bed', rooms), 1, 'by object id');
@@ -122,7 +140,11 @@ test('people: home in a room, away, in a zone; initials', () => {
   assert.equal(matchRoom('not_home', rooms), -1);
   assert.deepEqual(personPlace('home', 'Bedroom', rooms), { home: true, zone: undefined, room: 1 });
   assert.deepEqual(personPlace('home', undefined, rooms), { home: true, zone: undefined, room: -1 });
-  assert.deepEqual(personPlace('not_home', 'Bedroom', rooms), { home: false, zone: undefined, room: -1 }, 'away: the room sensor is old');
+  assert.deepEqual(
+    personPlace('not_home', 'Bedroom', rooms),
+    { home: false, zone: undefined, room: -1 },
+    'away: the room sensor is old',
+  );
   assert.deepEqual(personPlace('Work', undefined, rooms), { home: false, zone: 'Work', room: -1 });
   assert.equal(initials('Giovanni Rossi'), 'GR');
   assert.equal(initials('anna'), 'A');

@@ -8,6 +8,8 @@ If the fork is useful to you, you can support it on [Buy Me a Coffee](https://bu
 
 ## Installation
 
+The card needs Home Assistant 2024.1 or newer (2.12.0; `homeassistant` in `hacs.json`, so HACS offers the update only from that version on).
+
 ### HACS
 
 [![Open this repository in HACS](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=giosci1994&repository=floor3d-card&category=plugin)
@@ -20,8 +22,8 @@ If the original card is installed, remove it from HACS first: both define `custo
 
 ### By hand
 
-1. Download all the `.js` files of the [latest release](https://github.com/giosci1994/floor3d-card/releases/latest) (they are also in `dist/`) into a folder of `config/www`, for example `config/www/floor3d-card/`. There are six files: the card, its core (libraries and code shared with the editor), the editor, which is loaded only when you edit the card, the classic editor, which only old Home Assistant versions load, and the decoders of [compressed models](#compressed-models), loaded only by the models that need them.
-2. Add `/local/floor3d-card/floor3d-card.js?v=2.11.4` as a resource of type **module** (Settings › Dashboards › Resources). If the original card is installed too, remove it first.
+1. Download all the `.js` files of the [latest release](https://github.com/giosci1994/floor3d-card/releases/latest) into a folder of `config/www`, for example `config/www/floor3d-card/`. There are five files: the card, its core (libraries and code shared with the editor), the editor, which is loaded only when you edit the card, and the decoders of [compressed models](#compressed-models), loaded only by the models that need them.
+2. Add `/local/floor3d-card/floor3d-card.js?v=2.12.0` as a resource of type **module** (Settings › Dashboards › Resources). If the original card is installed too, remove it first.
 3. Reload the browser or the app.
 
 At every update copy the new files and change the `?v=` of the resource: Home Assistant serves `/local` with a 31-day cache, and so may a proxy in front of it, while a new query is a new address. The core and the editor have the hash of their content in the name, so they are new addresses too; the ones of older versions can be deleted.
@@ -34,25 +36,27 @@ npm run build        # = rollup -c rollup.config.mjs
 npm start            # rebuilds on every change and serves dist/ on port 5000
 npm test             # tests of src/config.ts and of the language files (Node 22 or newer)
 npm run test:browser # the built card in headless Chromium (after npm run build), see Browser tests
-npm run lint         # ESLint on src/*.ts
+npm run lint         # ESLint on src/
+npm run format       # Prettier on src/, test/ and the configurations of Rollup and ESLint (format:check only checks)
 ```
 
-The dependencies are installed with yarn 1 from `yarn.lock`, as the Build and Release workflows do. `npm install` used to rewrite `yarn.lock` in a form yarn 1 can't read (the `lit2` alias) and to add a `package-lock.json`, and the Build workflow then failed at its first step, before any test (2.11.x); `.npmrc` (`package-lock=false`) now stops npm from writing either. To change a dependency use `npx --yes yarn@1.22.22 add` (or `upgrade`), which updates `yarn.lock` as yarn reads it.
+`dist/` is not in the repository (2.12.0): `npm run build` makes it, and the Release workflow builds the files of each release from its tag. HACS and the installation by hand take them from the release.
+
+The dependencies are installed with yarn 1 from `yarn.lock`, as the Build and Release workflows do. `npm install` used to rewrite `yarn.lock` in a form yarn 1 can't read (the `lit2` alias, gone in 2.12.0) and to add a `package-lock.json`, and the Build workflow then failed at its first step, before any test (2.11.x); `.npmrc` (`package-lock=false`) now stops npm from writing either. To change a dependency use `npx --yes yarn@1.22.22 add` (or `upgrade`), which updates `yarn.lock` as yarn reads it.
 
 `CARD_VERSION` in `src/const.ts` is shown in the card editor and in the console: keep it equal to `version` in `package.json` and to the tag of the release (see [Publishing a release](#publishing-a-release)). For test builds between releases add a suffix, for example `v2.0.1-dev.1`.
 
-- **Tooling.** Rollup 4 with the official `@rollup/plugin-*` packages, TypeScript 5.9 (target ES2021), Lit 3, custom-card-helpers 2 and the types of home-assistant-js-websocket 9. Babel is gone: without a configuration it did nothing. `.yarnrc` skips the `engines` check because custom-card-helpers 2 asks for Node ≥ 24 for its own development tools, while its code ends up in the browser bundle. three.js went from 0.130 to 0.186; tween.js stays at 18.
-- **Lit 2 kept for the classic editor.** The classic editor (`src/editor-classic.ts`, see [Card editor](#card-editor)) uses `@material/mwc-*` 0.27 components, written for Lit 2; on Lit 3 some of them break (for example `mwc-formfield` with the old signature of `@queryAssignedNodes`). The `litForMaterial` plugin in `rollup.config.mjs` makes all of `@material/*` use a single Lit 2 copy (the `lit2` alias in `package.json`), while the card and the new editor use Lit 3. Alias, plugin and classic editor can go once no supported Home Assistant version needs them.
-- **Editor loaded separately.** The card doesn't import the editor at startup: `getConfigElement()` loads it when the card is edited. Devices that only show the card download about 850 KB. The build makes four files: `floor3d-card.js` (the card), `floor3d-card-core-<hash>.js` (libraries and code shared with the editor), `floor3d-card-editor-<hash>.js` (the editor with its texts in every language, about 75 KB) and `floor3d-card-editor-classic-<hash>.js` (about 340 KB, loaded only when Home Assistant doesn't provide the components of the new editor). Nothing imports `floor3d-card.js`: the resource has a query (`?hacstag=` added by HACS, `?v=` by hand), and an import without it would load a second copy of the card, whose `customElements.define` fails. `coreChunk()` in `rollup.config.mjs` does this split, and `removeOldChunks()` removes from `dist/` the chunks of older builds. Two more chunks are loaded only by [compressed models](#compressed-models): `floor3d-card-meshopt_decoder.module-<hash>.js` (about 25 KB) and `floor3d-card-DRACOLoader-<hash>.js` (the loader; the Draco decoder itself comes from `draco_decoder_path`).
-- **Components Home Assistant no longer provides.** Recent Home Assistant versions don't define `mwc-menu` anymore, so the drop-down menus of the classic editor didn't open. `elements/menu.ts` defines `mwc-menu`, `mwc-menu-surface`, `mwc-list` and `mwc-list-item` only when they are missing. The card also reads `isPanel`, `editMode` and `preview` directly from Home Assistant (2024+), and falls back to the page structure on older versions.
+- **Tooling.** Rollup 4 with the official `@rollup/plugin-*` packages, TypeScript 5.9 (target ES2021), Lit 3 and the types of home-assistant-js-websocket 9. ESLint 10 (`eslint.config.mjs`, the recommended rules of typescript-eslint 8) and Prettier 3 (`.prettierrc.js`) since 2.12.0, before ESLint 7 and Prettier 2; the Build workflow checks both, so run `npm run format` before a commit. The commit that formatted all the code with Prettier 3 is in `.git-blame-ignore-revs`: GitHub's blame skips it, and so does `git blame` with `git config blame.ignoreRevsFile .git-blame-ignore-revs`. Babel is gone: without a configuration it did nothing. What the card used of custom-card-helpers (two functions that send events to Home Assistant, and a few types) is in `src/ha.ts` since 2.12.0. three.js went from 0.130 to 0.186; tween.js stays at 18.
+- **Editor loaded separately.** The card doesn't import the editor at startup: `getConfigElement()` loads it when the card is edited. Devices that only show the card download about 850 KB. The build makes three files: `floor3d-card.js` (the card), `floor3d-card-core-<hash>.js` (libraries and code shared with the editor) and `floor3d-card-editor-<hash>.js` (the editor with its texts in every language, about 95 KB). Nothing imports `floor3d-card.js`: the resource has a query (`?hacstag=` added by HACS, `?v=` by hand), and an import without it would load a second copy of the card, whose `customElements.define` fails. `coreChunk()` in `rollup.config.mjs` does this split, and `removeOldChunks()` removes from `dist/` the chunks of older builds. Two more chunks are loaded only by [compressed models](#compressed-models): `floor3d-card-meshopt_decoder.module-<hash>.js` (about 25 KB) and `floor3d-card-DRACOLoader-<hash>.js` (the loader; the Draco decoder itself comes from `draco_decoder_path`).
+- **What the card reads from Home Assistant.** `isPanel`, `editMode` and `preview` are read directly from Home Assistant (2024+); without them the card falls back to the page structure.
 
 ## Publishing a release
 
-1. Change `version` in `package.json` and `CARD_VERSION` in `src/const.ts` (for example `2.0.1` and `v2.0.1`), run `npm run build` and commit, `dist/` included.
+1. Change `version` in `package.json` and `CARD_VERSION` in `src/const.ts` (for example `2.0.1` and `v2.0.1`), and commit. No build to commit: the Release workflow makes the files.
 2. On GitHub, **Releases › Draft a new release**: a new tag named after the version (`v2.0.1`), a description of the changes, **Publish release**.
 3. The Release workflow builds the card and attaches the `.js` files to the release. HACS downloads them from there, and shows the update when it next checks the repository (**Update information** in the menu of the repository checks at once).
 
-The Validate workflow runs the HACS checks at every push and every night; the Build workflow runs `npm run lint`, builds the card and runs `npm test`.
+The Validate workflow runs the HACS checks at every push and every night; the Build workflow runs `npm run lint` and `npm run format:check`, builds the card and runs `npm test` and the [browser tests](#browser-tests).
 
 ## New features
 
@@ -133,7 +137,7 @@ The editor is built on the components of Home Assistant, like the editors of the
 - **Pause** (2.5): the pause button next to refresh (also at the top of each entity, group, view and room) keeps the last picture of the preview, with "Preview paused" on it, while you make several changes; the play or refresh button shows them all at once. The configuration still goes to Home Assistant at every change, so Save never loses one. The idea comes from [issue #13](https://github.com/giosci1994/floor3d-card/issues/13).
 - **Picking and the current view keep the pause** (2.7): "Pick in the preview" loads the model in the paused preview and the pause stays, also after the object is picked (the objects of a group can be picked one after the other); "Use the current view" takes the camera of the last live preview. Before, both resumed the preview, which went back to the initial view.
 - **The camera stays** (2.7): Home Assistant creates the preview again at every change of the configuration, and it went back to the initial view, so zoom and camera had to be set again after each change. The new preview goes back to where the camera was, unless the initial view or the model changed. The picture of a paused preview is the last one, with the camera where it was.
-- When Home Assistant doesn't provide the components the editor is built on (`ha-form` and `ha-expansion-panel`), the editor of version 2.1 is shown instead (`src/editor-classic.ts`). The new editor was tested on Home Assistant 2026.9.
+- The editor is built on components of Home Assistant (`ha-form` and `ha-expansion-panel`) and needs Home Assistant 2024.1 or newer. When they are not there after 5 seconds, it says so and the card can still be set up in the code editor (YAML); if they arrive later, the editor shows up. Until 2.11 an older Home Assistant got the editor of version 2.1 (`src/editor-classic.ts`), removed in 2.12.0. The editor was tested on Home Assistant 2026.9.
 
 The editor and the preview talk through window events (`floor3d-card-editor` and `floor3d-card-preview`, see `src/editor.ts`); only a card that Home Assistant marks as `preview` answers.
 
@@ -153,8 +157,6 @@ The texts are in JSON files: `src/localize/languages/<code>.json` for the card (
 1. copy the two `en.json` files to `<code>.json` (the code Home Assistant uses: `fr`, `es`, `pt-BR`…) and translate the texts, leaving `{name}` placeholders as they are;
 2. add the file to `languages` in `src/localize/localize.ts` and in `src/localize/editor.ts`, and the code to the `language` menu in `src/editor-schema.ts` (with its name under `options.language` in the editor files);
 3. add the code to the lists of languages in `test/i18n.test.mjs`: `npm test` checks the languages listed there, that every key exists in English and that the placeholders match.
-
-The classic editor (`src/editor-classic.ts`, for Home Assistant versions without the components of the new editor) stays in English.
 
 ### Shorter configuration
 
@@ -286,7 +288,7 @@ With `extralightmode: yes` the limit counts only the lights that are on: a light
     color: '#FF5500'
 ```
 
-The X coordinate comes from `sensor_x`, from an `x` attribute of the entity, or from the entity state; Y from `sensor_y` or from a `y` attribute. The position of the sensor is set with `sensor_position` (`[x, y, z]` in the model), `sensor_rotation` (degrees) and `scale`. In the editor the type is "Person tracker", with all these options; only the classic editor has no tracker in its type menu, so there the type is written in YAML.
+The X coordinate comes from `sensor_x`, from an `x` attribute of the entity, or from the entity state; Y from `sensor_y` or from a `y` attribute. The position of the sensor is set with `sensor_position` (`[x, y, z]` in the model), `sensor_rotation` (degrees) and `scale`. In the editor the type is "Person tracker", with all these options.
 
 - `unit`: `mm` (default), `cm` or `m`;
 - `flip_x` / `flip_y`: mirror an axis;
@@ -629,10 +631,15 @@ camera_popup_duration: 30
 
 ## Fixes
 
+- Cleanup (2.12.0): the code nothing used is gone (fields, methods and helpers left from the original card and the template it came from, commented-out code); the console only gets the warnings and errors (the card wrote about fifty lines at every load); the objects of the rotate entities are found once, not searched in the whole model at every frame; the switches of the top-level options are listed once, in `config.ts`, for the card and the editor; four packages nothing imported are removed (`@lit-labs/scoped-registry-mixin`, `@mdi/font`, `three-spritetext`, `check-dependencies`), and the types of `home-assistant-js-websocket` are a development dependency; Playwright 1.64; `actions/checkout` and `actions/setup-node` v5 (Node 24) in the workflows. The buttons of the old bars of the views (`hideZoomMenu: yes`) and of `selectionMode` are plain buttons with the same look: their Material component brought a second copy of Lit (Lit 2) into what every device downloads, about 40 KB.
+- The classic editor is gone (2.12.0): Home Assistant 2024.1 or newer has the components of the editor. With it go the Material components (`@material/mwc-*`), the second copy of Lit (`lit2`), the `elements/` folder, the Rollup plugins that handled them and twelve packages; the build has one file less (about 340 KB). The devcontainer and the VS Code settings of the original card are removed too: they ran `npm install`, which rewrites `yarn.lock` (see [Building](#building)).
+- The built files (`dist/`) are no longer in the repository (2.12.0): every release had them twice, in its commit and attached by the Release workflow, which builds them from the tag. HACS downloads the files attached to the release, so nothing changes for it; only the download of a branch instead of a release no longer has a card. Also gone: `tsconfig`, a copy of the JSON schema of `tsconfig.json` that editors already know.
+- custom-card-helpers is gone (2.12.0): the card used two of its functions (`fireEvent`, `forwardHaptic`) and a few types, now in `src/ha.ts`. Its other dependencies went with it, and with them the CommonJS plugin of Rollup (the bundle is the same without it) and `.yarnrc`, which skipped the check of the Node version only because of it.
+- Doors and covers of a GLB (2.12.0): an object with a position or a rotation of its own stays where it is when closed and opens around its hinge or slides from where it is (it jumped away, as the rotate objects did before 2.11.4), and an identical object that shares its mesh no longer moves with it. Doors, covers and rotate objects use one way to set their pivot.
 - States out of step when an entity is missing at startup (the arrays followed only the entities that were found).
 - No more `reading 'some'` crash at startup. The animation loop starts only once the renderer is ready, restarts whenever needed and stops by itself when there is nothing left to animate.
 - One render per frame. Trackers are recalculated only when their entities change, the marker really disappears when the person leaves, and there are no debug logs.
-- `_zIndexChecker` is disabled: with the current Home Assistant interface it reported false "card covered" states on phones and blocked doors and trackers.
+- `_zIndexChecker` is gone: with the current Home Assistant interface it reported false "card covered" states on phones and blocked doors and trackers. It was disabled, but a timer still called it four times a second until 2.12.0.
 - TV screen: previous textures are released. The TV light was doubled: a spot with the same name never received any intensity but still computed shadows.
 - Original bug: the light that follows the camera (torch) now lights what the camera looks at. Before, it always pointed at the centre of the model, so close views and zoom areas stayed dark.
 - Original bug: `color_mode` is no longer modified in the Home Assistant states. The colour of `color_temp` lights is compared by value (before, it was redrawn at every update).
@@ -688,18 +695,19 @@ Some of these were found and fixed first in other forks: [Steven-D-Morgan/hass-3
 - the icon of a camera stays over its point of the model as the view turns, hides with its level and opens the camera on a tap; its picture pops up when a sensor goes off or a doorbell event comes, gets a new picture every second, closes with the cross and goes away after the duration; the editor fills the place of a camera from a tap on the model, with its level; at night the stars and the moon come out over the sky, fewer with clouds (2.10);
 - the ground lies just under the house, wide, outside the model (not tapped, not listed), takes the shadows of the sun without lowering the limit of the shadows, and shows where the background showed before; a colour instead of the lawn; `moon_size` and `sky_clouds: no` change the moon and show the stars through the clouds; the weather and the people fold with their chevron, open with a tap and are remembered on the device; on a phone a narrow box at the top left stays beside the menus, and goes under them only when it meets them (2.10.1);
 - `ground_floor_level` raises the ground, which hides when only the levels under it are shown; the icons of the cameras stay over the model with `overlay: yes`, under the menus, and a tap on one is not a tap on the model behind it; the info boxes are over their object once the model is centred, hide with its level and keep the colours of their block; the text takes the font and colours of its block (and those the editor wrote on the entity), lies flat on the screen readable from the room in its proportions, in OBJ and GLB, or on the UV of the model with `mapping: model`; `angle_entity` turns an object to its angle the shorter way and stops; the objects of a group are picked one after the other without the configuration going to Home Assistant until the end (2.11.3). Each of these fails on 2.11.2;
+- doors of a GLB with a position of their own and a shared mesh stay where they are, open around their hinge or slide, and the other object stays; the old buttons of the views and of selectionMode are plain buttons, without Lit 2; on a Home Assistant without the components of the editor (older than 2024.1) the editor says so, and shows up if they arrive later; the events for Home Assistant (details of an entity, vibration, configuration of the editor) bubble up to its root out of the shadow roots, with their detail (2.12.0);
 - the ground hides over a basement whose stairs reach above it; nothing of an open object group goes to Home Assistant (picked, chosen, a tap on the editor) until it is closed or a tap comes from elsewhere; the text of an info box follows the state, with `info.text`; the fields of the editor show the defaults; rotation with an empty `round_per_second`, from the entity itself, a comma and a unit; a blade of a GLB with a position of its own and a shared mesh turns around its middle and the other stays; the button of the camera icons; two text entities on one object (2.11.4). Each of these fails on 2.11.3.
 
 The tests wait for what they check (an animation that ends, a camera that arrives, a new picture of a camera), not for a fixed time: a busy computer is slower, and a fixed wait long enough on one failed on another. They pass with every core of the computer busy with something else.
 
-To run them locally: `npx playwright install --only-shell chromium` once, then `npm run build` and `npm run test:browser`.
+To run them locally: `npx playwright install --only-shell chromium` once, then `npm run build` and `npm run test:browser`. With a Chromium already installed, of another version than the one of Playwright, `CHROMIUM_PATH=/path/to/chrome npm run test:browser` uses it.
 
 ## Test page
 
 `test/` holds a page that runs the card outside Home Assistant, with fake states, a fake WebGL context and `requestAnimationFrame` on a timer. `config.json` is an example that uses all the new options. `states.json` and `states-off.json` are two sets of states: lights on and during the day, lights off and at night.
 
 1. Put your model (`.obj` and `.mtl`) where `path`, `objfile` and `mtlfile` of `test/config.json` point, and replace the `object_id` values with the ones of your model.
-2. Copy all the `dist/*.js` files into `test/`.
+2. Copy the `.js` files of `dist/` (after `npm run build`) or of a release into `test/`.
 3. Serve the folder from a web server (for example from a random folder of `config/www`, to be removed after the test) and open `index.html?v=dist&fakegl=1&raf=timeout`.
 
 - `fakegl=1` replaces WebGL with a fake context: three.js loads the real model and counts the textures and draw calls;

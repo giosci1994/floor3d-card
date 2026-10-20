@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 // Forms of the configuration shared by the card and its editor.
 // normalizeConfig(): what the card and the editor work with. It accepts the short forms (true/false
 // for the yes/no switches, object_id strings in object_groups, a missing options block).
@@ -62,6 +61,9 @@ const VALUE_DEFAULTS: { [key: string]: string | number } = {
   ground_floor_level: 0,
 };
 
+// The top-level switches and their defaults, for the editor (its toggles).
+export const switchDefaults = (): { [key: string]: 'yes' | 'no' } => ({ ...SWITCH_DEFAULTS });
+
 // The values used when an option is missing: the editor shows them in its fields (cleanConfig leaves
 // them out of the YAML, so a field set to its default came back empty).
 export const valueDefaults = (): { [key: string]: string | number } => ({ ...VALUE_DEFAULTS });
@@ -112,9 +114,11 @@ const BLOCK_NUMBERS: { [block: string]: string[] } = {
 
 const NUMBER = /^-?\d+(\.\d+)?$/;
 
-const isObject = (value: any): boolean => value !== null && typeof value === 'object' && !Array.isArray(value);
+// Shared with the editor.
+export const isObject = (value: unknown): boolean =>
+  value !== null && typeof value === 'object' && !Array.isArray(value);
 
-const copy = <T>(value: T): T => JSON.parse(JSON.stringify(value));
+export const copy = <T>(value: T): T => JSON.parse(JSON.stringify(value ?? null));
 
 function yesNo(object: any, key: string): void {
   if (object[key] === true) object[key] = 'yes';
@@ -170,7 +174,8 @@ export function normalizeConfig<T>(config: T): T {
   // The sensors of a camera: one, or a list.
   if (Array.isArray(c.cameras)) {
     c.cameras.forEach((camera) => {
-      if (isObject(camera) && typeof camera.popup_on === 'string' && camera.popup_on !== '') camera.popup_on = [camera.popup_on];
+      if (isObject(camera) && typeof camera.popup_on === 'string' && camera.popup_on !== '')
+        camera.popup_on = [camera.popup_on];
     });
   }
   return c;

@@ -4,7 +4,6 @@ import * as de from './editor/de.json';
 
 // Texts of the card editor in each language, loaded with the editor only. A text missing in a
 // language is the English one. The language comes from pickLanguage (localize.ts).
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const languages: any = { en, it, de };
 
 export interface Translator {

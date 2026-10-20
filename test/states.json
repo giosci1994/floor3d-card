@@ -6,14 +6,8 @@
       "friendly_name": "light.bedroom",
       "brightness": 180,
       "color_mode": "rgb",
-      "rgb_color": [
-        255,
-        120,
-        40
-      ],
-      "supported_color_modes": [
-        "rgb"
-      ]
+      "rgb_color": [255, 120, 40],
+      "supported_color_modes": ["rgb"]
     },
     "last_changed": "2026-09-26T16:00:00+00:00",
     "last_updated": "2026-09-26T16:00:00+00:00"
@@ -25,14 +19,8 @@
       "friendly_name": "light.bedside_lamp",
       "brightness": 180,
       "color_mode": "rgb",
-      "rgb_color": [
-        255,
-        130,
-        40
-      ],
-      "supported_color_modes": [
-        "rgb"
-      ]
+      "rgb_color": [255, 130, 40],
+      "supported_color_modes": ["rgb"]
     },
     "last_changed": "2026-09-26T16:00:00+00:00",
     "last_updated": "2026-09-26T16:00:00+00:00"
@@ -44,14 +32,8 @@
       "friendly_name": "light.floor_lamp",
       "brightness": 180,
       "color_mode": "rgb",
-      "rgb_color": [
-        255,
-        140,
-        40
-      ],
-      "supported_color_modes": [
-        "rgb"
-      ]
+      "rgb_color": [255, 140, 40],
+      "supported_color_modes": ["rgb"]
     },
     "last_changed": "2026-09-26T16:00:00+00:00",
     "last_updated": "2026-09-26T16:00:00+00:00"
@@ -63,14 +45,8 @@
       "friendly_name": "light.hallway",
       "brightness": 180,
       "color_mode": "rgb",
-      "rgb_color": [
-        255,
-        150,
-        40
-      ],
-      "supported_color_modes": [
-        "rgb"
-      ]
+      "rgb_color": [255, 150, 40],
+      "supported_color_modes": ["rgb"]
     },
     "last_changed": "2026-09-26T16:00:00+00:00",
     "last_updated": "2026-09-26T16:00:00+00:00"
@@ -82,14 +58,8 @@
       "friendly_name": "light.desk_lamp",
       "brightness": 180,
       "color_mode": "rgb",
-      "rgb_color": [
-        255,
-        160,
-        40
-      ],
-      "supported_color_modes": [
-        "rgb"
-      ]
+      "rgb_color": [255, 160, 40],
+      "supported_color_modes": ["rgb"]
     },
     "last_changed": "2026-09-26T16:00:00+00:00",
     "last_updated": "2026-09-26T16:00:00+00:00"
@@ -101,14 +71,8 @@
       "friendly_name": "light.led_strip",
       "brightness": 180,
       "color_mode": "rgb",
-      "rgb_color": [
-        255,
-        170,
-        40
-      ],
-      "supported_color_modes": [
-        "rgb"
-      ]
+      "rgb_color": [255, 170, 40],
+      "supported_color_modes": ["rgb"]
     },
     "last_changed": "2026-09-26T16:00:00+00:00",
     "last_updated": "2026-09-26T16:00:00+00:00"
@@ -122,14 +86,8 @@
       "color_mode": "color_temp",
       "color_temp": 350,
       "color_temp_kelvin": 2857,
-      "rgb_color": [
-        255,
-        190,
-        130
-      ],
-      "supported_color_modes": [
-        "color_temp"
-      ]
+      "rgb_color": [255, 190, 130],
+      "supported_color_modes": ["color_temp"]
     },
     "last_changed": "2026-09-26T16:00:00+00:00",
     "last_updated": "2026-09-26T16:00:00+00:00"

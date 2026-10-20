@@ -4,7 +4,6 @@ import * as de from './languages/de.json';
 import * as nb from './languages/nb.json';
 
 // Texts of the card in each language. The editor has its own (src/localize/editor/), loaded with it.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 const languages: any = { en, it, de, nb };
 
 // The language of a card, from the most specific choice: its language option, the language of the

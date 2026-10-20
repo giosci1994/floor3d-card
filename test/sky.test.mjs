@@ -1,7 +1,17 @@
 // Tests of src/sky.ts and src/weather.ts: npm test (Node 22 or newer).
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { moonPath, moonPhase, moonSvg, nightSky, skyBackground, skyColors, skyGradient, starsSvg, weatherClouds } from '../src/sky.ts';
+import {
+  moonPath,
+  moonPhase,
+  moonSvg,
+  nightSky,
+  skyBackground,
+  skyColors,
+  skyGradient,
+  starsSvg,
+  weatherClouds,
+} from '../src/sky.ts';
 import { forecastLabel, forecastType, formatDegrees, weatherIcon } from '../src/weather.ts';
 
 const rgb = (hex) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
@@ -48,7 +58,8 @@ test('night: the stars come out after the sunset, the moon from the sunset; clou
   assert.ok(nightSky(-7).stars > 0 && nightSky(-7).stars < 1, 'twilight: some');
   assert.equal(nightSky(-15, 1).stars, 0, 'overcast: no stars');
   assert.ok(nightSky(-15, 1).moon > 0 && nightSky(-15, 1).moon < 0.25, 'overcast: a glow of the moon');
-  for (let e = 0; e >= -20; e -= 0.5) assert.ok(Math.abs(nightSky(e).stars * 50 - Math.round(nightSky(e).stars * 50)) < 1e-9, 'steps of 0.02');
+  for (let e = 0; e >= -20; e -= 0.5)
+    assert.ok(Math.abs(nightSky(e).stars * 50 - Math.round(nightSky(e).stars * 50)) < 1e-9, 'steps of 0.02');
 });
 
 test('moon: phase from the date (real new and full moons), the lit side', () => {
@@ -73,7 +84,11 @@ test('sky background: at night the stars and the moon over the gradient, by day 
   const night = skyBackground(-20, 0, { stars: true, moon: true, phase: 0.5 });
   const layers = night.split(/, (?=url|linear)/);
   assert.equal(layers.length, 3);
-  assert.match(layers[0], /^url\("data:image\/svg\+xml,.*"\) 78% 12% \/ 83px 83px no-repeat$/, 'the moon first, over the stars: a disc of 30 px');
+  assert.match(
+    layers[0],
+    /^url\("data:image\/svg\+xml,.*"\) 78% 12% \/ 83px 83px no-repeat$/,
+    'the moon first, over the stars: a disc of 30 px',
+  );
   assert.match(layers[1], /^url\("data:image\/svg\+xml,.*"\) 0 0 \/ 1600px 900px repeat-x$/);
   assert.equal(layers[2], skyGradient(skyColors(-20)));
   assert.ok(!/["#<>]/.test(layers[0].slice(5, -40)), 'the picture is encoded');
@@ -88,7 +103,11 @@ test('sky background: at night the stars and the moon over the gradient, by day 
     skyBackground(-20, 0, { moon: true, phase: 0.502 }),
     'the moon changes picture rarely',
   );
-  assert.match(skyBackground(-20, 0, { moon: true, phase: 0.5, moonSize: 60 }), / 167px 167px no-repeat/, 'moon_size: 60');
+  assert.match(
+    skyBackground(-20, 0, { moon: true, phase: 0.5, moonSize: 60 }),
+    / 167px 167px no-repeat/,
+    'moon_size: 60',
+  );
   assert.equal(starsSvg(), starsSvg(), 'always the same stars');
   assert.equal((starsSvg().match(/<circle/g) || []).length, 280);
 });
