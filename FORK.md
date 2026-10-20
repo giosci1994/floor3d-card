@@ -22,7 +22,7 @@ If the original card is installed, remove it from HACS first: both define `custo
 
 ### By hand
 
-1. Download all the `.js` files of the [latest release](https://github.com/giosci1994/floor3d-card/releases/latest) (they are also in `dist/`) into a folder of `config/www`, for example `config/www/floor3d-card/`. There are five files: the card, its core (libraries and code shared with the editor), the editor, which is loaded only when you edit the card, and the decoders of [compressed models](#compressed-models), loaded only by the models that need them.
+1. Download all the `.js` files of the [latest release](https://github.com/giosci1994/floor3d-card/releases/latest) into a folder of `config/www`, for example `config/www/floor3d-card/`. There are five files: the card, its core (libraries and code shared with the editor), the editor, which is loaded only when you edit the card, and the decoders of [compressed models](#compressed-models), loaded only by the models that need them.
 2. Add `/local/floor3d-card/floor3d-card.js?v=2.12.0` as a resource of type **module** (Settings › Dashboards › Resources). If the original card is installed too, remove it first.
 3. Reload the browser or the app.
 
@@ -39,6 +39,8 @@ npm run test:browser # the built card in headless Chromium (after npm run build)
 npm run lint         # ESLint on src/*.ts
 ```
 
+`dist/` is not in the repository (2.12.0): `npm run build` makes it, and the Release workflow builds the files of each release from its tag. HACS and the installation by hand take them from the release.
+
 The dependencies are installed with yarn 1 from `yarn.lock`, as the Build and Release workflows do. `npm install` used to rewrite `yarn.lock` in a form yarn 1 can't read (the `lit2` alias, gone in 2.12.0) and to add a `package-lock.json`, and the Build workflow then failed at its first step, before any test (2.11.x); `.npmrc` (`package-lock=false`) now stops npm from writing either. To change a dependency use `npx --yes yarn@1.22.22 add` (or `upgrade`), which updates `yarn.lock` as yarn reads it.
 
 `CARD_VERSION` in `src/const.ts` is shown in the card editor and in the console: keep it equal to `version` in `package.json` and to the tag of the release (see [Publishing a release](#publishing-a-release)). For test builds between releases add a suffix, for example `v2.0.1-dev.1`.
@@ -49,7 +51,7 @@ The dependencies are installed with yarn 1 from `yarn.lock`, as the Build and Re
 
 ## Publishing a release
 
-1. Change `version` in `package.json` and `CARD_VERSION` in `src/const.ts` (for example `2.0.1` and `v2.0.1`), run `npm run build` and commit, `dist/` included.
+1. Change `version` in `package.json` and `CARD_VERSION` in `src/const.ts` (for example `2.0.1` and `v2.0.1`), and commit. No build to commit: the Release workflow makes the files.
 2. On GitHub, **Releases › Draft a new release**: a new tag named after the version (`v2.0.1`), a description of the changes, **Publish release**.
 3. The Release workflow builds the card and attaches the `.js` files to the release. HACS downloads them from there, and shows the update when it next checks the repository (**Update information** in the menu of the repository checks at once).
 
@@ -630,6 +632,7 @@ camera_popup_duration: 30
 
 - Cleanup (2.12.0): the code nothing used is gone (fields, methods and helpers left from the original card and the template it came from, commented-out code); the console only gets the warnings and errors (the card wrote about fifty lines at every load); the objects of the rotate entities are found once, not searched in the whole model at every frame; the switches of the top-level options are listed once, in `config.ts`, for the card and the editor; four packages nothing imported are removed (`@lit-labs/scoped-registry-mixin`, `@mdi/font`, `three-spritetext`, `check-dependencies`), and the types of `home-assistant-js-websocket` are a development dependency; Playwright 1.64; `actions/checkout` and `actions/setup-node` v5 (Node 24) in the workflows. The buttons of the old bars of the views (`hideZoomMenu: yes`) and of `selectionMode` are plain buttons with the same look: their Material component brought a second copy of Lit (Lit 2) into what every device downloads, about 40 KB.
 - The classic editor is gone (2.12.0): Home Assistant 2024.1 or newer has the components of the editor. With it go the Material components (`@material/mwc-*`), the second copy of Lit (`lit2`), the `elements/` folder, the Rollup plugins that handled them and twelve packages; the build has one file less (about 360 KB). The devcontainer and the VS Code settings of the original card are removed too: they ran `npm install`, which rewrites `yarn.lock` (see [Building](#building)).
+- The built files (`dist/`) are no longer in the repository (2.12.0): every release had them twice, in its commit and attached by the Release workflow, which builds them from the tag. HACS downloads the files attached to the release, so nothing changes for it; only the download of a branch instead of a release no longer has a card. Also gone: `tsconfig`, a copy of the JSON schema of `tsconfig.json` that editors already know.
 - Doors and covers of a GLB (2.12.0): an object with a position or a rotation of its own stays where it is when closed and opens around its hinge or slides from where it is (it jumped away, as the rotate objects did before 2.11.4), and an identical object that shares its mesh no longer moves with it. Doors, covers and rotate objects use one way to set their pivot.
 - States out of step when an entity is missing at startup (the arrays followed only the entities that were found).
 - No more `reading 'some'` crash at startup. The animation loop starts only once the renderer is ready, restarts whenever needed and stops by itself when there is nothing left to animate.
@@ -702,7 +705,7 @@ To run them locally: `npx playwright install --only-shell chromium` once, then `
 `test/` holds a page that runs the card outside Home Assistant, with fake states, a fake WebGL context and `requestAnimationFrame` on a timer. `config.json` is an example that uses all the new options. `states.json` and `states-off.json` are two sets of states: lights on and during the day, lights off and at night.
 
 1. Put your model (`.obj` and `.mtl`) where `path`, `objfile` and `mtlfile` of `test/config.json` point, and replace the `object_id` values with the ones of your model.
-2. Copy all the `dist/*.js` files into `test/`.
+2. Copy the `.js` files of `dist/` (after `npm run build`) or of a release into `test/`.
 3. Serve the folder from a web server (for example from a random folder of `config/www`, to be removed after the test) and open `index.html?v=dist&fakegl=1&raf=timeout`.
 
 - `fakegl=1` replaces WebGL with a fake context: three.js loads the real model and counts the textures and draw calls;
