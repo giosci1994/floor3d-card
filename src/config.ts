@@ -62,6 +62,9 @@ const VALUE_DEFAULTS: { [key: string]: string | number } = {
   ground_floor_level: 0,
 };
 
+// The top-level switches and their defaults, for the editor (its toggles).
+export const switchDefaults = (): { [key: string]: 'yes' | 'no' } => ({ ...SWITCH_DEFAULTS });
+
 // The values used when an option is missing: the editor shows them in its fields (cleanConfig leaves
 // them out of the YAML, so a field set to its default came back empty).
 export const valueDefaults = (): { [key: string]: string | number } => ({ ...VALUE_DEFAULTS });
@@ -112,9 +115,10 @@ const BLOCK_NUMBERS: { [block: string]: string[] } = {
 
 const NUMBER = /^-?\d+(\.\d+)?$/;
 
-const isObject = (value: any): boolean => value !== null && typeof value === 'object' && !Array.isArray(value);
+// Shared with the editor.
+export const isObject = (value: unknown): boolean => value !== null && typeof value === 'object' && !Array.isArray(value);
 
-const copy = <T>(value: T): T => JSON.parse(JSON.stringify(value));
+export const copy = <T>(value: T): T => JSON.parse(JSON.stringify(value ?? null));
 
 function yesNo(object: any, key: string): void {
   if (object[key] === true) object[key] = 'yes';

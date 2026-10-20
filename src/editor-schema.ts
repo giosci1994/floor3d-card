@@ -46,39 +46,6 @@ export const objectListField = (name: string, objects: string[]): Schema => ({
   selector: { select: { mode: 'dropdown', custom_value: true, multiple: true, options: objects } },
 });
 
-// Switches written 'yes'/'no' in the YAML and shown as toggles, with the value used when missing.
-export const SWITCHES: { [key: string]: 'yes' | 'no' } = {
-  header: 'yes',
-  click: 'no',
-  overlay: 'no',
-  lock_camera: 'no',
-  show_axes: 'no',
-  shadow: 'no',
-  extralightmode: 'no',
-  hideLevelsMenu: 'no',
-  hideZoomMenu: 'no',
-  editModeNotifications: 'yes',
-  selectionMode: 'no',
-  sun: 'no',
-  sun_shadow: 'yes',
-  log_depth: 'no',
-  reversed_depth: 'yes',
-  state_colors: 'no',
-  hideMapMenu: 'no',
-  weather_show: 'yes',
-  status_show: 'no',
-  energy_show: 'yes',
-  people_show: 'yes',
-  alarm_panel_show: 'yes',
-  chips_show: 'yes',
-  cameras_show: 'yes',
-  cameras_button: 'yes',
-  camera_popup_show: 'yes',
-  stars_show: 'yes',
-  moon_show: 'yes',
-  sky_clouds: 'yes',
-  alarm_view: 'no',
-};
 // The same inside the options block of a type.
 export const BLOCK_SWITCHES: { [block: string]: { [key: string]: 'yes' | 'no' } } = {
   light: { single: 'no' },

@@ -13,7 +13,11 @@ let browser;
 
 before(async () => {
   server = await start();
-  browser = await chromium.launch({ args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
+  // CHROMIUM_PATH: a Chromium already installed, of another version than the one of Playwright.
+  browser = await chromium.launch({
+    args: ['--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'],
+    ...(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {}),
+  });
 });
 after(async () => {
   await browser?.close();

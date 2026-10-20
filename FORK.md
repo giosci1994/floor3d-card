@@ -21,7 +21,7 @@ If the original card is installed, remove it from HACS first: both define `custo
 ### By hand
 
 1. Download all the `.js` files of the [latest release](https://github.com/giosci1994/floor3d-card/releases/latest) (they are also in `dist/`) into a folder of `config/www`, for example `config/www/floor3d-card/`. There are six files: the card, its core (libraries and code shared with the editor), the editor, which is loaded only when you edit the card, the classic editor, which only old Home Assistant versions load, and the decoders of [compressed models](#compressed-models), loaded only by the models that need them.
-2. Add `/local/floor3d-card/floor3d-card.js?v=2.11.4` as a resource of type **module** (Settings › Dashboards › Resources). If the original card is installed too, remove it first.
+2. Add `/local/floor3d-card/floor3d-card.js?v=2.12.0` as a resource of type **module** (Settings › Dashboards › Resources). If the original card is installed too, remove it first.
 3. Reload the browser or the app.
 
 At every update copy the new files and change the `?v=` of the resource: Home Assistant serves `/local` with a 31-day cache, and so may a proxy in front of it, while a new query is a new address. The core and the editor have the hash of their content in the name, so they are new addresses too; the ones of older versions can be deleted.
@@ -629,10 +629,11 @@ camera_popup_duration: 30
 
 ## Fixes
 
+- Cleanup (2.12.0): the code nothing used is gone (fields, methods and helpers left from the original card and the template it came from, commented-out code); the console only gets the warnings and errors (the card wrote about fifty lines at every load); the objects of the rotate entities are found once, not searched in the whole model at every frame; the switches of the top-level options are listed once, in `config.ts`, for the card and the editor; four packages nothing imported are removed (`@lit-labs/scoped-registry-mixin`, `@mdi/font`, `three-spritetext`, `check-dependencies`), and the types of `home-assistant-js-websocket` are a development dependency; Playwright 1.64; `actions/checkout` and `actions/setup-node` v5 (Node 24) in the workflows.
 - States out of step when an entity is missing at startup (the arrays followed only the entities that were found).
 - No more `reading 'some'` crash at startup. The animation loop starts only once the renderer is ready, restarts whenever needed and stops by itself when there is nothing left to animate.
 - One render per frame. Trackers are recalculated only when their entities change, the marker really disappears when the person leaves, and there are no debug logs.
-- `_zIndexChecker` is disabled: with the current Home Assistant interface it reported false "card covered" states on phones and blocked doors and trackers.
+- `_zIndexChecker` is gone: with the current Home Assistant interface it reported false "card covered" states on phones and blocked doors and trackers. It was disabled, but a timer still called it four times a second until 2.12.0.
 - TV screen: previous textures are released. The TV light was doubled: a spot with the same name never received any intensity but still computed shadows.
 - Original bug: the light that follows the camera (torch) now lights what the camera looks at. Before, it always pointed at the centre of the model, so close views and zoom areas stayed dark.
 - Original bug: `color_mode` is no longer modified in the Home Assistant states. The colour of `color_temp` lights is compared by value (before, it was redrawn at every update).
@@ -692,7 +693,7 @@ Some of these were found and fixed first in other forks: [Steven-D-Morgan/hass-3
 
 The tests wait for what they check (an animation that ends, a camera that arrives, a new picture of a camera), not for a fixed time: a busy computer is slower, and a fixed wait long enough on one failed on another. They pass with every core of the computer busy with something else.
 
-To run them locally: `npx playwright install --only-shell chromium` once, then `npm run build` and `npm run test:browser`.
+To run them locally: `npx playwright install --only-shell chromium` once, then `npm run build` and `npm run test:browser`. With a Chromium already installed, of another version than the one of Playwright, `CHROMIUM_PATH=/path/to/chrome npm run test:browser` uses it.
 
 ## Test page
 

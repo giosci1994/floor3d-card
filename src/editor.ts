@@ -26,14 +26,13 @@ import {
   mdiPlus,
   mdiRefresh,
 } from '@mdi/js';
-import { cleanConfig, matchObjects, normalizeConfig, objectPattern, valueDefaults } from './config';
+import { cleanConfig, copy, isObject, matchObjects, normalizeConfig, objectPattern, switchDefaults, valueDefaults } from './config';
 import { CARD_VERSION, EDITOR_EVENT, PREVIEW_EVENT } from './const';
 import { previewState } from './preview';
 import {
   ARRAY_VECTORS,
   BLOCK_SWITCHES,
   SECTIONS,
-  SWITCHES,
   TYPES,
   Schema,
   VECTOR_HEADINGS,
@@ -76,9 +75,9 @@ type PickTarget = { path: (string | number)[]; add?: boolean; point?: boolean };
 // to it this long after the last change, and at once when a field is left or something is clicked.
 const CONFIG_DELAY_MS = 1000;
 
-
-const isObject = (value: any): boolean => value !== null && typeof value === 'object' && !Array.isArray(value);
-const copy = <T>(value: T): T => JSON.parse(JSON.stringify(value ?? null));
+// Switches written 'yes'/'no' in the YAML and shown as toggles, with the value used when missing: the
+// list of config.ts (sky, no longer used, has no toggle).
+const SWITCHES: { [key: string]: 'yes' | 'no' } = Object.fromEntries(Object.entries(switchDefaults()).filter(([key]) => key !== 'sky'));
 
 // Top-level switches: 'yes'/'no' in the config, true/false in the form.
 function switchesToForm(object: any, switches: { [key: string]: 'yes' | 'no' }): any {
