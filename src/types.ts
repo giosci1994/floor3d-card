@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { ActionConfig, LovelaceCard, LovelaceCardEditor } from 'custom-card-helpers';
+import type { LovelaceCard, LovelaceCardEditor } from './ha';
 
 declare global {
   interface HTMLElementTagNameMap {
@@ -81,8 +81,6 @@ export interface Floor3dCardConfig {
   overlay_height: string;
   overlay_font: string;
   overlay_fontsize: string;
-  tap_action?: ActionConfig;
-  double_tap_action?: ActionConfig;
   entity: string;
   entity_template: string;
   cover: any;

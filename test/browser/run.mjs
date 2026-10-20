@@ -2062,3 +2062,31 @@ test('card editor: on a Home Assistant without its forms (older than 2024.1) a m
   assert.deepEqual(errors, []);
   await page.close();
 });
+
+test('the events for Home Assistant (hass-more-info, haptic, config-changed) bubble up to its root out of the shadow roots, with their detail', { timeout: TIMEOUT }, async () => {
+  const entities = [{ entity: 'binary_sensor.window', type3d: 'color', object_id: 'wardrobe', long_press_action: 'more-info', colorcondition: [] }];
+  const { page, errors } = await open(house({ entities }));
+  const seen = await page.evaluate(async () => {
+    const seen = [];
+    for (const type of ['hass-more-info', 'haptic', 'config-changed']) {
+      window.addEventListener(type, (e) => seen.push({ type, detail: e.detail, bubbles: e.bubbles, composed: e.composed }));
+    }
+    // A long press on the object of the entity: a vibration and its details.
+    window.__card._longPressEvent([{ object: { name: 'wardrobe' } }]);
+    // A change in the editor, sent at once.
+    const ed = await window.__card.constructor.getConfigElement();
+    ed.hass = window.__hass();
+    ed.setConfig(JSON.parse(JSON.stringify(window.__card._config)));
+    document.body.append(ed);
+    ed._update({ ...ed._config, name: 'Home' });
+    ed._flush();
+    return seen.map((s) => ({ ...s, detail: s.type === 'config-changed' ? s.detail.config.name : s.detail }));
+  });
+  assert.deepEqual(seen, [
+    { type: 'haptic', detail: 'medium', bubbles: true, composed: true },
+    { type: 'hass-more-info', detail: { entityId: 'binary_sensor.window' }, bubbles: true, composed: true },
+    { type: 'config-changed', detail: 'Home', bubbles: true, composed: true },
+  ]);
+  assert.deepEqual(errors, []);
+  await page.close();
+});

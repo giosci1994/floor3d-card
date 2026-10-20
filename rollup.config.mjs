@@ -1,7 +1,6 @@
 import { readdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import nodeResolve from '@rollup/plugin-node-resolve';
-import commonjs from '@rollup/plugin-commonjs';
 import typescript from '@rollup/plugin-typescript';
 import json from '@rollup/plugin-json';
 import terser from '@rollup/plugin-terser';
@@ -19,7 +18,7 @@ function removeOldChunks() {
   };
 }
 
-export const plugins = [nodeResolve(), commonjs(), typescript({ noEmitOnError: true }), json(), removeOldChunks()];
+export const plugins = [nodeResolve(), typescript({ noEmitOnError: true }), json(), removeOldChunks()];
 
 // Everything the card imports at startup, except the card module itself, goes into a "core" chunk.
 // The editor then imports the core chunk and never floor3d-card.js: the card is registered as a

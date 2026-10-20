@@ -12,7 +12,7 @@
 import { LitElement, html, css, nothing, TemplateResult, CSSResultGroup } from 'lit';
 import { customElement, property, state } from 'lit/decorators.js';
 import { repeat } from 'lit/directives/repeat.js';
-import { fireEvent, HomeAssistant, LovelaceCardEditor } from 'custom-card-helpers';
+import { fireEvent, HomeAssistant, LovelaceCardEditor } from './ha';
 import {
   mdiArrowLeft,
   mdiCameraOutline,

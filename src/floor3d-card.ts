@@ -1,12 +1,7 @@
 /* eslint-disable @typescript-eslint/ban-types */
 import { LitElement, html, nothing, TemplateResult, css, CSSResultGroup, render } from 'lit';
 import { property, customElement } from 'lit/decorators.js';
-import {
-  HomeAssistant,
-  LovelaceCardEditor,
-  fireEvent,
-  forwardHaptic,
-} from 'custom-card-helpers';
+import { HomeAssistant, LovelaceCardEditor, fireEvent, forwardHaptic } from './ha';
 // The editor is loaded on demand by getConfigElement(): devices that only show the card never download it.
 import { HassEntity } from 'home-assistant-js-websocket';
 import { createObjectGroupConfigArray, getLovelace } from './helpers';
