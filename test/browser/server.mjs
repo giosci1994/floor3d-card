@@ -7,7 +7,12 @@ import path from 'node:path';
 import { glbFile, mtlFile, objFile } from './model.mjs';
 
 const root = new URL('../../', import.meta.url).pathname;
-const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.json': 'application/json', '.glb': 'model/gltf-binary' };
+const TYPES = {
+  '.html': 'text/html',
+  '.js': 'text/javascript',
+  '.json': 'application/json',
+  '.glb': 'model/gltf-binary',
+};
 // The picture of a camera (a pixel), as the camera proxy of Home Assistant gives it.
 const GIF = Buffer.from('R0lGODlhAQABAIAAAP///wAAACwAAAAAAQABAAACAkQBADs=', 'base64');
 
@@ -29,7 +34,12 @@ export async function start() {
     let body = files.get(url);
     if (body === undefined) {
       // The test page, and the card: /floor3d-card.js and its chunks come from dist/.
-      const file = url === '/test/index.html' ? path.join(root, 'test/index.html') : /^\/floor3d-card[\w.-]*\.js$/.test(url) ? path.join(root, 'dist', url) : null;
+      const file =
+        url === '/test/index.html'
+          ? path.join(root, 'test/index.html')
+          : /^\/floor3d-card[\w.-]*\.js$/.test(url)
+            ? path.join(root, 'dist', url)
+            : null;
       if (file && fs.existsSync(file)) body = fs.readFileSync(file);
     }
     if (body === undefined) {

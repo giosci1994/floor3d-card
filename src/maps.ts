@@ -222,13 +222,16 @@ export function buildScale(def: any, preset?: MapScale): MapScale {
   let stops = base.stops;
   const explicit = Array.isArray(def.stops)
     ? def.stops
-        .map((s: any): [number, string] => (Array.isArray(s) ? [toNumber(s[0]), String(s[1])] : [toNumber(s && s.value), String(s && s.color)]))
+        .map((s: any): [number, string] =>
+          Array.isArray(s) ? [toNumber(s[0]), String(s[1])] : [toNumber(s && s.value), String(s && s.color)],
+        )
         .filter(([v, c]) => !isNaN(v) && COLOR.test(c))
         .sort((a, b) => a[0] - b[0])
     : [];
   const colors = Array.isArray(def.colors) ? def.colors.map(String).filter((c) => COLOR.test(c)) : [];
   if (explicit.length >= 2) stops = explicit;
-  else if (colors.length >= 2) stops = colors.map((c, i): [number, string] => [min + ((max - min) * i) / (colors.length - 1), c]);
+  else if (colors.length >= 2)
+    stops = colors.map((c, i): [number, string] => [min + ((max - min) * i) / (colors.length - 1), c]);
   else if (min !== first || max !== last) {
     // The colours of the preset, moved between min and max.
     stops = base.stops.map(([v, c]): [number, string] => [min + ((v - first) / (last - first || 1)) * (max - min), c]);
@@ -282,8 +285,8 @@ export function roomReading(scale: MapScale, states: any[]): Reading | undefined
     scale.aggregate === 'sum'
       ? values.reduce((a, b) => a + b, 0)
       : scale.aggregate === 'max'
-      ? Math.max(...values)
-      : values.reduce((a, b) => a + b, 0) / values.length;
+        ? Math.max(...values)
+        : values.reduce((a, b) => a + b, 0) / values.length;
   if (!withUnit.length && scale.unitless) return { value, stops: scale.unitless.stops, unit: scale.unitless.unit };
   return { value, stops: scale.stops, unit: scale.unit };
 }
@@ -301,7 +304,16 @@ export function colorAt(stops: Stops, value: number): string {
       const k = (value - v0) / (v1 - v0 || 1);
       const a = channels(c0);
       const b = channels(c1);
-      return '#' + a.map((x, j) => Math.round(x + (b[j] - x) * k).toString(16).padStart(2, '0')).join('');
+      return (
+        '#' +
+        a
+          .map((x, j) =>
+            Math.round(x + (b[j] - x) * k)
+              .toString(16)
+              .padStart(2, '0'),
+          )
+          .join('')
+      );
     }
   }
   return stops[stops.length - 1][1];
@@ -311,7 +323,11 @@ export function colorAt(stops: Stops, value: number): string {
 export function legendGradient(stops: Stops): string {
   const first = stops[0][0];
   const span = stops[stops.length - 1][0] - first || 1;
-  return 'linear-gradient(to right, ' + stops.map(([v, c]) => `${c} ${Math.round(((v - first) / span) * 1000) / 10}%`).join(', ') + ')';
+  return (
+    'linear-gradient(to right, ' +
+    stops.map(([v, c]) => `${c} ${Math.round(((v - first) / span) * 1000) / 10}%`).join(', ') +
+    ')'
+  );
 }
 
 // --- Alarms -------------------------------------------------------------------------------------

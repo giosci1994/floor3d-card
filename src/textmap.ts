@@ -83,7 +83,12 @@ export function textLayout(positions: ArrayLike<number>): TextLayout | null {
 
 // The size of a picture of the text for a face of the given width / height: the text whole in the
 // middle (width x height its size), the rest background; at most max pixels a side.
-export function fitText(width: number, height: number, aspect: number, max = 2048): { width: number; height: number; x: number; y: number; scale: number } {
+export function fitText(
+  width: number,
+  height: number,
+  aspect: number,
+  max = 2048,
+): { width: number; height: number; x: number; y: number; scale: number } {
   let w = Math.max(width, 1);
   let h = Math.max(height, 1);
   if (w / h < aspect) w = h * aspect;

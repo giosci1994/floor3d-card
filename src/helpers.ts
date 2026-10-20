@@ -45,7 +45,7 @@ export const getLovelace = () => {
     return ll;
   }
   return null;
-}
+};
 
 export function createObjectGroupConfigArray(config): Floor3dCardConfig[] {
   const configArray: Floor3dCardConfig[] = [];

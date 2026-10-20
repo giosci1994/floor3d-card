@@ -24,7 +24,16 @@ import {
   mdiPlus,
   mdiRefresh,
 } from '@mdi/js';
-import { cleanConfig, copy, isObject, matchObjects, normalizeConfig, objectPattern, switchDefaults, valueDefaults } from './config';
+import {
+  cleanConfig,
+  copy,
+  isObject,
+  matchObjects,
+  normalizeConfig,
+  objectPattern,
+  switchDefaults,
+  valueDefaults,
+} from './config';
 import { CARD_VERSION, EDITOR_EVENT, PREVIEW_EVENT } from './const';
 import { previewState } from './preview';
 import {
@@ -75,7 +84,9 @@ const CONFIG_DELAY_MS = 1000;
 
 // Switches written 'yes'/'no' in the YAML and shown as toggles, with the value used when missing: the
 // list of config.ts (sky, no longer used, has no toggle).
-const SWITCHES: { [key: string]: 'yes' | 'no' } = Object.fromEntries(Object.entries(switchDefaults()).filter(([key]) => key !== 'sky'));
+const SWITCHES: { [key: string]: 'yes' | 'no' } = Object.fromEntries(
+  Object.entries(switchDefaults()).filter(([key]) => key !== 'sky'),
+);
 
 // Top-level switches: 'yes'/'no' in the config, true/false in the form.
 function switchesToForm(object: any, switches: { [key: string]: 'yes' | 'no' }): any {
@@ -144,7 +155,8 @@ function entityFromForm(data: any, original: any): any {
   const light = entity.light;
   const before = isObject((original || {}).light) ? original.light : {};
   if (isObject(light) && light.light_object) {
-    if (light.single !== 'yes') delete light.light_object; // one light switched off: its object goes too
+    if (light.single !== 'yes')
+      delete light.light_object; // one light switched off: its object goes too
     else if (before.single == null) delete light.single; // light_object alone says it
   }
   Object.entries(ARRAY_VECTORS).forEach(([block, keys]) => {
@@ -168,7 +180,8 @@ function entityFromForm(data: any, original: any): any {
 // forms has been loaded: in the card dialog they usually are; otherwise the editors of the entities
 // and tile cards load them.
 const HA_COMPONENTS = ['ha-form', 'ha-expansion-panel'];
-const haComponentsDefined = (): Promise<unknown> => Promise.all(HA_COMPONENTS.map((name) => customElements.whenDefined(name)));
+const haComponentsDefined = (): Promise<unknown> =>
+  Promise.all(HA_COMPONENTS.map((name) => customElements.whenDefined(name)));
 
 // true once the components are there; false when they aren't after 5 seconds (Home Assistant older
 // than 2024.1, or a very slow one: the editor still comes when they arrive, see connectedCallback).
@@ -176,7 +189,10 @@ async function loadHaComponents(): Promise<boolean> {
   if (HA_COMPONENTS.every((name) => customElements.get(name))) return true;
   try {
     const helpers = await (window as any).loadCardHelpers();
-    for (const config of [{ type: 'entities', entities: [] }, { type: 'tile', entity: 'sun.sun' }]) {
+    for (const config of [
+      { type: 'entities', entities: [] },
+      { type: 'tile', entity: 'sun.sun' },
+    ]) {
       const card = await helpers.createCardElement(config);
       await (card.constructor as any).getConfigElement?.();
     }
@@ -220,7 +236,8 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
     // them, back at its first view. So the config waits: leaving a field, a tap on the editor or on
     // the preview don't send it. It goes when the group is closed; a tap elsewhere (the Save button of
     // the dialog) still sends it.
-    if (this._groupOpen && ev && (ev.type === 'focusout' || this._inPreview(ev) || ev.composedPath().includes(this))) return;
+    if (this._groupOpen && ev && (ev.type === 'focusout' || this._inPreview(ev) || ev.composedPath().includes(this)))
+      return;
     this._flush();
   };
 
@@ -241,8 +258,13 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
 
   // The texts in the language of the card (its language option, else the one of the user).
   private get _tr(): Translator {
-    const language = pickLanguage(this._config && this._config.language, this.hass && this.hass.locale && this.hass.locale.language, this.hass && this.hass.language);
-    if (!this._translator || this._translator.language !== language) this._translator = { ...translator(language), language };
+    const language = pickLanguage(
+      this._config && this._config.language,
+      this.hass && this.hass.locale && this.hass.locale.language,
+      this.hass && this.hass.language,
+    );
+    if (!this._translator || this._translator.language !== language)
+      this._translator = { ...translator(language), language };
     return this._translator;
   }
 
@@ -339,7 +361,11 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
         .path=${this._paused ? mdiPlay : mdiPause}
         @click=${() => this._setPaused(!this._paused)}
       ></ha-icon-button>
-      <ha-icon-button .label=${this._t('ui.reload_preview')} .path=${mdiRefresh} @click=${() => this._reloadPreview()}></ha-icon-button>
+      <ha-icon-button
+        .label=${this._t('ui.reload_preview')}
+        .path=${mdiRefresh}
+        @click=${() => this._reloadPreview()}
+      ></ha-icon-button>
     `;
   }
 
@@ -545,31 +571,46 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
 
   protected render(): TemplateResult | typeof nothing {
     if (!this.hass || !this._config) return nothing;
-    if (this._mode !== 'ready') return html`<div class="loading">${this._t(this._mode === 'loading' ? 'ui.loading' : 'ui.unsupported')}</div>`;
+    if (this._mode !== 'ready')
+      return html`<div class="loading">${this._t(this._mode === 'loading' ? 'ui.loading' : 'ui.unsupported')}</div>`;
     const { list, index } = this._view;
     if (list && index !== undefined && this._list(list)[index] !== undefined) {
       return this._renderItemEditor(list, index);
     }
     return html`
-      <div class="version">
-        floor3d-card ${CARD_VERSION} ${this._previewButtons()}
-      </div>
-      ${SECTIONS.map((section) => this._renderPanel(section.key, this._t('sections.' + section.key), section.icon, () =>
-        this._renderContent(section.content(this._config), this._config, (data) => this._setTop(data), true),
-      ))}
-      ${this._renderPanel('entities', this._t('ui.entities', { count: this._list('entities').length }), 'mdi:format-list-bulleted', () =>
-        this._renderList('entities', this._t('ui.add_entity'), { entity: '' }),
+      <div class="version">floor3d-card ${CARD_VERSION} ${this._previewButtons()}</div>
+      ${SECTIONS.map((section) =>
+        this._renderPanel(section.key, this._t('sections.' + section.key), section.icon, () =>
+          this._renderContent(section.content(this._config), this._config, (data) => this._setTop(data), true),
+        ),
       )}
-      ${this._renderPanel('object_groups', this._t('ui.object_groups', { count: this._list('object_groups').length }), 'mdi:group', () =>
-        this._renderList('object_groups', this._t('ui.add_group'), { object_group: '', objects: [] }),
+      ${this._renderPanel(
+        'entities',
+        this._t('ui.entities', { count: this._list('entities').length }),
+        'mdi:format-list-bulleted',
+        () => this._renderList('entities', this._t('ui.add_entity'), { entity: '' }),
       )}
-      ${this._renderPanel('zoom_areas', this._t('ui.views', { count: this._list('zoom_areas').length }), 'mdi:magnify-expand', () =>
-        this._renderList('zoom_areas', this._t('ui.add_view'), { zoom: '' }),
+      ${this._renderPanel(
+        'object_groups',
+        this._t('ui.object_groups', { count: this._list('object_groups').length }),
+        'mdi:group',
+        () => this._renderList('object_groups', this._t('ui.add_group'), { object_group: '', objects: [] }),
+      )}
+      ${this._renderPanel(
+        'zoom_areas',
+        this._t('ui.views', { count: this._list('zoom_areas').length }),
+        'mdi:magnify-expand',
+        () => this._renderList('zoom_areas', this._t('ui.add_view'), { zoom: '' }),
       )}
     `;
   }
 
-  private _renderPanel(key: string, title: string, icon: string, content: () => TemplateResult | TemplateResult[]): TemplateResult {
+  private _renderPanel(
+    key: string,
+    title: string,
+    icon: string,
+    content: () => TemplateResult | TemplateResult[],
+  ): TemplateResult {
     const expanded = this._expanded.includes(key);
     return html`
       <ha-expansion-panel
@@ -702,7 +743,11 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
     return this._t(count === 1 ? 'ui.matches_one' : 'ui.matches_other', { id, count });
   }
 
-  private _describe(list: ListKey, item: any, index: number): { icon: string; primary: string; secondary: string; warning?: boolean } {
+  private _describe(
+    list: ListKey,
+    item: any,
+    index: number,
+  ): { icon: string; primary: string; secondary: string; warning?: boolean } {
     if (list === 'entities') {
       const entity = isObject(item) ? item : { entity: item };
       const type = TYPES.find(([value]) => value === entity.type3d);
@@ -730,7 +775,9 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
     }
     if (list === 'maps') {
       const preset = MAP_KEYS.includes(item.key);
-      const range = [item.min, item.max].every((v) => v !== undefined && v !== '') ? `${item.min}–${item.max}${item.unit ? ' ' + item.unit : ''}` : '';
+      const range = [item.min, item.max].every((v) => v !== undefined && v !== '')
+        ? `${item.min}–${item.max}${item.unit ? ' ' + item.unit : ''}`
+        : '';
       return {
         icon: preset ? 'mdi:map-legend' : 'mdi:map-plus',
         primary: item.name || (preset ? this._t('options.map_key.' + item.key) : item.key) || this._t('ui.no_name'),
@@ -743,16 +790,21 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
       return {
         icon: 'mdi:account',
         primary: this._entityName(person),
-        secondary: person.room ? this._t('ui.person_room', { room: this._entityName({ entity: person.room }) }) : this._t('ui.no_room'),
+        secondary: person.room
+          ? this._t('ui.person_room', { room: this._entityName({ entity: person.room }) })
+          : this._t('ui.no_room'),
         warning: !person.entity || !this.hass?.states[person.entity],
       };
     }
     if (list === 'cameras') {
       const camera = isObject(item) ? item : { entity: item };
       const placed = point(camera.position) !== undefined;
-      const sensors = (Array.isArray(camera.popup_on) ? camera.popup_on : camera.popup_on ? [camera.popup_on] : []).filter((id) => id).length;
+      const sensors = (
+        Array.isArray(camera.popup_on) ? camera.popup_on : camera.popup_on ? [camera.popup_on] : []
+      ).filter((id) => id).length;
       const parts = [this._t(placed ? 'ui.camera_on_map' : 'ui.camera_not_on_map')];
-      if (sensors) parts.push(this._t(sensors === 1 ? 'ui.popup_sensors_one' : 'ui.popup_sensors_other', { count: sensors }));
+      if (sensors)
+        parts.push(this._t(sensors === 1 ? 'ui.popup_sensors_one' : 'ui.popup_sensors_other', { count: sensors }));
       return {
         icon: camera.icon || 'mdi:cctv',
         primary: this._entityName(camera),
@@ -764,13 +816,22 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
       const kind = item.object_id
         ? this._t('ui.around', { id: item.object_id })
         : this._t(item.camera_position ? 'ui.camera_position' : 'ui.not_set');
-      return { icon: 'mdi:magnify-expand', primary: item.zoom || this._t('ui.no_name'), secondary: kind, warning: !item.zoom };
+      return {
+        icon: 'mdi:magnify-expand',
+        primary: item.zoom || this._t('ui.no_name'),
+        secondary: kind,
+        warning: !item.zoom,
+      };
     }
     const missing = this._missing(item.object_id);
     return {
       icon: 'mdi:floor-plan',
       primary: item.name || this._t('ui.no_name'),
-      secondary: item.object_id ? (missing ? this._t('ui.not_in_model', { id: item.object_id }) : item.object_id) : this._t('ui.no_object'),
+      secondary: item.object_id
+        ? missing
+          ? this._t('ui.not_in_model', { id: item.object_id })
+          : item.object_id
+        : this._t('ui.no_object'),
       warning: !item.object_id || missing,
     };
   }
@@ -797,17 +858,27 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
     if (s.extralightmode) return html`<ha-alert alert-type="info">${this._t('ui.shadows_extra', counts)}</ha-alert>`;
     const entities = this._list('entities');
     const names = s.dropped.map((i) =>
-      entities[i] !== undefined ? this._entityName(isObject(entities[i]) ? entities[i] : { entity: entities[i] }) : this._t('ui.other_lights'),
+      entities[i] !== undefined
+        ? this._entityName(isObject(entities[i]) ? entities[i] : { entity: entities[i] })
+        : this._t('ui.other_lights'),
     );
     // A material of the model with many textures takes units the shadows could have.
-    const material = s.textures && s.textures > 2 ? ' ' + this._t('ui.shadows_material', { material: s.material || '', textures: s.textures }) : '';
-    return html`<ha-alert alert-type="warning">${this._t('ui.shadows_over', { ...counts, names: names.join(', ') }) + material}</ha-alert>`;
+    const material =
+      s.textures && s.textures > 2
+        ? ' ' + this._t('ui.shadows_material', { material: s.material || '', textures: s.textures })
+        : '';
+    return html`<ha-alert alert-type="warning"
+      >${this._t('ui.shadows_over', { ...counts, names: names.join(', ') }) + material}</ha-alert
+    >`;
   }
 
   private _renderList(list: ListKey, addLabel: string, newItem: any): TemplateResult {
     const items = this._list(list);
     return html`
-      <ha-sortable handle-selector=".handle" @item-moved=${(ev: CustomEvent) => this._moveItem(list, ev.detail.oldIndex, ev.detail.newIndex)}>
+      <ha-sortable
+        handle-selector=".handle"
+        @item-moved=${(ev: CustomEvent) => this._moveItem(list, ev.detail.oldIndex, ev.detail.newIndex)}
+      >
         <div class="rows">
           ${repeat(
             items,
@@ -826,8 +897,16 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
                     <span class="primary">${d.primary}</span>
                     <span class="secondary ${d.warning ? 'warning' : ''}">${d.secondary}</span>
                   </div>
-                  <ha-icon-button .label=${this._t('ui.edit')} .path=${mdiPencil} @click=${() => this._edit(list, index)}></ha-icon-button>
-                  <ha-icon-button .label=${this._t('ui.remove')} .path=${mdiDelete} @click=${() => this._removeItem(list, index)}></ha-icon-button>
+                  <ha-icon-button
+                    .label=${this._t('ui.edit')}
+                    .path=${mdiPencil}
+                    @click=${() => this._edit(list, index)}
+                  ></ha-icon-button>
+                  <ha-icon-button
+                    .label=${this._t('ui.remove')}
+                    .path=${mdiDelete}
+                    @click=${() => this._removeItem(list, index)}
+                  ></ha-icon-button>
                 </div>
               `;
             },
@@ -879,12 +958,19 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
     else if (list === 'object_groups') content = this._renderGroup(index, item, set);
     else if (list === 'zoom_areas') content = this._renderZoom(index, item, set);
     else if (list === 'maps') content = this._renderMap(item, set);
-    else if (list === 'people') content = this._form(personSchema(), isObject(item) ? item : { entity: item }, (value) => set(dropEmpty({ ...value })));
+    else if (list === 'people')
+      content = this._form(personSchema(), isObject(item) ? item : { entity: item }, (value) =>
+        set(dropEmpty({ ...value })),
+      );
     else if (list === 'cameras') content = this._renderCamera(index, isObject(item) ? item : { entity: item }, set);
     else content = this._renderRoom(index, item, set);
     return html`
       <div class="subheader">
-        <ha-icon-button .label=${this._t('ui.back')} .path=${mdiArrowLeft} @click=${() => this._back()}></ha-icon-button>
+        <ha-icon-button
+          .label=${this._t('ui.back')}
+          .path=${mdiArrowLeft}
+          @click=${() => this._back()}
+        ></ha-icon-button>
         <span class="title">${this._t('ui.title_' + list)}</span>
         ${this._previewButtons()}
       </div>
@@ -893,7 +979,12 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
   }
 
   // Object field with the button that picks the object in the preview.
-  private _objectRow(path: (string | number)[], schema: Schema[], data: any, onChange: (data: any) => void): TemplateResult {
+  private _objectRow(
+    path: (string | number)[],
+    schema: Schema[],
+    data: any,
+    onChange: (data: any) => void,
+  ): TemplateResult {
     const active = this._picking && JSON.stringify(this._picking.path) === JSON.stringify(path);
     return html`
       <div class="object-row">
@@ -920,13 +1011,25 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
     const objects = this._objectOptions();
     return [
       this._form(entitySchema(), entityToForm(entity), (value) => onChange(entityFromForm(value, entity))),
-      this._objectRow(['entities', index, 'object_id'], [{ ...objectField('object_id', objects), helper_key: 'object_id_entity' }], entity, (value) =>
-        onChange(dropEmpty({ ...entity, object_id: value.object_id })),
+      this._objectRow(
+        ['entities', index, 'object_id'],
+        [{ ...objectField('object_id', objects), helper_key: 'object_id_entity' }],
+        entity,
+        (value) => onChange(dropEmpty({ ...entity, object_id: value.object_id })),
       ),
       ...(entity.type3d
         ? [
-            html`<div class="heading">${this._t('headings.type_options', { type: this._t('types.' + entity.type3d) })}</div>`,
-            ...this._renderContent(typeSchema(entity.type3d, objects, entity, this._entityParts(entity.object_id)), entity, onChange, false, 'entities', index),
+            html`<div class="heading">
+              ${this._t('headings.type_options', { type: this._t('types.' + entity.type3d) })}
+            </div>`,
+            ...this._renderContent(
+              typeSchema(entity.type3d, objects, entity, this._entityParts(entity.object_id)),
+              entity,
+              onChange,
+              false,
+              'entities',
+              index,
+            ),
           ]
         : []),
       html`
@@ -1003,7 +1106,11 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
               objects,
               (o) => this._key(o),
               (o, i) => html`
-                <div class="row" @mouseenter=${() => this._highlight([idOf(o)])} @mouseleave=${() => this._highlightCurrent()}>
+                <div
+                  class="row"
+                  @mouseenter=${() => this._highlight([idOf(o)])}
+                  @mouseleave=${() => this._highlightCurrent()}
+                >
                   <div class="handle"><ha-svg-icon .path=${mdiDragHorizontalVariant}></ha-svg-icon></div>
                   <div class="info"><span class="primary">${idOf(o) || this._t('ui.no_object_title')}</span></div>
                   <ha-icon-button
@@ -1017,9 +1124,19 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
           </div>
         </ha-sortable>
         <div class="object-row">
-          ${this._form([objectField('add', this._objectOptions().filter((o) => !o.startsWith('<')))], {}, (value) => {
-            if (value.add) setObjects([...objects, { object_id: value.add }]);
-          }, '')}
+          ${this._form(
+            [
+              objectField(
+                'add',
+                this._objectOptions().filter((o) => !o.startsWith('<')),
+              ),
+            ],
+            {},
+            (value) => {
+              if (value.add) setObjects([...objects, { object_id: value.add }]);
+            },
+            '',
+          )}
           <ha-icon-button
             class=${active ? 'picking' : ''}
             .label=${this._t('ui.pick')}
@@ -1072,7 +1189,9 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
       set(next);
     };
     // The maps of the configuration that aren't ready ones: a sensor field each.
-    const custom = this._list('maps').filter((m) => isObject(m) && m.key && !MAP_KEYS.includes(m.key) && !ROOM_KEYS.includes(m.key));
+    const custom = this._list('maps').filter(
+      (m) => isObject(m) && m.key && !MAP_KEYS.includes(m.key) && !ROOM_KEYS.includes(m.key),
+    );
     return [
       this._objectRow(['rooms', index, 'object_id'], roomSchema(this._objectOptions()), data, onChange),
       this._form(roomSensorsSchema(custom), data, onChange, this._t('headings.map_sensors')),
@@ -1107,7 +1226,12 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
       html`
         <div class="heading-row">
           <div class="heading">${this._t('headings.camera_place')}</div>
-          <ha-button appearance="plain" size="s" class=${active ? 'picking' : ''} @click=${() => this._startPick({ path, point: true })}>
+          <ha-button
+            appearance="plain"
+            size="s"
+            class=${active ? 'picking' : ''}
+            @click=${() => this._startPick({ path, point: true })}
+          >
             <ha-svg-icon slot="start" .path=${mdiCursorDefaultClickOutline}></ha-svg-icon>${this._t('ui.pick')}
           </ha-button>
         </div>

@@ -16,7 +16,15 @@ const KEYS: [number, string, string][] = [
 ];
 
 const rgb = (hex: string): RGB => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16)) as RGB;
-const hex = (c: RGB): string => '#' + c.map((v) => Math.round(Math.min(255, Math.max(0, v))).toString(16).padStart(2, '0')).join('');
+const hex = (c: RGB): string =>
+  '#' +
+  c
+    .map((v) =>
+      Math.round(Math.min(255, Math.max(0, v)))
+        .toString(16)
+        .padStart(2, '0'),
+    )
+    .join('');
 const mix = (a: RGB, b: RGB, t: number): RGB => [0, 1, 2].map((i) => a[i] + (b[i] - a[i]) * t) as RGB;
 
 // Clouds (0 to 1) turn the colours to grey, a little darker.
@@ -48,7 +56,8 @@ export function skyColors(elevation: number, clouds = 0): [string, string] {
   return [hex(cloudy(top, c)), hex(cloudy(horizon, c))];
 }
 
-export const skyGradient = ([top, horizon]: [string, string]): string => `linear-gradient(to bottom, ${top}, ${horizon})`;
+export const skyGradient = ([top, horizon]: [string, string]): string =>
+  `linear-gradient(to bottom, ${top}, ${horizon})`;
 
 // How cloudy a weather entity says the sky is, 0 to 1: its cloud_coverage, else its condition.
 const CONDITION_CLOUDS: { [condition: string]: number } = {
@@ -72,7 +81,8 @@ const CONDITION_CLOUDS: { [condition: string]: number } = {
 export function weatherClouds(stateObj?: { state: string; attributes: { [key: string]: unknown } }): number {
   if (!stateObj) return 0;
   const coverage = Number(stateObj.attributes && stateObj.attributes.cloud_coverage);
-  if (stateObj.attributes && stateObj.attributes.cloud_coverage != null && !isNaN(coverage)) return Math.min(1, Math.max(0, coverage / 100));
+  if (stateObj.attributes && stateObj.attributes.cloud_coverage != null && !isNaN(coverage))
+    return Math.min(1, Math.max(0, coverage / 100));
   return CONDITION_CLOUDS[stateObj.state] ?? 0;
 }
 
@@ -150,7 +160,9 @@ export function starsSvg(opacity = 1): string {
       const y = Math.pow(random(), 1.6) * 800;
       const r = 0.7 + 1.3 * Math.pow(random(), 5);
       const o = (0.45 + 0.55 * random()) * (1 - (0.75 * y) / 800);
-      circles.push(`<circle cx="${Math.round(x)}" cy="${Math.round(y)}" r="${r.toFixed(1)}" fill-opacity="${o.toFixed(2)}"/>`);
+      circles.push(
+        `<circle cx="${Math.round(x)}" cy="${Math.round(y)}" r="${r.toFixed(1)}" fill-opacity="${o.toFixed(2)}"/>`,
+      );
     }
     starCircles = circles.join('');
   }

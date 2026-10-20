@@ -24,9 +24,16 @@ const entity = (name: string, domain?: string | string[], multiple = false): Sch
 // Show a box: off hides it and keeps its settings (one help text for all).
 const show = (name: string): Schema => ({ ...bool(name), helper_key: 'box_show' });
 // The corner of a box, with the texts of the corners of the overlay.
-const corners = (name: string): Schema => choice(name, ['top-left', 'top-right', 'bottom-left', 'bottom-right'], 'options.overlay_alignment');
+const corners = (name: string): Schema =>
+  choice(name, ['top-left', 'top-right', 'bottom-left', 'bottom-right'], 'options.overlay_alignment');
 // Several fields side by side, their values at the same level as the others.
-const row = (...schema: Schema[]): Schema => ({ type: 'grid', name: '', flatten: true, column_min_width: '140px', schema });
+const row = (...schema: Schema[]): Schema => ({
+  type: 'grid',
+  name: '',
+  flatten: true,
+  column_min_width: '140px',
+  schema,
+});
 // { x, y, z } (or the given keys) stored under one name.
 export const vector = (name: string, keys = ['x', 'y', 'z']): Schema => ({
   type: 'grid',
@@ -78,13 +85,22 @@ export const SECTIONS: Section[] = [
           {
             name: 'backgroundColor',
             options_key: 'options.backgroundColor',
-            selector: { select: { mode: 'dropdown', custom_value: true, options: ['sky', 'transparent'].map((value) => ({ value, label: value })) } },
+            selector: {
+              select: {
+                mode: 'dropdown',
+                custom_value: true,
+                options: ['sky', 'transparent'].map((value) => ({ value, label: value })),
+              },
+            },
           },
           text('style'),
         ),
         // The night of the sky background.
         ...(config.backgroundColor === 'sky'
-          ? [row(bool('stars_show'), bool('moon_show')), row(num('moon_size', { min: 8, max: 300, step: 1, unit_of_measurement: 'px' }), bool('sky_clouds'))]
+          ? [
+              row(bool('stars_show'), bool('moon_show')),
+              row(num('moon_size', { min: 8, max: 300, step: 1, unit_of_measurement: 'px' }), bool('sky_clouds')),
+            ]
           : []),
         // The ground under the house: a lawn, or a colour typed in.
         {
@@ -104,7 +120,11 @@ export const SECTIONS: Section[] = [
       [vector('camera_position')],
       [vector('camera_target')],
       [vector('camera_rotate')],
-      [row(bool('lock_camera'), bool('hideZoomMenu')), row(bool('hideLevelsMenu'), bool('hideMapMenu')), num('initialLevel', { step: 1 })],
+      [
+        row(bool('lock_camera'), bool('hideZoomMenu')),
+        row(bool('hideLevelsMenu'), bool('hideMapMenu')),
+        num('initialLevel', { step: 1 }),
+      ],
       [
         {
           name: 'url_parameters',
@@ -131,7 +151,9 @@ export const SECTIONS: Section[] = [
       [
         text('sky_power'),
         // The colours of the sky light, once it is on (a number other than 0, or a sensor).
-        ...(config.sky_power != null && Number(config.sky_power) !== 0 ? [row(text('sky_color'), text('ground_color'))] : []),
+        ...(config.sky_power != null && Number(config.sky_power) !== 0
+          ? [row(text('sky_color'), text('ground_color'))]
+          : []),
         bool('sun'),
       ],
       ...(config.sun === 'yes' || config.sun === true
@@ -148,7 +170,10 @@ export const SECTIONS: Section[] = [
       [
         row(show('weather_show'), corners('weather_position')),
         entity('weather', 'weather'),
-        row(choice('weather_forecast', ['daily', 'hourly', 'twice_daily']), num('weather_count', { min: 0, max: 12, step: 1 })),
+        row(
+          choice('weather_forecast', ['daily', 'hourly', 'twice_daily']),
+          num('weather_count', { min: 0, max: 12, step: 1 }),
+        ),
       ],
       'status',
       [row(bool('status_show'), corners('status_position'))],
@@ -187,7 +212,11 @@ export const SECTIONS: Section[] = [
     key: 'interaction',
     icon: 'mdi:gesture-tap',
     content: (config) => [
-      [row(bool('click'), bool('editModeNotifications')), row(bool('selectionMode'), bool('show_axes')), bool('overlay')],
+      [
+        row(bool('click'), bool('editModeNotifications')),
+        row(bool('selectionMode'), bool('show_axes')),
+        bool('overlay'),
+      ],
       ...(config.overlay === 'yes' || config.overlay === true
         ? [
             'overlay',
@@ -228,7 +257,11 @@ export const SECTIONS: Section[] = [
     key: 'rendering',
     icon: 'mdi:tune-variant',
     content: () => [
-      [row(num('max_pixel_ratio', { min: 0.5, max: 4 }), bool('log_depth')), bool('reversed_depth'), text('draco_decoder_path')],
+      [
+        row(num('max_pixel_ratio', { min: 0.5, max: 4 }), bool('log_depth')),
+        bool('reversed_depth'),
+        text('draco_decoder_path'),
+      ],
     ],
   },
 ];
@@ -259,7 +292,11 @@ const ACTIONS = ['more-info', 'overlay', 'default'];
 // First fields of an entity (object_id is added by the editor, with the objects of the model).
 export const entitySchema = (): Schema[] => [
   entity('entity'),
-  { name: 'type3d', options_key: 'types', selector: { select: { mode: 'dropdown', options: TYPES.map(([value]) => ({ value, label: value })) } } },
+  {
+    name: 'type3d',
+    options_key: 'types',
+    selector: { select: { mode: 'dropdown', options: TYPES.map(([value]) => ({ value, label: value })) } },
+  },
 ];
 export const entityActionsSchema = (): Schema[] => [
   row(choice('action', ACTIONS), choice('long_press_action', ACTIONS, 'options.action')),
@@ -268,10 +305,16 @@ export const entityActionsSchema = (): Schema[] => [
 
 // Options of each type, stored under its name (light: {...}), except the text style of text and room.
 // parts: the objects of the entity (those of its group, or those its name with * matches).
-export const typeSchema = (type: string, objects: string[], item: any = {}, parts: string[] = []): (Schema[] | string)[] => {
+export const typeSchema = (
+  type: string,
+  objects: string[],
+  item: any = {},
+  parts: string[] = [],
+): (Schema[] | string)[] => {
   switch (type) {
     case 'light': {
-      const single = item.light && (item.light.single === 'yes' || item.light.single === true || item.light.light_object);
+      const single =
+        item.light && (item.light.single === 'yes' || item.light.single === true || item.light.light_object);
       return [
         [
           {
@@ -289,14 +332,24 @@ export const typeSchema = (type: string, objects: string[], item: any = {}, part
           },
         ],
         // A lamp made of several objects: one light for them all.
-        [{ name: 'light', type: 'grid', column_min_width: '140px', schema: [bool('single'), ...(single ? [objectField('light_object', parts.length ? parts : objects)] : [])] }],
+        [
+          {
+            name: 'light',
+            type: 'grid',
+            column_min_width: '140px',
+            schema: [bool('single'), ...(single ? [objectField('light_object', parts.length ? parts : objects)] : [])],
+          },
+        ],
         'spot',
         [
           {
             name: 'light',
             type: 'grid',
             column_min_width: '140px',
-            schema: [objectField('light_target', objects), num('angle', { min: 0, max: 180, unit_of_measurement: '°' })],
+            schema: [
+              objectField('light_target', objects),
+              num('angle', { min: 0, max: 180, unit_of_measurement: '°' }),
+            ],
           },
         ],
         'light.light_direction',
@@ -367,8 +420,22 @@ export const typeSchema = (type: string, objects: string[], item: any = {}, part
         ],
         // A row each: the speed sensor and its multiplier, the angle sensor and its offset, the limits.
         'sensor_control',
-        [{ name: 'rotate', type: 'grid', column_min_width: '140px', schema: [entity('speed_entity'), num('speed_multiplier', { min: 0 })] }],
-        [{ name: 'rotate', type: 'grid', column_min_width: '140px', schema: [entity('angle_entity'), num('angle_offset', { unit_of_measurement: '°' })] }],
+        [
+          {
+            name: 'rotate',
+            type: 'grid',
+            column_min_width: '140px',
+            schema: [entity('speed_entity'), num('speed_multiplier', { min: 0 })],
+          },
+        ],
+        [
+          {
+            name: 'rotate',
+            type: 'grid',
+            column_min_width: '140px',
+            schema: [entity('angle_entity'), num('angle_offset', { unit_of_measurement: '°' })],
+          },
+        ],
         [
           {
             name: 'rotate',
@@ -403,7 +470,14 @@ export const typeSchema = (type: string, objects: string[], item: any = {}, part
       ];
     case 'text':
       return [
-        [{ name: 'text', type: 'grid', column_min_width: '140px', schema: [text('attribute'), choice('mapping', ['flat', 'model'])] }],
+        [
+          {
+            name: 'text',
+            type: 'grid',
+            column_min_width: '140px',
+            schema: [text('attribute'), choice('mapping', ['flat', 'model'])],
+          },
+        ],
         textStyle('text'),
       ];
     case 'color':
@@ -412,7 +486,9 @@ export const typeSchema = (type: string, objects: string[], item: any = {}, part
     case 'show':
       return [[{ name: type, type: 'grid', column_min_width: '140px', schema: [text('state')] }]];
     case 'gesture':
-      return [[{ name: 'gesture', type: 'grid', column_min_width: '140px', schema: [text('domain'), text('service')] }]];
+      return [
+        [{ name: 'gesture', type: 'grid', column_min_width: '140px', schema: [text('domain'), text('service')] }],
+      ];
     case 'image':
       return [
         [
@@ -436,7 +512,14 @@ export const typeSchema = (type: string, objects: string[], item: any = {}, part
             column_min_width: '140px',
             schema: [
               num('lighting_lumens', { min: 0 }),
-              choice('lighting_direction', ['positive_z', 'negative_z', 'positive_x', 'negative_x', 'positive_y', 'negative_y']),
+              choice('lighting_direction', [
+                'positive_z',
+                'negative_z',
+                'positive_x',
+                'negative_x',
+                'positive_y',
+                'negative_y',
+              ]),
               num('lighting_distance', { min: 0, unit_of_measurement: 'cm' }),
               text('lighting_off_state'),
               bool('lighting_shadow'),
@@ -506,12 +589,26 @@ export const typeSchema = (type: string, objects: string[], item: any = {}, part
             name: 'climate',
             type: 'grid',
             column_min_width: '140px',
-            schema: [text('heat_color'), text('cool_color'), num('glow', { min: 0, max: 3, step: 0.1 }), choice('mode', ['heat', 'cool'])],
+            schema: [
+              text('heat_color'),
+              text('cool_color'),
+              num('glow', { min: 0, max: 3, step: 0.1 }),
+              choice('mode', ['heat', 'cool']),
+            ],
           },
         ],
       ];
     case 'alarm':
-      return [[{ name: 'alarm', type: 'grid', column_min_width: '140px', schema: [{ ...text('color'), helper_key: 'alarm_object_color' }] }]];
+      return [
+        [
+          {
+            name: 'alarm',
+            type: 'grid',
+            column_min_width: '140px',
+            schema: [{ ...text('color'), helper_key: 'alarm_object_color' }],
+          },
+        ],
+      ];
     default:
       return [];
   }
@@ -523,7 +620,12 @@ const textStyle = (block: string): Schema[] => [
     name: block,
     type: 'grid',
     column_min_width: '140px',
-    schema: [text('font'), num('span', { min: 0, max: 100, unit_of_measurement: '%' }), text('textfgcolor'), text('textbgcolor')],
+    schema: [
+      text('font'),
+      num('span', { min: 0, max: 100, unit_of_measurement: '%' }),
+      text('textfgcolor'),
+      text('textbgcolor'),
+    ],
   },
 ];
 
@@ -551,7 +653,13 @@ export const roomAlarmsSchema = (): Schema[] => [
 // A map of the configuration: a ready one with other colours, or a map for other sensors.
 export const mapSchema = (): Schema[] => [
   row(
-    { name: 'key', options_key: 'options.map_key', selector: { select: { mode: 'dropdown', custom_value: true, options: MAP_KEYS.map((v) => ({ value: v, label: v })) } } },
+    {
+      name: 'key',
+      options_key: 'options.map_key',
+      selector: {
+        select: { mode: 'dropdown', custom_value: true, options: MAP_KEYS.map((v) => ({ value: v, label: v })) },
+      },
+    },
     text('name'),
   ),
   row(text('unit'), choice('aggregate', ['mean', 'sum', 'max'])),
@@ -560,9 +668,17 @@ export const mapSchema = (): Schema[] => [
 ];
 // A camera: the camera, its name and icon on the map; where it is (a point of the model, picked in the
 // preview, and its level); the sensors that make its picture pop up.
-export const cameraSchema = (): Schema[] => [entity('entity', 'camera'), row(text('name'), { name: 'icon', selector: { icon: {} } })];
-export const cameraPlaceSchema = (): Schema[] => [vector('position'), { ...num('level', { min: 0, step: 1 }), helper_key: 'camera_level' }];
-export const cameraPopupSchema = (): Schema[] => [entity('popup_on', ['binary_sensor', 'event', 'input_boolean', 'switch'], true)];
+export const cameraSchema = (): Schema[] => [
+  entity('entity', 'camera'),
+  row(text('name'), { name: 'icon', selector: { icon: {} } }),
+];
+export const cameraPlaceSchema = (): Schema[] => [
+  vector('position'),
+  { ...num('level', { min: 0, step: 1 }), helper_key: 'camera_level' },
+];
+export const cameraPopupSchema = (): Schema[] => [
+  entity('popup_on', ['binary_sensor', 'event', 'input_boolean', 'switch'], true),
+];
 // A person of the people box: the person, and an entity whose state is the room where they are.
 export const personSchema = (): Schema[] => [
   entity('entity', 'person'),
@@ -592,11 +708,21 @@ export const localizeSchema = (schemas: Schema[], lookup: (key: string) => strin
     if (schema.schema) return { ...schema, schema: localizeSchema(schema.schema, lookup) };
     const select = schema.selector && schema.selector.select;
     if (!schema.options_key || !select) return schema;
-    const options = select.options.map((o: any) => ({ value: o.value, label: lookup(schema.options_key + '.' + o.value) ?? o.label }));
+    const options = select.options.map((o: any) => ({
+      value: o.value,
+      label: lookup(schema.options_key + '.' + o.value) ?? o.label,
+    }));
     return { ...schema, selector: { select: { ...select, options } } };
   });
 
 // Vectors shown under a heading (a grid has no label of its own): the text headings.<name>, with _
 // for the . of a vector inside an options block.
-export const VECTOR_HEADINGS = ['camera_position', 'camera_target', 'camera_rotate', 'light.light_direction', 'info.position', 'tracker.sensor_position'];
+export const VECTOR_HEADINGS = [
+  'camera_position',
+  'camera_target',
+  'camera_rotate',
+  'light.light_direction',
+  'info.position',
+  'tracker.sensor_position',
+];
 export const headingKey = (name: string): string => 'headings.' + name.replace('.', '_');

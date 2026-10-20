@@ -115,7 +115,8 @@ const BLOCK_NUMBERS: { [block: string]: string[] } = {
 const NUMBER = /^-?\d+(\.\d+)?$/;
 
 // Shared with the editor.
-export const isObject = (value: unknown): boolean => value !== null && typeof value === 'object' && !Array.isArray(value);
+export const isObject = (value: unknown): boolean =>
+  value !== null && typeof value === 'object' && !Array.isArray(value);
 
 export const copy = <T>(value: T): T => JSON.parse(JSON.stringify(value ?? null));
 
@@ -173,7 +174,8 @@ export function normalizeConfig<T>(config: T): T {
   // The sensors of a camera: one, or a list.
   if (Array.isArray(c.cameras)) {
     c.cameras.forEach((camera) => {
-      if (isObject(camera) && typeof camera.popup_on === 'string' && camera.popup_on !== '') camera.popup_on = [camera.popup_on];
+      if (isObject(camera) && typeof camera.popup_on === 'string' && camera.popup_on !== '')
+        camera.popup_on = [camera.popup_on];
     });
   }
   return c;

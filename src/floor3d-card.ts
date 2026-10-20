@@ -154,7 +154,14 @@ type ShadowLight = THREE.PointLight | THREE.SpotLight | THREE.DirectionalLight;
 // room has a sensor for them, or the configuration defines them.
 const MAP_MODES = ['temperature', 'presence', 'illuminance'];
 // Elements of a dashboard: Home Assistant sets preview on its cards while it is in edit mode.
-const DASHBOARD_TAGS = ['HUI-VIEW', 'HUI-SECTION', 'HUI-MASONRY-VIEW', 'HUI-SECTIONS-VIEW', 'HUI-PANEL-VIEW', 'HUI-SIDEBAR-VIEW'];
+const DASHBOARD_TAGS = [
+  'HUI-VIEW',
+  'HUI-SECTION',
+  'HUI-MASONRY-VIEW',
+  'HUI-SECTIONS-VIEW',
+  'HUI-PANEL-VIEW',
+  'HUI-SIDEBAR-VIEW',
+];
 const LABEL_BACKGROUND = 'rgba(0, 0, 0, 0.55)'; // behind the text of a room label, without alarm or thermostat
 
 // Share of daylight for an elevation of the sun, in degrees: night below -3, full light from 8.
@@ -225,7 +232,10 @@ class ModelSource {
 function stackCanvases(canvases: HTMLCanvasElement[], background?: string): HTMLCanvasElement {
   const canvas = document.createElement('canvas');
   canvas.width = Math.max(1, ...canvases.map((c) => c.width));
-  canvas.height = Math.max(1, canvases.reduce((h, c) => h + c.height, 0));
+  canvas.height = Math.max(
+    1,
+    canvases.reduce((h, c) => h + c.height, 0),
+  );
   const ctx = canvas.getContext('2d');
   ctx.fillStyle = background || 'transparent';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -445,7 +455,6 @@ export class Floor3dCard extends LitElement {
       if (this._zoomSelect) this._zoomSelect.value = '';
     };
     this._card_id = 'ha-card-1';
-
   }
 
   public connectedCallback(): void {
@@ -478,7 +487,8 @@ export class Floor3dCard extends LitElement {
       // The page may have been navigated to another view while the card was not shown.
       this._applyUrlView(false);
       this._subscribeWeather();
-      if (this._cornerObserver && (this._content || this._card)) this._cornerObserver.observe(this._content || this._card);
+      if (this._cornerObserver && (this._content || this._card))
+        this._cornerObserver.observe(this._content || this._card);
       this._renderBoxes(true); // the pictures of the cameras start again
     }
   }
@@ -515,7 +525,6 @@ export class Floor3dCard extends LitElement {
   }
 
   public static getStubConfig(hass: HomeAssistant, entities: string[], entitiesFallback: string[]): object {
-
     const _arrayFilter = (array: any[], conditions: Array<(value: any) => boolean>, maxSize: number) => {
       if (!maxSize || maxSize > array.length) {
         maxSize = array.length;
@@ -647,12 +656,10 @@ export class Floor3dCard extends LitElement {
       });
     }
 
-
     return conf;
   }
 
   public setConfig(config: Floor3dCardConfig): void {
-
     if (!config) {
       throw new Error(localize('common.invalid_configuration', config && config.language));
     }
@@ -680,7 +687,6 @@ export class Floor3dCard extends LitElement {
       });
       i += 1;
     });
-
 
     if (this._config.show_warning) {
       render(this._showWarning(this._t('show_warning')), this._card);
@@ -796,11 +802,9 @@ export class Floor3dCard extends LitElement {
     } else {
       return false;
     }
-
   }
 
   private _issidebar(): boolean {
-
     let root: any = document.querySelector('home-assistant');
     root = root && root.shadowRoot;
     root = root && root.querySelector('home-assistant-main');
@@ -874,7 +878,6 @@ export class Floor3dCard extends LitElement {
         this._zoommenu.style.justifyContent = 'flex-end';
         this._card.appendChild(this._zoommenu);
       }
-
     }
   }
 
@@ -1218,7 +1221,10 @@ export class Floor3dCard extends LitElement {
     const p = this._bboxmodel.worldToLocal(hit.point.clone());
     const levels = (this._levels || []).filter((level) => level).length;
     const level = hit.object.userData ? hit.object.userData.level : undefined;
-    return { point: [p.x, p.y, p.z].map((n) => Math.round(n)), ...(levels > 1 && level !== undefined ? { level } : {}) };
+    return {
+      point: [p.x, p.y, p.z].map((n) => Math.round(n)),
+      ...(levels > 1 && level !== undefined ? { level } : {}),
+    };
   }
 
   // The picture of the preview, kept for the cards created while it is paused.
@@ -1273,7 +1279,8 @@ export class Floor3dCard extends LitElement {
   private _showPausedPreview(): void {
     const box = document.createElement('div');
     box.style.cssText = 'position: relative; width: 100%; min-height: 200px;';
-    box.style.background = this._config.backgroundColor == 'sky' ? this._skyBackground() : this._config.backgroundColor || '#aaaaaa';
+    box.style.background =
+      this._config.backgroundColor == 'sky' ? this._skyBackground() : this._config.backgroundColor || '#aaaaaa';
     if (previewState.image) {
       const img = document.createElement('img');
       img.src = previewState.image;
@@ -1449,7 +1456,8 @@ export class Floor3dCard extends LitElement {
   private _infoText(entity: Floor3dCardConfig): string {
     const own = entity.info && entity.info.text ? String(entity.info.text).trim() : '';
     if (!own) return this._statewithtemplate(entity);
-    if (own.startsWith('[[[') && own.endsWith(']]]')) return this._statewithtemplate({ ...entity, entity_template: own });
+    if (own.startsWith('[[[') && own.endsWith(']]]'))
+      return this._statewithtemplate({ ...entity, entity_template: own });
     const stateObj = this._hass.states[entity.entity];
     return own.replace(/\$entity/g, stateObj ? stateObj.state : '');
   }
@@ -1528,7 +1536,8 @@ export class Floor3dCard extends LitElement {
               if (entity.type3d == 'info') {
                 this._info.push(this._infoText(entity));
                 // A text of its own (info.text) has its unit in it, if it wants one.
-                if (entity.info && entity.info.text) this._unit_of_measurement[this._unit_of_measurement.length - 1] = '';
+                if (entity.info && entity.info.text)
+                  this._unit_of_measurement[this._unit_of_measurement.length - 1] = '';
               } else {
                 this._info.push('');
               }
@@ -1825,7 +1834,9 @@ export class Floor3dCard extends LitElement {
       if (!this._missingLogged) this._missingLogged = {};
       if (!this._missingLogged[value]) {
         this._missingLogged[value] = true;
-        console.warn('floor3d-card: ' + option + ': entity not found: ' + value + ', the default ' + fallback + ' is used');
+        console.warn(
+          'floor3d-card: ' + option + ': entity not found: ' + value + ', the default ' + fallback + ' is used',
+        );
       }
     }
     return Math.max(0, this._num(entity ? entity.state : value, fallback));
@@ -2072,7 +2083,6 @@ export class Floor3dCard extends LitElement {
   private _onLoaded3DModel(object: Object3D): void {
     // Object Loaded Event: last root object passed to the function
 
-
     this._initobjects(object);
 
     this._bboxmodel = new THREE.Object3D();
@@ -2107,7 +2117,6 @@ export class Floor3dCard extends LitElement {
     this._expandObjectPatterns();
     this._add3dObjects();
 
-
     if (this._content && this._renderer) {
       this._modelready = true;
       this._toEditor({ objects: this._modelObjectNames() });
@@ -2130,9 +2139,7 @@ export class Floor3dCard extends LitElement {
       this._controls = new OrbitControls(this._camera, this._renderer.domElement);
 
       // Phones report 3x or more: 9 times the pixels of 1x for a difference hard to see.
-      this._renderer.setPixelRatio(
-        Math.min(window.devicePixelRatio || 1, this._num(this._config.max_pixel_ratio, 2)),
-      );
+      this._renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, this._num(this._config.max_pixel_ratio, 2)));
 
       this._controls.maxPolarAngle = (0.85 * Math.PI) / 2;
       this._controls.addEventListener('change', this._changeListener);
@@ -2184,13 +2191,11 @@ export class Floor3dCard extends LitElement {
   }
 
   private _initobjects(object: THREE.Object3D) {
-
     let level = 0;
     this._levels = [];
     this._raycasting = [];
     this._raycastinglevels = [];
     //TODO: explore solution with layers
-
 
     this._levels[0] = new THREE.Object3D();
     this._raycastinglevels[0] = [];
@@ -2353,7 +2358,9 @@ export class Floor3dCard extends LitElement {
 
     iconArray.push(html`
       <div class="row" style="background-color:black;">
-        <button class="f3d-bar-button" .index=${-1} @click=${this._handleZoomClick.bind(this)}>${this._t('reset')}</button>
+        <button class="f3d-bar-button" .index=${-1} @click=${this._handleZoomClick.bind(this)}>
+          ${this._t('reset')}
+        </button>
       </div>
     `);
 
@@ -2361,7 +2368,9 @@ export class Floor3dCard extends LitElement {
       if (element) {
         iconArray.push(html`
           <div class="row" style="background-color:black;">
-            <button class="f3d-bar-button" .index=${index} @click=${this._handleZoomClick.bind(this)}>${element.name}</button>
+            <button class="f3d-bar-button" .index=${index} @click=${this._handleZoomClick.bind(this)}>
+              ${element.name}
+            </button>
           </div>
         `);
       }
@@ -2479,7 +2488,11 @@ export class Floor3dCard extends LitElement {
 
   // The language of the card (see pickLanguage): its language option, else the one of the user.
   private _language(): string {
-    return pickLanguage(this._config && this._config.language, this._hass && this._hass.locale && this._hass.locale.language, this._hass && this._hass.language);
+    return pickLanguage(
+      this._config && this._config.language,
+      this._hass && this._hass.locale && this._hass.locale.language,
+      this._hass && this._hass.language,
+    );
   }
 
   private _t(key: string, vars: { [name: string]: string | number } = {}): string {
@@ -2686,7 +2699,9 @@ export class Floor3dCard extends LitElement {
   private _setCamera(): void {
     // The box of the model in its own coordinates: the initial view centres it as the loading did,
     // also once it is centred (the bottom was lifted again to the height it has in the file).
-    const box: THREE.Box3 = new THREE.Box3().setFromObject(this._bboxmodel).translate(this._bboxmodel.position.clone().negate());
+    const box: THREE.Box3 = new THREE.Box3()
+      .setFromObject(this._bboxmodel)
+      .translate(this._bboxmodel.position.clone().negate());
 
     this._bboxmodel.position.x = -(box.max.x - box.min.x) / 2;
     this._bboxmodel.position.y = -box.min.y;
@@ -2759,7 +2774,11 @@ export class Floor3dCard extends LitElement {
       this._levels[level].add(target);
       slight.position.set(x, y, z);
       if (entity.light.light_direction) {
-        target.position.set(x + entity.light.light_direction.x, y + entity.light.light_direction.y, z + entity.light.light_direction.z);
+        target.position.set(
+          x + entity.light.light_direction.x,
+          y + entity.light.light_direction.y,
+          z + entity.light.light_direction.z,
+        );
       } else {
         const tobj = this._scene.getObjectByName(entity.light.light_target);
         if (tobj) new THREE.Box3().setFromObject(tobj).getCenter(target.position);
@@ -2968,10 +2987,8 @@ export class Floor3dCard extends LitElement {
                     const _obj = this._scene.getObjectByName(element.object_id);
                     if (_obj) this._pivotObject(_obj, this._pivot[i]);
                   });
-
                 }
                 if (entity.door.doortype == 'slide') {
-
                   this._object_ids[i].objects.forEach((element) => {
                     const _obj = this._scene.getObjectByName(element.object_id);
                     if (!_obj) return;
@@ -3045,9 +3062,17 @@ export class Floor3dCard extends LitElement {
                   // One light for all the objects of the lamp (a chandelier, a row of spots): on
                   // light_object, or in the middle of them all. Each light costs GPU time, and with
                   // shadows a texture unit: five spots of a lamp were five lights.
-                  const on = entity.light.light_object ? this._scene.getObjectByName(entity.light.light_object) : undefined;
+                  const on = entity.light.light_object
+                    ? this._scene.getObjectByName(entity.light.light_object)
+                    : undefined;
                   if (entity.light.light_object && !on) {
-                    console.warn('floor3d-card: light_object ' + entity.light.light_object + ' of ' + entity.entity + ' is not in the model');
+                    console.warn(
+                      'floor3d-card: light_object ' +
+                        entity.light.light_object +
+                        ' of ' +
+                        entity.entity +
+                        ' is not in the model',
+                    );
                   }
                   const box = new THREE.Box3();
                   if (on) box.setFromObject(on);
@@ -3056,7 +3081,13 @@ export class Floor3dCard extends LitElement {
                   this._addLampLight(entity, i, box, (on || parts[0]).userData.level, parts[0].name + '_light');
                 } else {
                   parts.forEach((part) => {
-                    this._addLampLight(entity, i, new THREE.Box3().setFromObject(part), part.userData.level, part.name + '_light');
+                    this._addLampLight(
+                      entity,
+                      i,
+                      new THREE.Box3().setFromObject(part),
+                      part.userData.level,
+                      part.name + '_light',
+                    );
                   });
                 }
               }
@@ -3333,7 +3364,6 @@ export class Floor3dCard extends LitElement {
   private _createroom(entity: Floor3dCardConfig, i: number): void {
     // createroom
 
-
     const elevation: number = entity.room.elevation ? entity.room.elevation : 250;
     const transparency: number = entity.room.transparency ? entity.room.transparency : 50;
     const color: string = entity.room.color ? entity.room.color : '#ffffff';
@@ -3469,7 +3499,10 @@ export class Floor3dCard extends LitElement {
   private _placeInfoSprites(): void {
     this._bboxmodel.updateMatrixWorld(true);
     (this._sprites || []).forEach((name, i) => {
-      const sprite = name && this._config.entities[i] && this._config.entities[i].type3d == 'info' ? this._scene.getObjectByName(name) : undefined;
+      const sprite =
+        name && this._config.entities[i] && this._config.entities[i].type3d == 'info'
+          ? this._scene.getObjectByName(name)
+          : undefined;
       const object = sprite && sprite.userData.above ? this._scene.getObjectByName(sprite.userData.above) : undefined;
       if (!object) return;
       const box = new THREE.Box3().setFromObject(object);
@@ -3485,12 +3518,16 @@ export class Floor3dCard extends LitElement {
   // or the walls of a basement that reach a little above the ground kept the ground over it.
   private _showWithLevels(): void {
     (this._sprites || []).forEach((name, i) => {
-      const sprite = name && this._config.entities[i] && this._config.entities[i].type3d == 'info' ? this._scene.getObjectByName(name) : undefined;
+      const sprite =
+        name && this._config.entities[i] && this._config.entities[i].type3d == 'info'
+          ? this._scene.getObjectByName(name)
+          : undefined;
       if (sprite) sprite.visible = this._levelShown(sprite.userData.level);
     });
     if (this._ground) {
       const middles: number[] = this._ground.userData.levelMiddles || [];
-      this._ground.visible = !middles.length || middles.some((middle, level) => middle > this._ground.position.y && this._levelShown(level));
+      this._ground.visible =
+        !middles.length || middles.some((middle, level) => middle > this._ground.position.y && this._levelShown(level));
     }
   }
 
@@ -3569,9 +3606,13 @@ export class Floor3dCard extends LitElement {
       case 'down':
         return new THREE.Plane(new THREE.Vector3(0, 1, 0), -box.min.y);
       case 'left':
-        return alongX ? new THREE.Plane(new THREE.Vector3(1, 0, 0), -box.min.x) : new THREE.Plane(new THREE.Vector3(0, 0, 1), -box.min.z);
+        return alongX
+          ? new THREE.Plane(new THREE.Vector3(1, 0, 0), -box.min.x)
+          : new THREE.Plane(new THREE.Vector3(0, 0, 1), -box.min.z);
       case 'right':
-        return alongX ? new THREE.Plane(new THREE.Vector3(-1, 0, 0), box.max.x) : new THREE.Plane(new THREE.Vector3(0, 0, -1), box.max.z);
+        return alongX
+          ? new THREE.Plane(new THREE.Vector3(-1, 0, 0), box.max.x)
+          : new THREE.Plane(new THREE.Vector3(0, 0, -1), box.max.z);
     }
     return null;
   }
@@ -3656,7 +3697,10 @@ export class Floor3dCard extends LitElement {
       });
     });
     if (sets.length) this._slatSets.set(i, sets);
-    else console.warn('floor3d-card: no slats found in <' + ids + '> (' + item.entity + '): each slat must be a separate piece');
+    else
+      console.warn(
+        'floor3d-card: no slats found in <' + ids + '> (' + item.entity + '): each slat must be a separate piece',
+      );
   }
 
   // The slats turn with current_tilt_position: tilt_closed degrees at 0, tilt_open at 100 (from
@@ -3810,7 +3854,10 @@ export class Floor3dCard extends LitElement {
         at = 0;
         parts.forEach(({ mesh, geometry, world }) => {
           // A copy of the geometry: another object may share it.
-          geometry.setAttribute('uv', new THREE.BufferAttribute(layout.uv.slice((at / 3) * 2, ((at + world.length) / 3) * 2), 2));
+          geometry.setAttribute(
+            'uv',
+            new THREE.BufferAttribute(layout.uv.slice((at / 3) * 2, ((at + world.length) / 3) * 2), 2),
+          );
           at += world.length;
           mesh.geometry = geometry;
         });
@@ -3824,7 +3871,8 @@ export class Floor3dCard extends LitElement {
     const ctx = picture.getContext('2d');
     ctx.fillStyle = style.textbgcolor ? style.textbgcolor : 'transparent';
     ctx.fillRect(0, 0, fit.width, fit.height);
-    if (canvas.width > 0 && canvas.height > 0) ctx.drawImage(canvas, fit.x, fit.y, canvas.width * fit.scale, canvas.height * fit.scale);
+    if (canvas.width > 0 && canvas.height > 0)
+      ctx.drawImage(canvas, fit.x, fit.y, canvas.width * fit.scale, canvas.height * fit.scale);
     const texture = new THREE.CanvasTexture(picture);
     meshes.forEach((mesh) => this._setTextTexture(mesh, texture));
   }
@@ -3874,7 +3922,8 @@ export class Floor3dCard extends LitElement {
     if (Array.isArray(attributes.rgb_color) && attributes.rgb_color.length >= 3) {
       return attributes.rgb_color.slice(0, 3).map(Number);
     }
-    if (Number(attributes.color_temp_kelvin) > 0) return this._TemperatureToRGB(1000000 / Number(attributes.color_temp_kelvin));
+    if (Number(attributes.color_temp_kelvin) > 0)
+      return this._TemperatureToRGB(1000000 / Number(attributes.color_temp_kelvin));
     if (Number(attributes.color_temp) > 0) return this._TemperatureToRGB(Number(attributes.color_temp));
     return undefined;
   }
@@ -3934,7 +3983,14 @@ export class Floor3dCard extends LitElement {
         .filter((k) => k >= 0);
       if (same.length > 1) {
         const first = this._config.entities[same[0]].text || {};
-        this._applyTextCanvas(stackCanvases(same.map((k) => this._canvas[k]), first.textbgcolor), _foundobject, first);
+        this._applyTextCanvas(
+          stackCanvases(
+            same.map((k) => this._canvas[k]),
+            first.textbgcolor,
+          ),
+          _foundobject,
+          first,
+        );
       } else {
         this._applyTextCanvas(canvas, _foundobject, entity.text);
       }
@@ -4020,7 +4076,10 @@ export class Floor3dCard extends LitElement {
   private _shadowBudget(): number {
     const caps = this._renderer.capabilities;
     const textures = this._textureUnits ? this._textureUnits.units : 2;
-    return Math.max(2, Math.min(caps.maxTextures - textures, caps.maxVaryings - Math.max(6, 4 + Math.ceil(textures / 2))));
+    return Math.max(
+      2,
+      Math.min(caps.maxTextures - textures, caps.maxVaryings - Math.max(6, 4 + Math.ceil(textures / 2))),
+    );
   }
 
   // The texture units of the material of the model that takes the most, among those lit by the
@@ -4030,7 +4089,8 @@ export class Floor3dCard extends LitElement {
   // the 16 units and its objects vanished.
   private _materialTextures(): { units: number; material: string } {
     const most = { units: 2, material: '' };
-    const lit = (m: any): boolean => m.isMeshLambertMaterial || m.isMeshPhongMaterial || m.isMeshStandardMaterial || m.isMeshToonMaterial;
+    const lit = (m: any): boolean =>
+      m.isMeshLambertMaterial || m.isMeshPhongMaterial || m.isMeshStandardMaterial || m.isMeshToonMaterial;
     this._scene.traverse((object: any) => {
       const materials = Array.isArray(object.material) ? object.material : object.material ? [object.material] : [];
       materials.forEach((material: any) => {
@@ -4053,7 +4113,9 @@ export class Floor3dCard extends LitElement {
   private _applyShadowBudget(): void {
     this._textureUnits = this._materialTextures();
     const budget = this._shadowBudget();
-    const ordered = this._shadowLights.filter((l) => l === this._sun).concat(this._shadowLights.filter((l) => l !== this._sun));
+    const ordered = this._shadowLights
+      .filter((l) => l === this._sun)
+      .concat(this._shadowLights.filter((l) => l !== this._sun));
     const extralightmode = this._config.extralightmode == 'yes';
     let dropped: ShadowLight[] = [];
     if (extralightmode) {
@@ -4071,11 +4133,22 @@ export class Floor3dCard extends LitElement {
         light.castShadow = false;
       });
       if (dropped.length > 0) {
-        const material = this._textureUnits.units > 2
-          ? ' (the material ' + this._textureUnits.material + ' of the model takes ' + this._textureUnits.units + ' texture units)'
-          : '';
+        const material =
+          this._textureUnits.units > 2
+            ? ' (the material ' +
+              this._textureUnits.material +
+              ' of the model takes ' +
+              this._textureUnits.units +
+              ' texture units)'
+            : '';
         console.warn(
-          'floor3d-card: ' + dropped.length + ' lights over the limit of ' + budget + ' shadows' + material + ', without shadow: ' +
+          'floor3d-card: ' +
+            dropped.length +
+            ' lights over the limit of ' +
+            budget +
+            ' shadows' +
+            material +
+            ', without shadow: ' +
             dropped.map((l) => l.name).join(', '),
         );
       }
@@ -4257,7 +4330,12 @@ export class Floor3dCard extends LitElement {
   // A picture of a TV screen, once loaded: it replaces the previous one (or the material of the
   // model, the first time), glows with image.lumens and tints the light of the room with its
   // average colour (image.lighting_lumens).
-  private _showPicture(item: Floor3dCardConfig, index: number, object: any, texture: THREE.Texture<HTMLImageElement>): void {
+  private _showPicture(
+    item: Floor3dCardConfig,
+    index: number,
+    object: any,
+    texture: THREE.Texture<HTMLImageElement>,
+  ): void {
     if (!(object instanceof THREE.Mesh)) {
       texture.dispose();
       return;
@@ -4455,8 +4533,14 @@ export class Floor3dCard extends LitElement {
     if (tv.opacity == 0) tv.group.position.copy(tv.target);
 
     const zone = tracker.zone ? this._hass.states[tracker.zone] : undefined;
-    const zoneText = zone && !['unavailable', 'unknown', '-', ''].includes(String(zone.state)) ? String(zone.state) : '';
-    this._setTrackerLabel(tv, tracker.label == 'no' ? '' : zoneText, tracker.color || '#FF5500', this._num(tracker.size, 15));
+    const zoneText =
+      zone && !['unavailable', 'unknown', '-', ''].includes(String(zone.state)) ? String(zone.state) : '';
+    this._setTrackerLabel(
+      tv,
+      tracker.label == 'no' ? '' : zoneText,
+      tracker.color || '#FF5500',
+      this._num(tracker.size, 15),
+    );
 
     this._setTrackerPresent(tv, true);
     this._startOrStopAnimationLoop();
@@ -4480,7 +4564,12 @@ export class Floor3dCard extends LitElement {
       return;
     }
     if (!tv.label) {
-      const material = new THREE.SpriteMaterial({ transparent: true, opacity: 0, depthTest: false, sizeAttenuation: false });
+      const material = new THREE.SpriteMaterial({
+        transparent: true,
+        opacity: 0,
+        depthTest: false,
+        sizeAttenuation: false,
+      });
       tv.label = new THREE.Sprite(material);
       tv.label.renderOrder = 20;
       tv.label.position.y = tv.height + size * 2.8;
@@ -4544,8 +4633,7 @@ export class Floor3dCard extends LitElement {
     return this._trackers.some(
       (tv) =>
         tv &&
-        (tv.opacity != (tv.present ? 1 : 0) ||
-          (tv.present && tv.group.position.distanceToSquared(tv.target) > 0.25)),
+        (tv.opacity != (tv.present ? 1 : 0) || (tv.present && tv.group.position.distanceToSquared(tv.target) > 0.25)),
     );
   }
 
@@ -4611,7 +4699,11 @@ export class Floor3dCard extends LitElement {
     // ground floor of a house with a basement. The middle of the height of each level, to hide it with
     // the levels under it (see _showWithLevels).
     const bottom = new THREE.Box3().setFromObject(this._bboxmodel).min.y;
-    ground.position.set(this._modelCenter.x, bottom - 0.5 + this._num(this._config.ground_floor_level, 0), this._modelCenter.z);
+    ground.position.set(
+      this._modelCenter.x,
+      bottom - 0.5 + this._num(this._config.ground_floor_level, 0),
+      this._modelCenter.z,
+    );
     ground.userData.levelMiddles = this._levels.map((level) => {
       const box = level ? new THREE.Box3().setFromObject(level) : null;
       return box && !box.isEmpty() ? (box.min.y + box.max.y) / 2 : -Infinity;
@@ -4714,7 +4806,9 @@ export class Floor3dCard extends LitElement {
   private _subscribeWeather(): void {
     const entityId = this._config.weather;
     const stateObj = entityId && this._hass ? this._hass.states[entityId] : undefined;
-    const type = stateObj ? forecastType(this._config.weather_forecast, stateObj.attributes.supported_features) : undefined;
+    const type = stateObj
+      ? forecastType(this._config.weather_forecast, stateObj.attributes.supported_features)
+      : undefined;
     const key = stateObj && this.isConnected && this._shown('weather_show', true) ? entityId + '|' + type : undefined;
     if (key === this._weatherKey) return;
     this._unsubscribeWeather();
@@ -4724,7 +4818,8 @@ export class Floor3dCard extends LitElement {
     if (!key || Array.isArray(stateObj.attributes.forecast)) return;
     const connection: any = this._hass.connection;
     if (!connection || typeof connection.subscribeMessage !== 'function') return;
-    const failed = (e: any) => console.warn('floor3d-card: no forecast from ' + entityId + ': ' + ((e && e.message) || e));
+    const failed = (e: any) =>
+      console.warn('floor3d-card: no forecast from ' + entityId + ': ' + ((e && e.message) || e));
     try {
       this._weatherUnsub = Promise.resolve(
         connection.subscribeMessage(
@@ -4789,7 +4884,9 @@ export class Floor3dCard extends LitElement {
     const container = this._cornerEl(where);
     if (box.parentElement !== container) {
       const order = BOX_KINDS.indexOf(kind);
-      const next = Array.from(container.children).find((child) => BOX_KINDS.indexOf((child as HTMLElement).dataset.kind || '') > order);
+      const next = Array.from(container.children).find(
+        (child) => BOX_KINDS.indexOf((child as HTMLElement).dataset.kind || '') > order,
+      );
       box.dataset.kind = kind;
       container.insertBefore(box, next || null);
       this._boxDeps.delete(kind);
@@ -4848,9 +4945,10 @@ export class Floor3dCard extends LitElement {
       const lefts = Array.from(topLeft.children) as HTMLElement[];
       lefts.forEach((el) => (el.style.marginTop = ''));
       const topRight = this._corners.get('top-right');
-      const obstacles = [box(this._zoommenu), ...(topRight ? (Array.from(topRight.children) as HTMLElement[]) : []).map((el) => el.getBoundingClientRect())].filter(
-        (r) => r && r.height > 0,
-      );
+      const obstacles = [
+        box(this._zoommenu),
+        ...(topRight ? (Array.from(topRight.children) as HTMLElement[]) : []).map((el) => el.getBoundingClientRect()),
+      ].filter((r) => r && r.height > 0);
       lefts.forEach((el) => {
         const r = el.getBoundingClientRect();
         const met = obstacles.filter((o) => across(r, o) && r.top < o.bottom && o.top < r.bottom);
@@ -4860,7 +4958,8 @@ export class Floor3dCard extends LitElement {
     const bottomRight = this._corners.get('bottom-right');
     const below = box(this._corners.get('bottom-left'));
     const beside = box(bottomRight);
-    if (below && beside && across(below, beside)) bottomRight.style.bottom = Math.round(card.bottom - below.top + 6) + 'px';
+    if (below && beside && across(below, beside))
+      bottomRight.style.bottom = Math.round(card.bottom - below.top + 6) + 'px';
   }
 
   // A switch of the config: on, or at its default when missing (the *_show of the boxes are on by
@@ -4910,7 +5009,10 @@ export class Floor3dCard extends LitElement {
   // open, locks open, heaters working. A tap on a kind outlines its objects in the model and frames
   // them; a second tap, or ten seconds, ends it.
   private _renderStatus(force: boolean): void {
-    const box = this._box('status', this._shown('status_show', false) ? corner(this._config.status_position, 'top-left') : null);
+    const box = this._box(
+      'status',
+      this._shown('status_show', false) ? corner(this._config.status_position, 'top-left') : null,
+    );
     if (!box) return;
     const entities: any[] = (this._config.entities || []).map((e: any) => (typeof e === 'string' ? { entity: e } : e));
     const deps: unknown[] = entities.map((e) => e && this._hass.states[e.entity]);
@@ -4930,11 +5032,14 @@ export class Floor3dCard extends LitElement {
                   this._toggleStatus(g.kind, g.indices);
                 }}
               >
-                <ha-icon icon=${STATUS_ICONS[g.kind]} style=${'color: ' + STATUS_COLORS[g.kind]}></ha-icon><span>${g.entities.length}</span>
+                <ha-icon icon=${STATUS_ICONS[g.kind]} style=${'color: ' + STATUS_COLORS[g.kind]}></ha-icon
+                ><span>${g.entities.length}</span>
               </button>
             `,
           )}`
-        : html`<span class="chip clear" title=${this._t('status_clear')}><ha-icon icon="mdi:check-circle-outline"></ha-icon><span>${this._t('status_ok')}</span></span>`,
+        : html`<span class="chip clear" title=${this._t('status_clear')}
+            ><ha-icon icon="mdi:check-circle-outline"></ha-icon><span>${this._t('status_ok')}</span></span
+          >`,
       box,
     );
   }
@@ -4944,7 +5049,9 @@ export class Floor3dCard extends LitElement {
       this._endShown();
       return;
     }
-    const ids = indices.flatMap((i) => ((this._object_ids && this._object_ids[i] && this._object_ids[i].objects) || []).map((o) => o.object_id));
+    const ids = indices.flatMap((i) =>
+      ((this._object_ids && this._object_ids[i] && this._object_ids[i].objects) || []).map((o) => o.object_id),
+    );
     this._showObjects(ids, STATUS_COLORS[kind]);
     this._shownStatus = kind;
     this._renderStatus(true);
@@ -5001,7 +5108,9 @@ export class Floor3dCard extends LitElement {
   private _renderEnergy(force: boolean): void {
     const c = this._config;
     const plugsSet = Array.isArray(c.energy_plugs) ? c.energy_plugs.filter((p: any) => typeof p === 'string' && p) : [];
-    const on = !!(c.energy_power || c.energy_solar || c.energy_grid || c.energy_battery || plugsSet.length) && this._shown('energy_show', true);
+    const on =
+      !!(c.energy_power || c.energy_solar || c.energy_grid || c.energy_battery || plugsSet.length) &&
+      this._shown('energy_show', true);
     const box = this._box('energy', on ? corner(c.energy_position, 'bottom-left') : null);
     if (!box) return;
     const plugs: string[] = plugsSet.length ? plugsSet : this._roomViews.flatMap((room) => room.sensors.power || []);
@@ -5039,25 +5148,27 @@ export class Floor3dCard extends LitElement {
           )}
           ${value(c.energy_battery, batteryIcon(battery), isNaN(battery) ? '' : Math.round(battery) + '%', this._t('energy_battery'))}
         </div>
-        ${top.length
-          ? html`<div class="consumers">
-              ${top.map((t) => {
-                const room = this._roomViews.find((r) => (r.sensors.power || []).includes(t.entity));
-                const name = String((states[t.entity] && states[t.entity].attributes.friendly_name) || t.entity);
-                return html`<button
-                  class="consumer"
-                  title=${room ? name + ' · ' + room.name : name}
-                  @click=${(ev: Event) => {
-                    ev.stopPropagation();
-                    if (room) this._showRoom(room, []);
-                    else this._moreInfo(t.entity);
-                  }}
-                >
-                  <span class="name">${name}</span><span>${formatPower(t.watts, language)}</span>
-                </button>`;
-              })}
-            </div>`
-          : nothing}
+        ${
+          top.length
+            ? html`<div class="consumers">
+                ${top.map((t) => {
+                  const room = this._roomViews.find((r) => (r.sensors.power || []).includes(t.entity));
+                  const name = String((states[t.entity] && states[t.entity].attributes.friendly_name) || t.entity);
+                  return html`<button
+                    class="consumer"
+                    title=${room ? name + ' · ' + room.name : name}
+                    @click=${(ev: Event) => {
+                      ev.stopPropagation();
+                      if (room) this._showRoom(room, []);
+                      else this._moreInfo(t.entity);
+                    }}
+                  >
+                    <span class="name">${name}</span><span>${formatPower(t.watts, language)}</span>
+                  </button>`;
+                })}
+              </div>`
+            : nothing
+        }
       `,
       box,
     );
@@ -5115,17 +5226,21 @@ export class Floor3dCard extends LitElement {
               ${picture ? html`<img src=${picture} alt="" />` : html`<span>${initials(name)}</span>`}
             </button>
             <span class="name">${name.split(' ')[0]}</span>
-            ${room
-              ? html`<button
-                  class="place link"
-                  @click=${(ev: Event) => {
-                    ev.stopPropagation();
-                    this._showRoom(this._roomView(room.name), room.object_id ? [room.object_id] : []);
-                  }}
-                >
-                  ${room.name}
-                </button>`
-              : html`<span class="place">${place.home ? this._t('people_home') : place.zone || this._t('people_away')}</span>`}
+            ${
+              room
+                ? html`<button
+                    class="place link"
+                    @click=${(ev: Event) => {
+                      ev.stopPropagation();
+                      this._showRoom(this._roomView(room.name), room.object_id ? [room.object_id] : []);
+                    }}
+                  >
+                    ${room.name}
+                  </button>`
+                : html`<span class="place"
+                    >${place.home ? this._t('people_home') : place.zone || this._t('people_away')}</span
+                  >`
+            }
           </div>
         `;
       })}${this._foldMark('people', where, false)}`,
@@ -5223,7 +5338,10 @@ export class Floor3dCard extends LitElement {
   private _renderAlarmPanel(force: boolean): void {
     const entityId = this._config.alarm_panel;
     const stateObj = entityId ? this._hass.states[entityId] : undefined;
-    const box = this._box('alarm_panel', stateObj && this._shown('alarm_panel_show', true) ? corner(this._config.alarm_panel_position, 'top-right') : null);
+    const box = this._box(
+      'alarm_panel',
+      stateObj && this._shown('alarm_panel_show', true) ? corner(this._config.alarm_panel_position, 'top-right') : null,
+    );
     if (!box || !this._boxChanged('alarm_panel', [stateObj, this._language()], force)) return;
     const look = panelLook(stateObj.state);
     const text = this._tOr('panel_' + stateObj.state, stateObj.state);
@@ -5236,7 +5354,10 @@ export class Floor3dCard extends LitElement {
   // chips: any entity as a chip, its icon and its state; a tap opens it.
   private _renderChips(force: boolean): void {
     const chips = chipList(this._config.chips);
-    const box = this._box('chips', chips.length && this._shown('chips_show', true) ? corner(this._config.chips_position, 'bottom-right') : null);
+    const box = this._box(
+      'chips',
+      chips.length && this._shown('chips_show', true) ? corner(this._config.chips_position, 'bottom-right') : null,
+    );
     if (!box) return;
     const states = this._hass.states;
     if (!this._boxChanged('chips', [...chips.map((c) => states[c.entity]), this._language()], force)) return;
@@ -5247,7 +5368,10 @@ export class Floor3dCard extends LitElement {
         const stateObj = states[c.entity];
         if (!stateObj) return nothing;
         const unit = stateObj.attributes.unit_of_measurement;
-        const value = typeof hass.formatEntityState === 'function' ? hass.formatEntityState(stateObj) : stateObj.state + (unit ? ' ' + unit : '');
+        const value =
+          typeof hass.formatEntityState === 'function'
+            ? hass.formatEntityState(stateObj)
+            : stateObj.state + (unit ? ' ' + unit : '');
         const icon = c.icon || (stateObj.attributes.icon as string | undefined);
         const name = c.name || String(stateObj.attributes.friendly_name || c.entity);
         return html`<button
@@ -5272,7 +5396,15 @@ export class Floor3dCard extends LitElement {
     const where = corner(this._config.weather_position, 'bottom-left');
     const box = this._box('weather', stateObj && this._shown('weather_show', true) ? where : null);
     const collapsed = this._isCollapsed('weather');
-    if (!box || !this._boxChanged('weather', [stateObj, this._forecast, this._forecastType, this._language(), collapsed, where], force)) return;
+    if (
+      !box ||
+      !this._boxChanged(
+        'weather',
+        [stateObj, this._forecast, this._forecastType, this._language(), collapsed, where],
+        force,
+      )
+    )
+      return;
     // Open, a tap opens the entity; folded, it opens the box.
     if (!collapsed) this._wholeBox(box, entityId, this._t('weather'));
     this._foldable(box, 'weather', where, collapsed, this._t('weather'));
@@ -5287,7 +5419,8 @@ export class Floor3dCard extends LitElement {
       );
       return;
     }
-    const forecast: any[] = (Array.isArray(stateObj.attributes.forecast) ? stateObj.attributes.forecast : this._forecast) || [];
+    const forecast: any[] =
+      (Array.isArray(stateObj.attributes.forecast) ? stateObj.attributes.forecast : this._forecast) || [];
     const count = Math.min(12, Math.max(0, Math.round(this._num(this._config.weather_count, 4))));
     const type = this._forecastType || 'daily';
     const language = this._language();
@@ -5335,18 +5468,30 @@ export class Floor3dCard extends LitElement {
     const { showing, next } = popupStep(this._popupMemory, cameras, this._hass.states, now, duration);
     this._popupShowing = showing;
     window.clearTimeout(this._popupTimer);
-    this._popupTimer = next !== undefined && this.isConnected ? window.setTimeout(() => this._renderBoxes(), next - now + 50) : undefined;
+    this._popupTimer =
+      next !== undefined && this.isConnected
+        ? window.setTimeout(() => this._renderBoxes(), next - now + 50)
+        : undefined;
   }
 
   // cameras_show: the icon of each camera with a position, over its point of the model; a tap opens
   // the camera. It blinks while its picture pops up.
   private _renderPins(cameras: CameraItem[], force: boolean): void {
     // Hidden on this device with the button by the menus (cameras_button).
-    const placed = this._shown('cameras_show', true) && !this._isCollapsed('cameras') ? cameras.filter((c) => c.position) : [];
+    const placed =
+      this._shown('cameras_show', true) && !this._isCollapsed('cameras') ? cameras.filter((c) => c.position) : [];
     const states = this._hass.states;
     const alert = new Set(this._popupShowing.map((s) => s.entity));
     const key = JSON.stringify(
-      placed.map((c) => [c.entity, c.position, c.level, c.icon, cameraName(c, states[c.entity]), states[c.entity] ? states[c.entity].state : '', alert.has(c.entity)]),
+      placed.map((c) => [
+        c.entity,
+        c.position,
+        c.level,
+        c.icon,
+        cameraName(c, states[c.entity]),
+        states[c.entity] ? states[c.entity].state : '',
+        alert.has(c.entity),
+      ]),
     );
     if (!force && key === this._pinsKey) return;
     this._pinsKey = key;
@@ -5361,7 +5506,9 @@ export class Floor3dCard extends LitElement {
       this._pinsEl.className = 'f3d-pins';
       this._pinsEl.classList.toggle('picking', !!this._pickMode);
       // A tap on an icon is for the icon: not a tap on the model behind it (the box listens to them).
-      ['pointerdown', 'dblclick', 'keydown'].forEach((type) => this._pinsEl.addEventListener(type, (ev) => ev.stopPropagation()));
+      ['pointerdown', 'dblclick', 'keydown'].forEach((type) =>
+        this._pinsEl.addEventListener(type, (ev) => ev.stopPropagation()),
+      );
     }
     // First in the box of the model: over the model, also when the box is positioned (overlay: yes
     // makes it so: in the card, before it, the model covered the icons), under the menus and the bars
@@ -5408,7 +5555,8 @@ export class Floor3dCard extends LitElement {
     this._pins.forEach(({ el, camera }) => {
       const p = camera.position;
       let shown = !!p && width > 0 && height > 0;
-      if (shown && camera.level !== undefined && this._displaylevels && this._displaylevels[camera.level] === false) shown = false;
+      if (shown && camera.level !== undefined && this._displaylevels && this._displaylevels[camera.level] === false)
+        shown = false;
       if (shown) {
         point.set(p[0], p[1], p[2]).applyMatrix4(this._bboxmodel.matrixWorld);
         view.copy(point).applyMatrix4(this._camera.matrixWorldInverse);
@@ -5437,7 +5585,15 @@ export class Floor3dCard extends LitElement {
     const camera = cameras.find((c) => c.entity === shown.entity) as CameraItem;
     const stateObj = states[shown.entity];
     const trigger = shown.trigger ? states[shown.trigger] : undefined;
-    const deps = [shown.entity, shown.trigger, camera.name, camera.icon, stateObj.attributes.friendly_name, trigger && trigger.attributes.friendly_name, this._language()];
+    const deps = [
+      shown.entity,
+      shown.trigger,
+      camera.name,
+      camera.icon,
+      stateObj.attributes.friendly_name,
+      trigger && trigger.attributes.friendly_name,
+      this._language(),
+    ];
     this._sizePopup();
     if (this._boxChanged('camera_popup', deps, force)) {
       const name = cameraName(camera, stateObj);
@@ -5467,7 +5623,8 @@ export class Floor3dCard extends LitElement {
             <img alt="" />
           </div>
           <div class="caption">
-            <span class="name">${name}</span> ${triggerName ? html`<span class="trigger">${triggerName}</span>` : nothing}
+            <span class="name">${name}</span>
+            ${triggerName ? html`<span class="trigger">${triggerName}</span>` : nothing}
           </div>
           <button
             class="close"
@@ -5615,7 +5772,8 @@ export class Floor3dCard extends LitElement {
 
   // Menus at the top right: views and, with rooms configured, the room colours.
   private _renderMenus(): void {
-    if (this._zoommenu) render(html`${this._getZoomMenu()}${this._getMapMenu()}${this._getCamerasButton()}`, this._zoommenu);
+    if (this._zoommenu)
+      render(html`${this._getZoomMenu()}${this._getMapMenu()}${this._getCamerasButton()}`, this._zoommenu);
     this._placeCorners();
   }
 
@@ -5673,16 +5831,20 @@ export class Floor3dCard extends LitElement {
         >
           ${option('none', this._t('map_none'))} ${this._mapModes().map((mode) => option(mode, this._mapName(mode)))}
         </select>
-        ${legend
-          ? html`<div
-              class="f3d-legend"
-              style="padding: 5px 8px 3px; border-radius: 8px; background: rgba(0, 0, 0, 0.55); color: white;
+        ${
+          legend
+            ? html`<div
+                class="f3d-legend"
+                style="padding: 5px 8px 3px; border-radius: 8px; background: rgba(0, 0, 0, 0.55); color: white;
                 font-size: 11px; line-height: 14px; width: 140px;"
-            >
-              <div style="height: 8px; border-radius: 4px; background: ${legend.gradient};"></div>
-              <div style="display: flex; justify-content: space-between;"><span>${legend.min}</span><span>${legend.max}</span></div>
-            </div>`
-          : ''}
+              >
+                <div style="height: 8px; border-radius: 4px; background: ${legend.gradient};"></div>
+                <div style="display: flex; justify-content: space-between;">
+                  <span>${legend.min}</span><span>${legend.max}</span>
+                </div>
+              </div>`
+            : ''
+        }
       </div>
     `;
   }
@@ -5793,14 +5955,22 @@ export class Floor3dCard extends LitElement {
       else if (r.sensors[mode]) ids.push(...r.sensors[mode]);
     });
     const deps = ids.map((id) => (id ? this._hass.states[id] : undefined));
-    if (!force && this._colorDeps && deps.length == this._colorDeps.length && deps.every((d, k) => d === this._colorDeps[k])) return;
+    if (
+      !force &&
+      this._colorDeps &&
+      deps.length == this._colorDeps.length &&
+      deps.every((d, k) => d === this._colorDeps[k])
+    )
+      return;
     this._colorDeps = deps;
 
     // Openings: amber when open, red with the alarm armed, blinking red when it goes off.
     const alarm = this._config.alarm_entity ? this._hass.states[this._config.alarm_entity] : undefined;
     const alarmState = alarm ? alarm.state : '';
     const armed = alarmState.startsWith('armed') || ['arming', 'pending', 'triggered'].includes(alarmState);
-    const openColor = new THREE.Color(armed ? this._config.alarm_color || '#ff3b30' : this._config.open_color || '#ffb020');
+    const openColor = new THREE.Color(
+      armed ? this._config.alarm_color || '#ff3b30' : this._config.open_color || '#ffb020',
+    );
     let anyOpen = false;
     this._config.entities.forEach((entity, i) => {
       if (!doors.includes(entity)) return;
@@ -5834,7 +6004,8 @@ export class Floor3dCard extends LitElement {
     });
 
     // Rooms
-    const fmt = (n: number, digits: number): string => n.toLocaleString(this._language(), { maximumFractionDigits: digits });
+    const fmt = (n: number, digits: number): string =>
+      n.toLocaleString(this._language(), { maximumFractionDigits: digits });
     const scale = this._mapScales.find((s) => s.key == mode);
     let legend: { stops: Stops; unit: string } | undefined;
     const alarmed: RoomView[] = [];
@@ -5851,7 +6022,8 @@ export class Floor3dCard extends LitElement {
         // Without a sensor, the temperature the thermostat measures.
         if (isNaN(t) && thermostat && thermostat.attributes) {
           t = parseFloat(thermostat.attributes.current_temperature);
-          unit = (this._hass.config && this._hass.config.unit_system && this._hass.config.unit_system.temperature) || '°';
+          unit =
+            (this._hass.config && this._hass.config.unit_system && this._hass.config.unit_system.temperature) || '°';
         }
         if (!isNaN(t)) {
           color = this._temperatureColor(t);
@@ -5908,7 +6080,8 @@ export class Floor3dCard extends LitElement {
       this._startOrStopAnimationLoop();
     }
     // alarm_view: the camera goes to the first room whose alarm goes on.
-    if (alarmed.length && this._config.alarm_view == 'yes' && this._camera && this._controls) this._flyToRoom(alarmed[0]);
+    if (alarmed.length && this._config.alarm_view == 'yes' && this._camera && this._controls)
+      this._flyToRoom(alarmed[0]);
     this._setLegend(mode, scale, legend);
     this._scheduleRender();
   }
@@ -5922,20 +6095,31 @@ export class Floor3dCard extends LitElement {
   // The legend under the Map menu: the colours of the map on show, from its lowest to its highest
   // value. A sensor map shows the scale of the readings (a VOC index has its own).
   private _setLegend(mode: string, scale: MapScale | undefined, reading?: { stops: Stops; unit: string }): void {
-    const fmt = (n: number, digits = 0): string => n.toLocaleString(this._language(), { maximumFractionDigits: digits });
+    const fmt = (n: number, digits = 0): string =>
+      n.toLocaleString(this._language(), { maximumFractionDigits: digits });
     const sample = (colorOf: (k: number) => THREE.Color): string =>
       'linear-gradient(to right, ' +
-      Array.from({ length: 9 }, (_, i) => '#' + colorOf(i / 8).getHexString() + ' ' + (i * 12.5).toString() + '%').join(', ') +
+      Array.from({ length: 9 }, (_, i) => '#' + colorOf(i / 8).getHexString() + ' ' + (i * 12.5).toString() + '%').join(
+        ', ',
+      ) +
       ')';
     let legend: { gradient: string; min: string; max: string } | undefined;
     if (mode == 'temperature') {
       const min = this._num(this._config.temperature_min, 17);
       const max = this._num(this._config.temperature_max, 27);
-      legend = { gradient: sample((k) => this._temperatureColor(min + k * (max - min))), min: fmt(min) + '°', max: fmt(max) + '°' };
+      legend = {
+        gradient: sample((k) => this._temperatureColor(min + k * (max - min))),
+        min: fmt(min) + '°',
+        max: fmt(max) + '°',
+      };
     } else if (mode == 'illuminance') {
       const min = Math.max(this._num(this._config.illuminance_min, 5), 0.1);
       const max = Math.max(this._num(this._config.illuminance_max, 1000), min * 1.01);
-      legend = { gradient: sample((k) => this._illuminanceColor(min * Math.pow(max / min, k))), min: fmt(min), max: fmt(max) + ' lx' };
+      legend = {
+        gradient: sample((k) => this._illuminanceColor(min * Math.pow(max / min, k))),
+        min: fmt(min),
+        max: fmt(max) + ' lx',
+      };
     } else if (scale) {
       const stops = reading ? reading.stops : scale.stops;
       const unit = reading ? reading.unit : scale.unit;
@@ -5969,7 +6153,8 @@ export class Floor3dCard extends LitElement {
       direction.normalize();
     }
     const position = target.clone().add(direction.multiplyScalar(Math.max(size.x, size.z, 300) * 1.8));
-    if (this._displaylevels && levels.some((level) => this._displaylevels[level] === false)) this._setVisibleLevel(levels.length === 1 ? levels[0] : -1);
+    if (this._displaylevels && levels.some((level) => this._displaylevels[level] === false))
+      this._setVisibleLevel(levels.length === 1 ? levels[0] : -1);
     this._flyTo(position, target);
   }
 
@@ -6021,7 +6206,9 @@ export class Floor3dCard extends LitElement {
       return;
     }
     if (!room.label) {
-      room.label = new THREE.Sprite(new THREE.SpriteMaterial({ transparent: true, depthTest: false, sizeAttenuation: false }));
+      room.label = new THREE.Sprite(
+        new THREE.SpriteMaterial({ transparent: true, depthTest: false, sizeAttenuation: false }),
+      );
       room.label.renderOrder = 20;
       room.label.position.copy(room.center);
       this._scene.add(room.label);
@@ -6068,7 +6255,9 @@ export class Floor3dCard extends LitElement {
         const base = obj.userData.baseMaterial;
         obj.userData.tintMaterial = Array.isArray(base) ? base.map((m) => m.clone()) : base.clone();
       }
-      const materials = Array.isArray(obj.userData.tintMaterial) ? obj.userData.tintMaterial : [obj.userData.tintMaterial];
+      const materials = Array.isArray(obj.userData.tintMaterial)
+        ? obj.userData.tintMaterial
+        : [obj.userData.tintMaterial];
       materials.forEach((m) => {
         if (m.emissive) {
           m.emissive.copy(color);
@@ -6127,7 +6316,6 @@ export class Floor3dCard extends LitElement {
   }
 
   private _rotatedoorpivot(entity: Floor3dCardConfig, index: number) {
-
     //For a swing door, rotate the objects along the configured axis and the degrees of opening
     this._object_ids[index].objects.forEach((element) => {
       let _obj: any = this._scene.getObjectByName(element.object_id);
@@ -6169,7 +6357,6 @@ export class Floor3dCard extends LitElement {
         .start();
       this._startOrStopAnimationLoop();
     });
-
   }
 
   private _translatedoor(pane: THREE.Object3D, percentage: number, side: string, index: number, doorstate: string) {
@@ -6352,7 +6539,12 @@ export class Floor3dCard extends LitElement {
     // angle_entity: turns to the angle of the sensor, and stays there while it has none.
     if (entity.rotate.angle_entity) {
       const stateObj = this._hass.states[entity.rotate.angle_entity];
-      const turn = rotationAngle(stateObj && stateObj.state, entity.rotate.angle_min, entity.rotate.angle_max, entity.rotate.angle_offset);
+      const turn = rotationAngle(
+        stateObj && stateObj.state,
+        entity.rotate.angle_min,
+        entity.rotate.angle_max,
+        entity.rotate.angle_offset,
+      );
       if (turn) {
         this._rotation_angle[j] = turn.angle;
         this._rotation_wrap[j] = turn.wrap;
@@ -6478,7 +6670,8 @@ export class Floor3dCard extends LitElement {
       const current = this._rotation_turned[index];
       if (target === null || current === target) return;
       const step = Math.abs(this._num(this._round_per_seconds[index], 0.5)) * rotateBy;
-      const turned = current === null ? target : turnToward(current, target, step || Infinity, this._rotation_wrap[index]);
+      const turned =
+        current === null ? target : turnToward(current, target, step || Infinity, this._rotation_wrap[index]);
       this._rotation_turned[index] = turned;
       const axis = this._axis_to_rotate[index];
       if (axis != 'x' && axis != 'y' && axis != 'z') return;

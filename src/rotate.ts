@@ -19,7 +19,12 @@ const number = (value: unknown, fallback: number): number => {
 // and 360 by default), then angle_offset added (where the 0 of the sensor is on the model). wrap: the
 // range is a whole turn, so the object goes the shorter way (from 350 to 10 through 0). null: the
 // state is not a number (unavailable, unknown).
-export function rotationAngle(state: unknown, min?: unknown, max?: unknown, offset?: unknown): { angle: number; wrap: boolean } | null {
+export function rotationAngle(
+  state: unknown,
+  min?: unknown,
+  max?: unknown,
+  offset?: unknown,
+): { angle: number; wrap: boolean } | null {
   const value = sensorNumber(state);
   if (value === null) return null;
   let low = number(min, 0);

@@ -303,11 +303,7 @@
         "size": 15,
         "height": 150,
         "scale": "0.1",
-        "sensor_position": [
-          -400,
-          0,
-          450
-        ],
+        "sensor_position": [-400, 0, 450],
         "unit": "m",
         "flip_x": true,
         "zone": "sensor.radar_target_1_zone"
@@ -324,11 +320,7 @@
         "size": 15,
         "height": 150,
         "scale": "0.1",
-        "sensor_position": [
-          -400,
-          0,
-          450
-        ],
+        "sensor_position": [-400, 0, 450],
         "unit": "m",
         "flip_x": true,
         "zone": "sensor.radar_target_2_zone"
@@ -345,11 +337,7 @@
         "size": 15,
         "height": 150,
         "scale": "0.1",
-        "sensor_position": [
-          -400,
-          0,
-          450
-        ],
+        "sensor_position": [-400, 0, 450],
         "unit": "m",
         "flip_x": true,
         "zone": "sensor.radar_target_3_zone"
@@ -465,10 +453,7 @@
       "name": "Living room and kitchen",
       "object_id": "room_25_133",
       "temperature": "sensor.living_room_temperature",
-      "presence": [
-        "binary_sensor.living_room_occupancy",
-        "binary_sensor.kitchen_occupancy"
-      ]
+      "presence": ["binary_sensor.living_room_occupancy", "binary_sensor.kitchen_occupancy"]
     },
     {
       "name": "Bathroom",
@@ -482,12 +467,5 @@
       "temperature": "sensor.bedroom_2_temperature"
     }
   ],
-  "sun_roof": [
-    "room_24_132",
-    "room_25_133",
-    "room_26_135",
-    "room_27_134",
-    "room_28_136",
-    "room_29_137"
-  ]
+  "sun_roof": ["room_24_132", "room_25_133", "room_26_135", "room_27_134", "room_28_136", "room_29_137"]
 }

@@ -8,7 +8,8 @@ test('ground: grass, a colour, or nothing', () => {
   assert.deepEqual(groundStyle(' Grass '), { kind: 'grass' });
   assert.deepEqual(groundStyle('#806040'), { kind: 'color', color: '#806040' });
   assert.deepEqual(groundStyle('sandybrown'), { kind: 'color', color: 'sandybrown' });
-  for (const none of [undefined, null, '', ' ', 'no', 'none', 'false', false, 0]) assert.equal(groundStyle(none), null, String(none));
+  for (const none of [undefined, null, '', ' ', 'no', 'none', 'false', false, 0])
+    assert.equal(groundStyle(none), null, String(none));
 });
 
 test('ground: opaque up to half its radius, then fading to nothing at the edge', () => {

@@ -5,8 +5,30 @@ import { findSlats, slatAngle, tiltSlats } from '../src/slats.ts';
 
 // The 8 corners of a box and its 12 triangles (36 vertices, as an OBJ gives them; with indexed, 8
 // vertices and an index, as a GLB can).
-const CORNERS = [[0, 0, 0], [1, 0, 0], [1, 1, 0], [0, 1, 0], [0, 0, 1], [1, 0, 1], [1, 1, 1], [0, 1, 1]];
-const FACES = [[0, 1, 2], [0, 2, 3], [4, 6, 5], [4, 7, 6], [0, 4, 5], [0, 5, 1], [3, 2, 6], [3, 6, 7], [0, 3, 7], [0, 7, 4], [1, 5, 6], [1, 6, 2]];
+const CORNERS = [
+  [0, 0, 0],
+  [1, 0, 0],
+  [1, 1, 0],
+  [0, 1, 0],
+  [0, 0, 1],
+  [1, 0, 1],
+  [1, 1, 1],
+  [0, 1, 1],
+];
+const FACES = [
+  [0, 1, 2],
+  [0, 2, 3],
+  [4, 6, 5],
+  [4, 7, 6],
+  [0, 4, 5],
+  [0, 5, 1],
+  [3, 2, 6],
+  [3, 6, 7],
+  [0, 3, 7],
+  [0, 7, 4],
+  [1, 5, 6],
+  [1, 6, 2],
+];
 const corner = (c, [x0, x1, y0, y1, z0, z1]) => [c[0] ? x1 : x0, c[1] ? y1 : y0, c[2] ? z1 : z0];
 
 function mesh(boxes, indexed = false) {
@@ -39,7 +61,10 @@ for (const indexed of [false, true]) {
     const slats = findSlats(positions, index);
     assert.equal(slats.length, 12);
     slats.forEach((s) => {
-      assert.deepEqual(s.axis.map((v) => Math.round(v * 1000) / 1000), [1, 0, 0]);
+      assert.deepEqual(
+        s.axis.map((v) => Math.round(v * 1000) / 1000),
+        [1, 0, 0],
+      );
       assert.ok(Math.abs(s.center[0] - 50) < 1e-3 && Math.abs(s.center[2]) < 1e-3);
     });
     const ys = slats.map((s) => s.center[1]).sort((a, b) => a - b);
@@ -70,12 +95,24 @@ test('tilt: each slat turns on its length through its centre, the rest stays', (
   const turned = Float32Array.from(normals);
   tiltSlats([first], Math.PI / 2, normals, turned, true);
   const n = first.vertices[0];
-  assert.deepEqual([turned[3 * n], turned[3 * n + 1], turned[3 * n + 2]].map((v) => Math.round(v * 1000) / 1000), [0, -1, 0]);
+  assert.deepEqual(
+    [turned[3 * n], turned[3 * n + 1], turned[3 * n + 2]].map((v) => Math.round(v * 1000) / 1000),
+    [0, -1, 0],
+  );
 });
 
 test('no slats: a single box, or pieces all different', () => {
   assert.deepEqual(findSlats(mesh([[0, 100, 0, 200, 0, 3]]).positions), []);
-  assert.deepEqual(findSlats(mesh([[0, 100, 0, 1, 0, 5], [0, 50, 10, 11, 0, 5], [0, 70, 20, 21, 0, 5]]).positions), []);
+  assert.deepEqual(
+    findSlats(
+      mesh([
+        [0, 100, 0, 1, 0, 5],
+        [0, 50, 10, 11, 0, 5],
+        [0, 70, 20, 21, 0, 5],
+      ]).positions,
+    ),
+    [],
+  );
 });
 
 test('vertical slats turn on the vertical axis', () => {
@@ -83,7 +120,12 @@ test('vertical slats turn on the vertical axis', () => {
   for (let k = 0; k < 6; k++) boxes.push([10 * k, 10 * k + 9, 0, 200, 0, 0.2]);
   const slats = findSlats(mesh(boxes).positions);
   assert.equal(slats.length, 6);
-  slats.forEach((s) => assert.deepEqual(s.axis.map((v) => Math.round(v * 1000) / 1000), [0, 1, 0]));
+  slats.forEach((s) =>
+    assert.deepEqual(
+      s.axis.map((v) => Math.round(v * 1000) / 1000),
+      [0, 1, 0],
+    ),
+  );
 });
 
 test('angle of the slats: tilt_closed at 0, tilt_open at 100', () => {

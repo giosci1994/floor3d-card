@@ -8,7 +8,12 @@ export interface HomeAssistant {
   connection: Connection;
   language: string;
   locale?: { language: string; time_zone?: string; [key: string]: unknown };
-  callService(domain: string, service: string, serviceData?: Record<string, unknown>, target?: Record<string, unknown>): Promise<unknown>;
+  callService(
+    domain: string,
+    service: string,
+    serviceData?: Record<string, unknown>,
+    target?: Record<string, unknown>,
+  ): Promise<unknown>;
   formatEntityState?(stateObj: HassEntity, state?: string): string;
 }
 

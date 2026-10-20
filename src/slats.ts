@@ -15,7 +15,11 @@ export interface Slat {
 type Vec = [number, number, number];
 
 const dot = (a: Vec, b: Vec): number => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-const cross = (a: Vec, b: Vec): Vec => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+const cross = (a: Vec, b: Vec): Vec => [
+  a[1] * b[2] - a[2] * b[1],
+  a[2] * b[0] - a[0] * b[2],
+  a[0] * b[1] - a[1] * b[0],
+];
 const norm = (a: Vec): number => Math.sqrt(dot(a, a));
 
 // The direction along which the points spread most (power iteration on their covariance matrix),
@@ -81,7 +85,11 @@ export function findSlats(positions: ArrayLike<number>, index?: ArrayLike<number
   const unique = new Uint8Array(count); // the first vertex at each place: the shape, without repeats
   for (let i = 0; i < count; i++) {
     const key =
-      Math.round(positions[3 * i] / step) + ',' + Math.round(positions[3 * i + 1] / step) + ',' + Math.round(positions[3 * i + 2] / step);
+      Math.round(positions[3 * i] / step) +
+      ',' +
+      Math.round(positions[3 * i + 1] / step) +
+      ',' +
+      Math.round(positions[3 * i + 2] / step);
     const first = seen.get(key);
     if (first === undefined) {
       seen.set(key, i);
@@ -149,7 +157,8 @@ export function findSlats(positions: ArrayLike<number>, index?: ArrayLike<number
 
   // Slats are long and equal: grouped by size, with 3 % of tolerance. The group with the largest
   // surface wins, so that the many short pieces of a cord don't pass for the slats.
-  const bucket = (x: number, length: number): number => (x <= length * 1e-3 ? -1 : Math.round(Math.log(x) / Math.log(1.03)));
+  const bucket = (x: number, length: number): number =>
+    x <= length * 1e-3 ? -1 : Math.round(Math.log(x) / Math.log(1.03));
   const groups = new Map<string, { slats: Slat[]; surface: number }>();
   shapes.forEach(({ slat, size }) => {
     const [length, width, thickness] = size;
@@ -175,7 +184,13 @@ function orthogonal(a: Vec): Vec {
 }
 
 // Turns every slat by angle (radians) on its axis: original positions (and normals) into out.
-export function tiltSlats(slats: Slat[], angle: number, original: ArrayLike<number>, out: { [i: number]: number }, isNormal = false): void {
+export function tiltSlats(
+  slats: Slat[],
+  angle: number,
+  original: ArrayLike<number>,
+  out: { [i: number]: number },
+  isNormal = false,
+): void {
   const cos = Math.cos(angle);
   const sin = Math.sin(angle);
   slats.forEach(({ vertices, center, axis }) => {

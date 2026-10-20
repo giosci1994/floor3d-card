@@ -21,13 +21,16 @@ type States = { [id: string]: State | undefined };
 export function point(value: unknown): [number, number, number] | undefined {
   const v: any = value;
   const list = Array.isArray(v) ? v : v && typeof v === 'object' ? [v.x, v.y, v.z] : [];
-  if (list.length !== 3 || list.some((n: unknown) => n === null || n === '' || typeof n === 'boolean')) return undefined;
+  if (list.length !== 3 || list.some((n: unknown) => n === null || n === '' || typeof n === 'boolean'))
+    return undefined;
   const numbers = list.map(Number);
   return numbers.every((n: number) => isFinite(n)) ? (numbers as [number, number, number]) : undefined;
 }
 
 const ids = (value: unknown): string[] =>
-  (Array.isArray(value) ? value : value ? [value] : []).filter((id: unknown) => typeof id === 'string' && id !== '') as string[];
+  (Array.isArray(value) ? value : value ? [value] : []).filter(
+    (id: unknown) => typeof id === 'string' && id !== '',
+  ) as string[];
 
 // cameras: camera ids, or { entity, position, level, name, icon, popup_on }.
 export function cameraList(value: unknown): CameraItem[] {

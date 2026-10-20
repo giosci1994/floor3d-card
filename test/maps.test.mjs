@@ -16,7 +16,10 @@ import {
 } from '../src/maps.ts';
 
 const scale = (key, config = {}) => mapScales(config).find((s) => s.key === key);
-const sensor = (state, unit, extra = {}) => ({ state: String(state), attributes: { unit_of_measurement: unit, ...extra } });
+const sensor = (state, unit, extra = {}) => ({
+  state: String(state),
+  attributes: { unit_of_measurement: unit, ...extra },
+});
 
 test('colours: the stops, mixed in between, kept outside the range', () => {
   const stops = [
@@ -69,18 +72,35 @@ test('maps of the configuration: a preset with other limits, a new map, reserved
   assert.equal(co2.stops[0][0], 400);
   assert.equal(co2.stops[co2.stops.length - 1][0], 1400);
   assert.equal(co2.stops[0][1], PRESET_MAPS.find((p) => p.key === 'co2').stops[0][1], 'same colours');
-  const fridge = scale('fridge', { maps: [{ key: 'fridge', name: 'Fridge', unit: '°C', min: '2', max: '8', colors: ['#0000ff', '#ff0000'] }] });
+  const fridge = scale('fridge', {
+    maps: [{ key: 'fridge', name: 'Fridge', unit: '°C', min: '2', max: '8', colors: ['#0000ff', '#ff0000'] }],
+  });
   assert.deepEqual(fridge.stops, [
     [2, '#0000ff'],
     [8, '#ff0000'],
   ]);
   assert.equal(fridge.name, 'Fridge');
   assert.equal(fridge.aggregate, 'mean');
-  const stops = scale('noise', { maps: [{ key: 'noise', stops: [[60, '#00ff00'], [30, '#0000ff'], [45, 'blue']] }] });
-  assert.deepEqual(stops.stops, [
-    [30, '#0000ff'],
-    [60, '#00ff00'],
-  ], 'sorted, invalid colours left out');
+  const stops = scale('noise', {
+    maps: [
+      {
+        key: 'noise',
+        stops: [
+          [60, '#00ff00'],
+          [30, '#0000ff'],
+          [45, 'blue'],
+        ],
+      },
+    ],
+  });
+  assert.deepEqual(
+    stops.stops,
+    [
+      [30, '#0000ff'],
+      [60, '#00ff00'],
+    ],
+    'sorted, invalid colours left out',
+  );
   assert.equal(scale('temperature', { maps: [{ key: 'temperature', min: 0, max: 1 }] }), undefined, 'reserved key');
   assert.equal(mapScales({}).length, PRESET_MAPS.length);
 });
@@ -114,7 +134,10 @@ test('climate: hvac_action, then the mode and the temperatures, then on/off', ()
   assert.equal(climateAction(climate('cool', { hvac_action: 'cooling' })), 'cool');
   assert.equal(climateAction(climate('heat', { current_temperature: 19, temperature: 21 })), 'heat');
   assert.equal(climateAction(climate('heat', { current_temperature: 22, temperature: 21 })), null);
-  assert.equal(climateAction(climate('heat_cool', { current_temperature: 26, target_temp_low: 20, target_temp_high: 24 })), 'cool');
+  assert.equal(
+    climateAction(climate('heat_cool', { current_temperature: 26, target_temp_low: 20, target_temp_high: 24 })),
+    'cool',
+  );
   assert.equal(climateAction(climate('off', { current_temperature: 15, temperature: 21 })), null);
   assert.equal(climateAction(climate('unavailable', {})), null);
   assert.equal(climateAction({ entity_id: 'switch.boiler', state: 'on', attributes: {} }), 'heat');
