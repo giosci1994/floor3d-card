@@ -47,41 +47,26 @@ export const getLovelace = () => {
   return null;
 };
 
+// The objects of each entity, in the order of the entities: the card reads them by the position of
+// the entity. An entity without object_id, or whose <group> doesn't exist, gets no objects and a
+// warning. Until 2.12.1 it got no entry at all, and the entities after it took the objects of the
+// next one; a <group> without object_groups stopped the card.
 export function createObjectGroupConfigArray(config): Floor3dCardConfig[] {
-  const configArray: Floor3dCardConfig[] = [];
-  if (config.entities) {
-    for (const entityConfig of config.entities) {
-      if (entityConfig.object_id) {
-        if (
-          entityConfig.object_id.charAt(0) == '<' &&
-          entityConfig.object_id.charAt(entityConfig.object_id.length - 1) == '>'
-        ) {
-          const group_name = entityConfig.object_id.substr(1, entityConfig.object_id.length - 2);
-          for (const objectGroupConfig of config.object_groups) {
-            if (objectGroupConfig.object_group == group_name) {
-              const objectConfig = mergeDeep({}, { entity: entityConfig.entity, objects: objectGroupConfig.objects });
-              configArray.push(objectConfig);
-              break;
-            }
-          }
-        } else if (entityConfig.object_id !== '') {
-          const objectConfig = mergeDeep(
-            {},
-            { entity: entityConfig.entity, objects: [{ object_id: entityConfig.object_id }] },
-          );
-          configArray.push(objectConfig);
-        } else {
-          if (entityConfig.entity != '') {
-            console.log('ERROR: Object is empty for entity' + entityConfig.entity);
-          }
-        }
-      } else {
-        if (entityConfig.entity != '') {
-          console.log('ERROR: Object is empty for entity' + entityConfig.entity);
-        }
-      }
+  const groups = Array.isArray(config.object_groups) ? config.object_groups : [];
+  return (Array.isArray(config.entities) ? config.entities : []).map((entityConfig) => {
+    const id = entityConfig.object_id;
+    let objects = [];
+    const group = typeof id === 'string' ? /^<(.*)>$/.exec(id) : null;
+    if (group) {
+      const found = groups.find((g) => g && g.object_group == group[1]);
+      if (found) objects = found.objects || [];
+      else console.warn('floor3d-card: entity ' + entityConfig.entity + ': no object group ' + group[1]);
+    } else if (id) {
+      objects = [{ object_id: id }];
+    } else if (entityConfig.entity && entityConfig.type3d != 'tracker') {
+      // A tracker draws its own marker.
+      console.warn('floor3d-card: entity ' + entityConfig.entity + ' has no object_id');
     }
-  }
-  //console.log(JSON.stringify(configArray));
-  return configArray;
+    return mergeDeep({}, { entity: entityConfig.entity, objects });
+  });
 }

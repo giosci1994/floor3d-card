@@ -3085,3 +3085,40 @@ test(
     await page.close();
   },
 );
+
+test(
+  'an entity without object_id or with a group that does not exist: a warning, and the entities after it keep their objects',
+  { timeout: TIMEOUT },
+  async () => {
+    const warnings = [];
+    const red = [{ state: 'on', color: '#ff0000' }];
+    const green = [{ state: 'on', color: '#00ff00' }];
+    const { page, errors } = await open(
+      house({
+        // No object_groups: a <group> stopped the card ("object_groups is not iterable").
+        entities: [
+          { entity: 'light.lamp_1', type3d: 'light', light: { lumens: 300 } }, // no object_id
+          { entity: 'light.lamp_2', type3d: 'color', object_id: 'table', colorcondition: red },
+          { entity: 'light.lamp_3', type3d: 'hide', object_id: '<missing>', hide: { state: 'off' } },
+          { entity: 'light.lamp_4', type3d: 'color', object_id: 'sofa', colorcondition: green },
+        ],
+      }),
+      states(),
+      (p) => p.on('console', (m) => ['warning', 'log'].includes(m.type()) && warnings.push(m.type() + ': ' + m.text())),
+    );
+    const result = await page.evaluate(() => ({
+      objects: window.__card._object_ids.map((o) => o.objects.map((x) => x.object_id)),
+      colours: ['table', 'sofa'].map(
+        (n) => '#' + window.__card._scene.getObjectByName(n).material.color.getHexString(),
+      ),
+    }));
+    assert.deepEqual(result.objects, [[], ['table'], [], ['sofa']], 'one entry per entity, in their order');
+    assert.deepEqual(result.colours, ['#ff0000', '#00ff00'], 'each entity colours its own object');
+    for (const w of ['entity light.lamp_1 has no object_id', 'entity light.lamp_3: no object group missing']) {
+      assert.ok(warnings.includes('warning: floor3d-card: ' + w), warnings.join('\n'));
+    }
+    assert.ok(!warnings.some((w) => /ERROR|TypeError/.test(w)), 'no "ERROR" in the log, no error of the card');
+    assert.deepEqual(errors, []);
+    await page.close();
+  },
+);

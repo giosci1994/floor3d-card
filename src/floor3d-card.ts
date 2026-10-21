@@ -649,7 +649,8 @@ export class Floor3dCard extends LitElement {
     if (this.isPanel !== undefined) {
       return this.isPanel;
     }
-    // Older Home Assistant versions: look for the panel view in the page structure.
+    // Without isPanel from Home Assistant (in the other views it doesn't pass it): the panel view in
+    // the page structure.
 
     let root: any = document.querySelector('home-assistant');
     root = root && root.shadowRoot;
@@ -1173,6 +1174,12 @@ export class Floor3dCard extends LitElement {
     this._toEditor({ paused: true });
   }
 
+  // An entity with objects of the model to act on (see createObjectGroupConfigArray): those without
+  // are left out, the others go on. A tracker draws its own marker and needs none.
+  private _hasObjects(entity: Floor3dCardConfig, i: number): boolean {
+    return entity.type3d == 'tracker' || !!(this._object_ids[i] && this._object_ids[i].objects.length);
+  }
+
   // Names of the objects of the model (without the level prefix), for the object menus of the editor.
   // Object ids with * (Lamp_*) become the objects of the model they match, as for an object group.
   // One that matches nothing stays as it is: the entity is then left out as for a missing object.
@@ -1458,7 +1465,7 @@ export class Floor3dCard extends LitElement {
             }
           }
           this._config.entities.forEach((entity, i) => {
-            if (hass.states[entity.entity]) {
+            if (hass.states[entity.entity] && this._hasObjects(entity, i)) {
               let state = this._statewithtemplate(entity);
               if (entity.type3d == 'cover') {
                 // Both can change: the position while the cover moves, the state when it starts or stops.
@@ -2774,7 +2781,7 @@ export class Floor3dCard extends LitElement {
             this._degrees.push(0);
             this._slidingdoor.push(null);
             this._slidingdoorposition.push([]);
-            if (this._hass.states[entity.entity]) {
+            if (this._hass.states[entity.entity] && this._hasObjects(entity, i)) {
               if (entity.type3d == 'rotate') {
                 // Empty (only a sensor sets the speed): 1, as NaN made the object vanish.
                 this._round_per_seconds.push(this._num(entity.rotate.round_per_second, 1));
@@ -3170,7 +3177,7 @@ export class Floor3dCard extends LitElement {
           }
         });
         this._config.entities.forEach((entity, i) => {
-          if (entity.entity === '') return;
+          if (entity.entity === '' || !this._hasObjects(entity, i)) return;
           try {
             if (entity.type3d == 'light') {
               this._updatelight(entity, i);
