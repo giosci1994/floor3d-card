@@ -4,12 +4,13 @@ import { HomeAssistant, LovelaceCardEditor, fireEvent, forwardHaptic } from './h
 // The editor is loaded on demand by getConfigElement(): devices that only show the card never download it.
 import { HassEntity } from 'home-assistant-js-websocket';
 import { createObjectGroupConfigArray, getLovelace } from './helpers';
-import { matchObjects, normalizeConfig, objectPattern } from './config';
+import { matchObjects, normalizeConfig, objectPattern, switchOn } from './config';
 import type { Floor3dCardConfig } from './types';
 import { CARD_VERSION, EDITOR_EVENT, PREVIEW_EVENT } from './const';
 import DRACO_DECODER from 'virtual:draco-decoder';
 import { previewState } from './preview';
 import { cardStyles } from './styles';
+import { BoxesHost, CornerBoxes } from './corner-boxes';
 import {
   CLIMATE_COLORS,
   MapScale,
@@ -31,25 +32,7 @@ import { fitText, textLayout } from './textmap';
 import { rotationAngle, sensorNumber, turnToward } from './rotate';
 import { CameraItem, cameraList, cameraName, newPopupMemory, point, popupStep, snapshotUrl } from './cameras';
 import { grassTexture, groundAlpha, groundStyle } from './ground';
-import { forecastLabel, forecastType, ForecastType, formatDegrees, weatherIcon } from './weather';
-import {
-  BOX_KINDS,
-  batteryIcon,
-  chipList,
-  Corner,
-  corner,
-  formatPower,
-  initials,
-  panelLook,
-  peopleList,
-  personPlace,
-  STATUS_COLORS,
-  STATUS_ICONS,
-  StatusKind,
-  statusGroups,
-  topConsumers,
-  watts,
-} from './boxes';
+import { corner, STATUS_COLORS, StatusKind } from './boxes';
 //import three.js libraries for 3D rendering
 import * as TWEEN from '@tweenjs/tween.js';
 import { mdiAlertCircleOutline, mdiCubeOutline } from '@mdi/js';
@@ -288,17 +271,9 @@ export class Floor3dCard extends LitElement {
   // for the materials, placed again when the model moves.
   private _coverPlanes: { local: THREE.Plane; world: THREE.Plane }[] = [];
   private _skyKey?: string; // the gradient behind the canvas (backgroundColor: sky)
-  // The forecast box (weather): the forecast and its subscription.
-  private _forecast: any[] | null = null;
-  private _forecastType?: ForecastType;
-  private _weatherKey?: string;
-  private _weatherUnsub?: Promise<unknown>;
-  // Boxes in the corners (boxes.ts): the container of each corner, the element of each box, what
-  // each one showed last (it is drawn again only when that changes), and the kind of the status box
-  // whose objects are outlined in the model, with the timer that ends it.
-  private _corners = new Map<Corner, HTMLElement>();
-  private _boxEls = new Map<string, HTMLElement>();
-  private _boxDeps = new Map<string, unknown[]>();
+  // Boxes in the corners (corner-boxes.ts), and the kind of the status box whose objects are outlined
+  // in the model, with the timer that ends it.
+  private _boxes = new CornerBoxes(this._boxesHost());
   private _shownStatus?: StatusKind;
   private _shownTimer?: number;
   // The levels before the first tap on the status box, and those the taps left: at its end the
@@ -306,9 +281,6 @@ export class Floor3dCard extends LitElement {
   private _levelsBefore?: boolean[];
   private _levelsShown?: boolean[];
   private _levelMiddles?: number[]; // the middle of the height of each level (see _levelsUpTo)
-  private _cornerObserver?: ResizeObserver; // the card changes width (a phone turned): placed again
-  private _boxesChanged = false; // a box was drawn, added or removed: the corners are placed again
-  private _collapsed?: Set<string>; // the boxes folded on this device (weather, people), read once
   private _ground?: THREE.Mesh; // ground: the surface under the house
   // Cameras (cameras.ts): their icons over the model (placed again at every frame), the pictures
   // that pop up (what the sensors did, the timer of the first picture to go away, the camera shown
@@ -486,9 +458,8 @@ export class Floor3dCard extends LitElement {
       }
       // The page may have been navigated to another view while the card was not shown.
       this._applyUrlView(false);
-      this._subscribeWeather();
-      if (this._cornerObserver && (this._content || this._card))
-        this._cornerObserver.observe(this._content || this._card);
+      this._boxes.subscribeWeather();
+      this._boxes.connect();
       this._renderBoxes(true); // the pictures of the cameras start again
     }
   }
@@ -505,10 +476,9 @@ export class Floor3dCard extends LitElement {
     this._resizeObserver.disconnect();
 
     this._cancelTap();
-    this._unsubscribeWeather();
+    this._boxes.disconnect();
     window.clearTimeout(this._popupTimer);
     this._stopPopupRefresh();
-    if (this._cornerObserver) this._cornerObserver.disconnect();
     // The preview going away while the editor is paused (Home Assistant replaces it at every change
     // of the config): the next one shows its last picture, with the camera where it was.
     if (previewState.paused && this._modelready && this._isEditorPreview()) this._snapshot();
@@ -1300,7 +1270,7 @@ export class Floor3dCard extends LitElement {
       this._renderer.render(this._scene, this._camera);
     }
     this._placePins();
-    this._placeCorners();
+    this._boxes.place();
   }
 
   private _statewithtemplate(entity: Floor3dCardConfig): string {
@@ -1636,7 +1606,7 @@ export class Floor3dCard extends LitElement {
           this._updateSky();
           this._updateSun();
           this._updateSkyBackground();
-          this._subscribeWeather();
+          this._boxes.subscribeWeather();
           this._renderBoxes();
           this._updateStateColors();
           if (torerender) {
@@ -2071,7 +2041,7 @@ export class Floor3dCard extends LitElement {
       this._applyUrlView(false);
       this._restoreCamera();
       this._rememberCamera();
-      this._subscribeWeather();
+      this._boxes.subscribeWeather();
       this._renderBoxes(true);
 
       this._resizeCanvas();
@@ -4778,248 +4748,73 @@ export class Floor3dCard extends LitElement {
     };
   }
 
-  // weather: a box in a corner with the weather now and the next forecasts. Home Assistant sends the
-  // forecast to who asks for it (weather/subscribe_forecast); versions before 2024.3 also had it in
-  // the forecast attribute.
-  private _subscribeWeather(): void {
-    const entityId = this._config.weather;
-    const stateObj = entityId && this._hass ? this._hass.states[entityId] : undefined;
-    const type = stateObj
-      ? forecastType(this._config.weather_forecast, stateObj.attributes.supported_features)
-      : undefined;
-    const key = stateObj && this.isConnected && this._shown('weather_show', true) ? entityId + '|' + type : undefined;
-    if (key === this._weatherKey) return;
-    this._unsubscribeWeather();
-    this._weatherKey = key;
-    this._forecastType = type;
-    this._forecast = null;
-    if (!key || Array.isArray(stateObj.attributes.forecast)) return;
-    const connection: any = this._hass.connection;
-    if (!connection || typeof connection.subscribeMessage !== 'function') return;
-    const failed = (e: any) =>
-      console.warn('floor3d-card: no forecast from ' + entityId + ': ' + ((e && e.message) || e));
-    try {
-      this._weatherUnsub = Promise.resolve(
-        connection.subscribeMessage(
-          (event: any) => {
-            if (this._weatherKey !== key) return;
-            this._forecast = event && Array.isArray(event.forecast) ? event.forecast : [];
-            this._renderWeather();
-            this._placeCorners(); // the box grew
-          },
-          { type: 'weather/subscribe_forecast', forecast_type: type, entity_id: entityId },
-        ),
-      );
-      this._weatherUnsub.catch(failed);
-    } catch (e) {
-      failed(e);
-    }
-  }
+  // --- Boxes in the corners (corner-boxes.ts) --------------------------------------------------------
 
-  private _unsubscribeWeather(): void {
-    const unsubscribe = this._weatherUnsub;
-    this._weatherUnsub = undefined;
-    this._weatherKey = undefined;
-    if (unsubscribe) unsubscribe.then((stop) => typeof stop === 'function' && stop()).catch(() => undefined);
-  }
-
-  // --- Boxes in the corners ------------------------------------------------------------------------
-
-  // Weather, what is on or open, energy, people, alarm panel and chips (see boxes.ts). Each is drawn
-  // again only when what it shows changes.
+  // Weather, what is on or open, energy, people, alarm panel and chips, then the picture of the
+  // cameras. Each is drawn again only when what it shows changes.
   private _renderBoxes(force = false): void {
     if (!this._card || !this._hass || !this._modelready) return;
-    this._boxesChanged = false;
-    this._renderAlarmPanel(force);
-    this._renderStatus(force);
-    this._renderPeople(force);
-    this._renderEnergy(force);
-    this._renderWeather(force);
-    this._renderChips(force);
+    this._boxes.renderAll(force);
     this._renderCameras(force);
-    // Measuring the boxes makes the browser lay out the page: only when one of them changed.
-    if (force || this._boxesChanged) this._placeCorners();
+    this._boxes.placeIfChanged(force);
   }
 
-  // The element of a box in its corner (null: the box goes away), after the boxes before it in
-  // BOX_KINDS: from the corner, they stack in that order.
-  private _box(kind: string, where: Corner | null): HTMLElement | null {
-    let box = this._boxEls.get(kind);
-    if (!where) {
-      if (box) {
-        box.remove();
-        this._boxesChanged = true;
-      }
-      this._boxEls.delete(kind);
-      this._boxDeps.delete(kind);
-      return null;
-    }
-    if (!box) {
-      box = document.createElement('div');
-      box.className = 'f3d-box f3d-' + kind;
-      this._boxEls.set(kind, box);
-    }
-    const container = this._cornerEl(where);
-    if (box.parentElement !== container) {
-      const order = BOX_KINDS.indexOf(kind);
-      const next = Array.from(container.children).find(
-        (child) => BOX_KINDS.indexOf((child as HTMLElement).dataset.kind || '') > order,
-      );
-      box.dataset.kind = kind;
-      container.insertBefore(box, next || null);
-      this._boxDeps.delete(kind);
-    }
-    return box;
-  }
-
-  private _cornerEl(where: Corner): HTMLElement {
-    let el = this._corners.get(where);
-    if (!el) {
-      el = document.createElement('div');
-      el.className = 'f3d-corner f3d-corner-' + where;
-      this._card.appendChild(el);
-      this._corners.set(where, el);
-      if (!this._cornerObserver && typeof ResizeObserver !== 'undefined') {
-        // The block of the canvas: the card itself can be an inline element.
-        this._cornerObserver = new ResizeObserver(() => this._placeCorners());
-        this._cornerObserver.observe(this._content || this._card);
-      }
-    }
-    return el;
-  }
-
-  // The corners start after what the card already shows there: the menus at the top right, the
-  // levels at the top left, and the old buttons of the views and of selectionMode at the bottom.
-  private _placeCorners(): void {
-    if (!this._corners.size) return;
-    this._sizePopup();
-    const height = (el?: HTMLElement): number => {
-      const child = el && (el.firstElementChild as HTMLElement | null);
-      return child ? child.getBoundingClientRect().height : 0;
+  // What the boxes in the corners read of the card, and what a tap on them asks of the model.
+  private _boxesHost(): BoxesHost {
+    // eslint-disable-next-line @typescript-eslint/no-this-alias
+    const card = this;
+    return {
+      get element() {
+        return card;
+      },
+      get config() {
+        return card._config;
+      },
+      get hass() {
+        return card._hass;
+      },
+      get connected() {
+        return card.isConnected;
+      },
+      get card() {
+        return card._card;
+      },
+      get content() {
+        return card._content;
+      },
+      get levelbar() {
+        return card._levelbar;
+      },
+      get zoommenu() {
+        return card._zoommenu;
+      },
+      get zoombar() {
+        return card._zoombar;
+      },
+      get selectionbar() {
+        return card._selectionbar;
+      },
+      get rooms() {
+        return card._roomViews;
+      },
+      get shownStatus() {
+        return card._shownStatus;
+      },
+      t: (key, vars) => card._t(key, vars),
+      language: () => card._language(),
+      num: (value, fallback) => card._num(value, fallback),
+      toggleStatus: (kind, indices) => card._toggleStatus(kind, indices),
+      showRoom: (room, ids) => card._showRoom(room as RoomView, ids),
+      roomView: (name) => card._roomView(name),
+      renderBoxes: (force) => card._renderBoxes(force),
+      beforePlace: () => card._sizePopup(),
     };
-    const taken: { [where in Corner]: number } = {
-      'top-left': height(this._levelbar),
-      'top-right': this._zoommenu ? this._zoommenu.getBoundingClientRect().height : 0,
-      'bottom-left': height(this._zoombar),
-      'bottom-right': height(this._selectionbar),
-    };
-    this._corners.forEach((el, where) => {
-      const offset = taken[where] ? Math.round(taken[where]) + 16 : 10;
-      el.style.top = where.startsWith('top') ? offset + 'px' : '';
-      el.style.bottom = where.startsWith('bottom') ? offset + 'px' : '';
-    });
-    // On a narrow card the two corners of a side meet. At the top, a box on the left that would meet
-    // the menus or a box on the right goes under them, and the boxes after it with it; the ones
-    // before it stay at the top, beside the menus. At the bottom, the boxes on the right go above the
-    // ones on the left.
-    const card = this._card.getBoundingClientRect();
-    const box = (el?: HTMLElement): DOMRect | null => {
-      const r = el && el.childElementCount ? el.getBoundingClientRect() : null;
-      return r && r.height > 0 ? r : null;
-    };
-    const across = (a: DOMRect, b: DOMRect): boolean => a.left < b.right && b.left < a.right;
-    const topLeft = this._corners.get('top-left');
-    if (topLeft) {
-      const lefts = Array.from(topLeft.children) as HTMLElement[];
-      lefts.forEach((el) => (el.style.marginTop = ''));
-      const topRight = this._corners.get('top-right');
-      const obstacles = [
-        box(this._zoommenu),
-        ...(topRight ? (Array.from(topRight.children) as HTMLElement[]) : []).map((el) => el.getBoundingClientRect()),
-      ].filter((r) => r && r.height > 0);
-      lefts.forEach((el) => {
-        const r = el.getBoundingClientRect();
-        const met = obstacles.filter((o) => across(r, o) && r.top < o.bottom && o.top < r.bottom);
-        if (met.length) el.style.marginTop = Math.round(Math.max(...met.map((o) => o.bottom)) - r.top + 6) + 'px';
-      });
-    }
-    const bottomRight = this._corners.get('bottom-right');
-    const below = box(this._corners.get('bottom-left'));
-    const beside = box(bottomRight);
-    if (below && beside && across(below, beside))
-      bottomRight.style.bottom = Math.round(card.bottom - below.top + 6) + 'px';
   }
 
   // A switch of the config: on, or at its default when missing (the *_show of the boxes are on by
   // default, status_show off).
   private _shown(key: string, fallback: boolean): boolean {
-    const value = this._config[key];
-    if (value === undefined || value === null || value === '') return fallback;
-    return value === 'yes' || value === true;
-  }
-
-  private _boxChanged(kind: string, deps: unknown[], force: boolean): boolean {
-    const last = this._boxDeps.get(kind);
-    this._boxDeps.set(kind, deps);
-    const changed = force || !last || last.length !== deps.length || deps.some((d, i) => d !== last[i]);
-    if (changed) this._boxesChanged = true;
-    return changed;
-  }
-
-  private _moreInfo(entityId?: string): void {
-    if (entityId) fireEvent(this, 'hass-more-info', { entityId });
-  }
-
-  // A box that opens its entity wherever it is tapped (weather, alarm panel).
-  private _wholeBox(box: HTMLElement, entityId: string, label: string): void {
-    box.setAttribute('role', 'button');
-    box.tabIndex = 0;
-    box.setAttribute('aria-label', label);
-    box.onclick = (ev) => {
-      ev.stopPropagation();
-      this._moreInfo(entityId);
-    };
-    box.onkeydown = (ev) => {
-      if (ev.key === 'Enter' || ev.key === ' ') {
-        ev.preventDefault();
-        this._moreInfo(entityId);
-      }
-    };
-  }
-
-  // A text of the card, or the value itself when the card has no text for it.
-  private _tOr(key: string, fallback: string): string {
-    const text = this._t(key);
-    return text === 'common.' + key ? fallback : text;
-  }
-
-  // status_show: yes. What is on or open among the entities of the card: lamps on, doors and windows
-  // open, locks open, heaters working. A tap on a kind outlines its objects in the model and frames
-  // them; a second tap, or ten seconds, ends it.
-  private _renderStatus(force: boolean): void {
-    const box = this._box(
-      'status',
-      this._shown('status_show', false) ? corner(this._config.status_position, 'top-left') : null,
-    );
-    if (!box) return;
-    const entities: any[] = (this._config.entities || []).map((e: any) => (typeof e === 'string' ? { entity: e } : e));
-    const deps: unknown[] = entities.map((e) => e && this._hass.states[e.entity]);
-    deps.push(this._shownStatus, this._language());
-    if (!this._boxChanged('status', deps, force)) return;
-    const groups = statusGroups(entities, this._hass.states, climateAction);
-    box.setAttribute('aria-label', this._t('status'));
-    render(
-      groups.length
-        ? html`${groups.map(
-            (g) => html`
-              <button
-                class="chip ${this._shownStatus === g.kind ? 'active' : ''}"
-                title=${this._t('status_' + g.kind, { count: g.entities.length })}
-                @click=${(ev: Event) => {
-                  ev.stopPropagation();
-                  this._toggleStatus(g.kind, g.indices);
-                }}
-              >
-                <ha-icon icon=${STATUS_ICONS[g.kind]} style=${'color: ' + STATUS_COLORS[g.kind]}></ha-icon
-                ><span>${g.entities.length}</span>
-              </button>
-            `,
-          )}`
-        : html`<span class="chip clear" title=${this._t('status_clear')}
-            ><ha-icon icon="mdi:check-circle-outline"></ha-icon><span>${this._t('status_ok')}</span></span
-          >`,
-      box,
-    );
+    return switchOn(this._config, key, fallback);
   }
 
   private _toggleStatus(kind: StatusKind, indices: number[]): void {
@@ -5035,7 +4830,7 @@ export class Floor3dCard extends LitElement {
     this._showObjects(ids, STATUS_COLORS[kind]);
     if (this._displaylevels) this._levelsShown = this._displaylevels.slice();
     this._shownStatus = kind;
-    this._renderStatus(true);
+    this._boxes.renderStatus(true);
   }
 
   // Outlines objects of the model (drawn over everything) and flies the camera to them, for ten
@@ -5059,7 +4854,7 @@ export class Floor3dCard extends LitElement {
       if (before && unchanged) this._applyLevels((i) => before[i] !== false);
       this._levelsBefore = this._levelsShown = undefined;
       this._shownStatus = undefined;
-      this._renderStatus(true);
+      this._boxes.renderStatus(true);
     }
     this._render();
   }
@@ -5087,354 +4882,6 @@ export class Floor3dCard extends LitElement {
     this._setHighlight(ids, '#ffffff');
     this._flyToRoom(room);
     this._shownTimer = window.setTimeout(() => this._endShown(), 10000);
-  }
-
-  // energy_power (the house), energy_solar, energy_grid (positive from the grid, negative to it),
-  // energy_battery (%), and the plugs that use the most now (energy_plugs, or the power sensors of
-  // the rooms): a tap on one of them goes to its room.
-  private _renderEnergy(force: boolean): void {
-    const c = this._config;
-    const plugsSet = Array.isArray(c.energy_plugs) ? c.energy_plugs.filter((p: any) => typeof p === 'string' && p) : [];
-    const on =
-      !!(c.energy_power || c.energy_solar || c.energy_grid || c.energy_battery || plugsSet.length) &&
-      this._shown('energy_show', true);
-    const box = this._box('energy', on ? corner(c.energy_position, 'bottom-left') : null);
-    if (!box) return;
-    const plugs: string[] = plugsSet.length ? plugsSet : this._roomViews.flatMap((room) => room.sensors.power || []);
-    const states = this._hass.states;
-    const ids = [c.energy_power, c.energy_solar, c.energy_grid, c.energy_battery, ...plugs];
-    if (!this._boxChanged('energy', [...ids.map((id) => id && states[id]), this._language()], force)) return;
-    const language = this._language();
-    const top = topConsumers(states, plugs, Math.round(this._num(c.energy_top, 3)));
-    const value = (id: string | undefined, icon: string, text: string, title: string) =>
-      id && states[id]
-        ? html`<button
-            class="value"
-            title=${title}
-            @click=${(ev: Event) => {
-              ev.stopPropagation();
-              this._moreInfo(id);
-            }}
-          >
-            <ha-icon icon=${icon}></ha-icon><span>${text}</span>
-          </button>`
-        : nothing;
-    const grid = watts(c.energy_grid ? states[c.energy_grid] : undefined);
-    const battery = c.energy_battery && states[c.energy_battery] ? Number(states[c.energy_battery].state) : NaN;
-    box.setAttribute('aria-label', this._t('energy'));
-    render(
-      html`
-        <div class="values">
-          ${value(c.energy_power, 'mdi:home-lightning-bolt', formatPower(watts(states[c.energy_power]), language), this._t('energy_power'))}
-          ${value(c.energy_solar, 'mdi:solar-power', formatPower(watts(states[c.energy_solar]), language), this._t('energy_solar'))}
-          ${value(
-            c.energy_grid,
-            grid < 0 ? 'mdi:transmission-tower-export' : 'mdi:transmission-tower-import',
-            formatPower(Math.abs(grid), language),
-            this._t(grid < 0 ? 'energy_export' : 'energy_import'),
-          )}
-          ${value(c.energy_battery, batteryIcon(battery), isNaN(battery) ? '' : Math.round(battery) + '%', this._t('energy_battery'))}
-        </div>
-        ${
-          top.length
-            ? html`<div class="consumers">
-                ${top.map((t) => {
-                  const room = this._roomViews.find((r) => (r.sensors.power || []).includes(t.entity));
-                  const name = String((states[t.entity] && states[t.entity].attributes.friendly_name) || t.entity);
-                  return html`<button
-                    class="consumer"
-                    title=${room ? name + ' · ' + room.name : name}
-                    @click=${(ev: Event) => {
-                      ev.stopPropagation();
-                      if (room) this._showRoom(room, []);
-                      else this._moreInfo(t.entity);
-                    }}
-                  >
-                    <span class="name">${name}</span><span>${formatPower(t.watts, language)}</span>
-                  </button>`;
-                })}
-              </div>`
-            : nothing
-        }
-      `,
-      box,
-    );
-  }
-
-  // people: the people of the house, with their picture; at home, away, or in a zone. With a room
-  // entity (the area of Bermuda or ESPresense, for example) whose state names a room of the card,
-  // the room: a tap on it goes there.
-  private _renderPeople(force: boolean): void {
-    const people = peopleList(this._config.people);
-    const where = corner(this._config.people_position, 'top-left');
-    const box = this._box('people', people.length && this._shown('people_show', true) ? where : null);
-    if (!box) return;
-    const states = this._hass.states;
-    const collapsed = this._isCollapsed('people');
-    const deps: unknown[] = people.flatMap((p) => [states[p.entity], p.room ? states[p.room] : undefined]);
-    deps.push(this._language(), collapsed, where);
-    if (!this._boxChanged('people', deps, force)) return;
-    const rooms: any[] = Array.isArray(this._config.rooms) ? this._config.rooms : [];
-    this._foldable(box, 'people', where, collapsed, this._t('people'));
-    if (collapsed) {
-      // Folded: only the faces, grey for who is away.
-      render(
-        html`${people.map((p) => {
-          const person = states[p.entity];
-          if (!person) return nothing;
-          const name = String(person.attributes.friendly_name || p.entity);
-          const picture = person.attributes.entity_picture as string | undefined;
-          return html`<span class="avatar ${person.state === 'home' ? '' : 'away'}" title=${name}
-            >${picture ? html`<img src=${picture} alt="" />` : html`<span>${initials(name)}</span>`}</span
-          >`;
-        })}${this._foldMark('people', where, true)}`,
-        box,
-      );
-      return;
-    }
-    render(
-      html`${people.map((p) => {
-        const person = states[p.entity];
-        if (!person) return nothing;
-        const name = String(person.attributes.friendly_name || p.entity);
-        const place = personPlace(person.state, p.room && states[p.room] ? states[p.room].state : undefined, rooms);
-        const picture = person.attributes.entity_picture as string | undefined;
-        const room = place.room >= 0 ? rooms[place.room] : undefined;
-        return html`
-          <div class="person ${place.home ? 'home' : 'away'}">
-            <button
-              class="avatar"
-              title=${name}
-              @click=${(ev: Event) => {
-                ev.stopPropagation();
-                this._moreInfo(p.entity);
-              }}
-            >
-              ${picture ? html`<img src=${picture} alt="" />` : html`<span>${initials(name)}</span>`}
-            </button>
-            <span class="name">${name.split(' ')[0]}</span>
-            ${
-              room
-                ? html`<button
-                    class="place link"
-                    @click=${(ev: Event) => {
-                      ev.stopPropagation();
-                      this._showRoom(this._roomView(room.name), room.object_id ? [room.object_id] : []);
-                    }}
-                  >
-                    ${room.name}
-                  </button>`
-                : html`<span class="place"
-                    >${place.home ? this._t('people_home') : place.zone || this._t('people_away')}</span
-                  >`
-            }
-          </div>
-        `;
-      })}${this._foldMark('people', where, false)}`,
-      box,
-    );
-  }
-
-  // --- Boxes that fold (weather, people) ---------------------------------------------------------
-
-  // Folded, a box shows only what matters most (the weather now, the faces of the people) and a tap
-  // anywhere on it opens it again; open, its chevron folds it. Remembered on this device, for this
-  // model (the browser storage; without it, until the page is loaded again).
-  private _collapseKey(): string {
-    return 'floor3d-card-collapsed:' + (this._config.path || '') + (this._config.objfile || '');
-  }
-
-  private _isCollapsed(kind: string): boolean {
-    if (!this._collapsed) {
-      this._collapsed = new Set();
-      try {
-        const saved = JSON.parse(window.localStorage.getItem(this._collapseKey()) || '[]');
-        if (Array.isArray(saved)) saved.forEach((k) => typeof k === 'string' && this._collapsed.add(k));
-      } catch {
-        // No storage (a private window): nothing folded yet.
-      }
-    }
-    return this._collapsed.has(kind);
-  }
-
-  private _setCollapsed(kind: string, collapsed: boolean): void {
-    this._isCollapsed(kind);
-    if (collapsed) this._collapsed.add(kind);
-    else this._collapsed.delete(kind);
-    try {
-      window.localStorage.setItem(this._collapseKey(), JSON.stringify(Array.from(this._collapsed)));
-    } catch {
-      // As above.
-    }
-    this._renderBoxes(true);
-  }
-
-  // A box that folds: folded, the whole box opens it; open, the taps go to its parts.
-  private _foldable(box: HTMLElement, kind: string, where: Corner, collapsed: boolean, label: string): void {
-    box.classList.toggle('collapsed', collapsed);
-    box.classList.toggle('end', !where.endsWith('left')); // the chevron away from the corner
-    box.setAttribute('aria-label', label);
-    if (!collapsed) {
-      box.removeAttribute('aria-expanded');
-      if (box.getAttribute('role') === 'button' && kind !== 'weather') {
-        box.removeAttribute('role');
-        box.removeAttribute('tabindex');
-        box.onclick = null;
-        box.onkeydown = null;
-      }
-      return;
-    }
-    const open = (): void => this._setCollapsed(kind, false);
-    box.setAttribute('role', 'button');
-    box.setAttribute('aria-expanded', 'false');
-    box.tabIndex = 0;
-    box.onclick = (ev) => {
-      ev.stopPropagation();
-      open();
-    };
-    box.onkeydown = (ev) => {
-      if (ev.key === 'Enter' || ev.key === ' ') {
-        ev.preventDefault();
-        open();
-      }
-    };
-  }
-
-  // The chevron of a box that folds, on its side away from the corner: a button that folds the open
-  // box, or the mark of a folded one (the whole box opens it).
-  private _foldMark(kind: string, where: Corner, collapsed: boolean): TemplateResult {
-    const towardCorner = where.endsWith('left') ? 'mdi:chevron-left' : 'mdi:chevron-right';
-    const awayFromCorner = where.endsWith('left') ? 'mdi:chevron-right' : 'mdi:chevron-left';
-    if (collapsed) return html`<ha-icon class="fold" icon=${awayFromCorner}></ha-icon>`;
-    return html`<button
-      class="fold"
-      title=${this._t('box_collapse')}
-      aria-label=${this._t('box_collapse')}
-      aria-expanded="true"
-      @click=${(ev: Event) => {
-        ev.stopPropagation();
-        this._setCollapsed(kind, true);
-      }}
-    >
-      <ha-icon icon=${towardCorner}></ha-icon>
-    </button>`;
-  }
-
-  // alarm_panel: the state of an alarm_control_panel, green while armed, orange while it changes,
-  // red and blinking when triggered. A tap opens it, to arm or disarm.
-  private _renderAlarmPanel(force: boolean): void {
-    const entityId = this._config.alarm_panel;
-    const stateObj = entityId ? this._hass.states[entityId] : undefined;
-    const box = this._box(
-      'alarm_panel',
-      stateObj && this._shown('alarm_panel_show', true) ? corner(this._config.alarm_panel_position, 'top-right') : null,
-    );
-    if (!box || !this._boxChanged('alarm_panel', [stateObj, this._language()], force)) return;
-    const look = panelLook(stateObj.state);
-    const text = this._tOr('panel_' + stateObj.state, stateObj.state);
-    this._wholeBox(box, entityId, text);
-    box.classList.toggle('pulse', !!look.pulse);
-    box.style.setProperty('--f3d-panel', look.color);
-    render(html`<ha-icon icon=${look.icon}></ha-icon><span>${text}</span>`, box);
-  }
-
-  // chips: any entity as a chip, its icon and its state; a tap opens it.
-  private _renderChips(force: boolean): void {
-    const chips = chipList(this._config.chips);
-    const box = this._box(
-      'chips',
-      chips.length && this._shown('chips_show', true) ? corner(this._config.chips_position, 'bottom-right') : null,
-    );
-    if (!box) return;
-    const states = this._hass.states;
-    if (!this._boxChanged('chips', [...chips.map((c) => states[c.entity]), this._language()], force)) return;
-    const hass: any = this._hass;
-    box.setAttribute('aria-label', this._t('chips'));
-    render(
-      html`${chips.map((c) => {
-        const stateObj = states[c.entity];
-        if (!stateObj) return nothing;
-        const unit = stateObj.attributes.unit_of_measurement;
-        const value =
-          typeof hass.formatEntityState === 'function'
-            ? hass.formatEntityState(stateObj)
-            : stateObj.state + (unit ? ' ' + unit : '');
-        const icon = c.icon || (stateObj.attributes.icon as string | undefined);
-        const name = c.name || String(stateObj.attributes.friendly_name || c.entity);
-        return html`<button
-          class="chip"
-          title=${name}
-          @click=${(ev: Event) => {
-            ev.stopPropagation();
-            this._moreInfo(c.entity);
-          }}
-        >
-          ${icon ? html`<ha-icon icon=${icon}></ha-icon>` : html`<ha-state-icon .hass=${this._hass} .stateObj=${stateObj}></ha-state-icon>`}
-          <span>${c.name ? html`<span class="label">${c.name}</span> ` : nothing}${value}</span>
-        </button>`;
-      })}`,
-      box,
-    );
-  }
-
-  private _renderWeather(force = false): void {
-    const entityId = this._config.weather;
-    const stateObj = entityId ? this._hass.states[entityId] : undefined;
-    const where = corner(this._config.weather_position, 'bottom-left');
-    const box = this._box('weather', stateObj && this._shown('weather_show', true) ? where : null);
-    const collapsed = this._isCollapsed('weather');
-    if (
-      !box ||
-      !this._boxChanged(
-        'weather',
-        [stateObj, this._forecast, this._forecastType, this._language(), collapsed, where],
-        force,
-      )
-    )
-      return;
-    // Open, a tap opens the entity; folded, it opens the box.
-    if (!collapsed) this._wholeBox(box, entityId, this._t('weather'));
-    this._foldable(box, 'weather', where, collapsed, this._t('weather'));
-    if (collapsed) {
-      render(
-        html`<div class="now">
-            <ha-icon icon=${weatherIcon(stateObj.state)}></ha-icon>
-            <span>${formatDegrees(stateObj.attributes.temperature)}</span>
-          </div>
-          ${this._foldMark('weather', where, true)}`,
-        box,
-      );
-      return;
-    }
-    const forecast: any[] =
-      (Array.isArray(stateObj.attributes.forecast) ? stateObj.attributes.forecast : this._forecast) || [];
-    const count = Math.min(12, Math.max(0, Math.round(this._num(this._config.weather_count, 4))));
-    const type = this._forecastType || 'daily';
-    const language = this._language();
-    const locale: any = this._hass.locale;
-    const timeZone = locale && locale.time_zone === 'server' ? (this._hass.config as any).time_zone : undefined;
-    render(
-      html`
-        <div class="now">
-          <ha-icon icon=${weatherIcon(stateObj.state)}></ha-icon>
-          <span>${formatDegrees(stateObj.attributes.temperature)}</span>
-        </div>
-        ${forecast.slice(0, count).map(
-          (f) => html`
-            <div class="item">
-              <span class="when">${forecastLabel(f.datetime, type, language, timeZone)}</span>
-              <ha-icon icon=${weatherIcon(f.condition, f.is_daytime)}></ha-icon>
-              <span class="temp"
-                >${formatDegrees(f.temperature)}${f.templow != null ? html` <span class="low">${formatDegrees(f.templow)}</span>` : nothing}</span
-              >
-              ${Number(f.precipitation_probability) >= 10 ? html`<span class="rain">${Math.round(Number(f.precipitation_probability))}%</span>` : nothing}
-            </div>
-          `,
-        )}
-        ${this._foldMark('weather', where, false)}
-      `,
-      box,
-    );
   }
 
   // --- Cameras (cameras.ts) ------------------------------------------------------------------------
@@ -5466,7 +4913,7 @@ export class Floor3dCard extends LitElement {
   private _renderPins(cameras: CameraItem[], force: boolean): void {
     // Hidden on this device with the button by the menus (cameras_button).
     const placed =
-      this._shown('cameras_show', true) && !this._isCollapsed('cameras') ? cameras.filter((c) => c.position) : [];
+      this._shown('cameras_show', true) && !this._boxes.isCollapsed('cameras') ? cameras.filter((c) => c.position) : [];
     const states = this._hass.states;
     const alert = new Set(this._popupShowing.map((s) => s.entity));
     const key = JSON.stringify(
@@ -5513,7 +4960,7 @@ export class Floor3dCard extends LitElement {
           aria-label=${name}
           @click=${(ev: Event) => {
             ev.stopPropagation();
-            this._moreInfo(c.entity);
+            this._boxes.moreInfo(c.entity);
           }}
         >
           <ha-icon icon=${c.icon || 'mdi:cctv'}></ha-icon>
@@ -5564,7 +5011,10 @@ export class Floor3dCard extends LitElement {
   private _renderCameraPopup(cameras: CameraItem[], force: boolean): void {
     const states = this._hass.states;
     const shown = this._shown('camera_popup_show', true) ? this._popupShowing.find((s) => states[s.entity]) : undefined;
-    const box = this._box('camera_popup', shown ? corner(this._config.camera_popup_position, 'bottom-right') : null);
+    const box = this._boxes.box(
+      'camera_popup',
+      shown ? corner(this._config.camera_popup_position, 'bottom-right') : null,
+    );
     if (!box || !shown) {
       this._stopPopupRefresh();
       return;
@@ -5582,12 +5032,12 @@ export class Floor3dCard extends LitElement {
       this._language(),
     ];
     this._sizePopup();
-    if (this._boxChanged('camera_popup', deps, force)) {
+    if (this._boxes.changed('camera_popup', deps, force)) {
       const name = cameraName(camera, stateObj);
       const triggerName = trigger ? String(trigger.attributes.friendly_name || shown.trigger) : '';
       const open = (ev: Event): void => {
         ev.stopPropagation();
-        this._moreInfo(shown.entity);
+        this._boxes.moreInfo(shown.entity);
       };
       box.setAttribute('aria-label', this._t('camera_popup'));
       render(
@@ -5639,7 +5089,7 @@ export class Floor3dCard extends LitElement {
 
   // The width of the picture: 45% of the card, between 160 and 320 pixels.
   private _sizePopup(): void {
-    const box = this._boxEls.get('camera_popup');
+    const box = this._boxes.element('camera_popup');
     const content = this._content || this._card;
     if (!box || !content) return;
     const width = content.getBoundingClientRect().width;
@@ -5651,7 +5101,7 @@ export class Floor3dCard extends LitElement {
   private _refreshPopup(): void {
     window.clearTimeout(this._popupRefresh);
     this._popupRefresh = undefined;
-    const box = this._boxEls.get('camera_popup');
+    const box = this._boxes.element('camera_popup');
     const img = box ? box.querySelector('img') : null;
     const entity = this._popupEntity;
     if (!box || !img || !entity || !this.isConnected || !this._hass) return;
@@ -5761,7 +5211,7 @@ export class Floor3dCard extends LitElement {
   private _renderMenus(): void {
     if (this._zoommenu)
       render(html`${this._getZoomMenu()}${this._getMapMenu()}${this._getCamerasButton()}`, this._zoommenu);
-    this._placeCorners();
+    this._boxes.place();
   }
 
   // cameras_button: next to the menus, a button that hides the icons of the cameras and shows them
@@ -5769,7 +5219,7 @@ export class Floor3dCard extends LitElement {
   private _getCamerasButton(): TemplateResult {
     const placed = cameraList(this._config.cameras).some((c) => c.position);
     if (!placed || !this._shown('cameras_show', true) || !this._shown('cameras_button', true)) return html``;
-    const hidden = this._isCollapsed('cameras');
+    const hidden = this._boxes.isCollapsed('cameras');
     return html`<button
       class="f3d-menu-button ${hidden ? 'off' : ''}"
       aria-label=${this._t('camera_icons')}
@@ -5777,7 +5227,7 @@ export class Floor3dCard extends LitElement {
       title=${this._t('camera_icons')}
       @click=${(ev: Event) => {
         ev.stopPropagation();
-        this._setCollapsed('cameras', !hidden);
+        this._boxes.setCollapsed('cameras', !hidden);
         this._renderMenus();
       }}
     >

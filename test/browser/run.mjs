@@ -1453,7 +1453,7 @@ test(
       const card = window.__card;
       card._config = { ...card._config, chips: undefined, energy_show: 'no', weather_show: false, hideMapMenu: 'yes' };
       card._renderBoxes(true);
-      card._subscribeWeather();
+      card._boxes.subscribeWeather();
       card._renderMenus();
     });
     assert.equal(await boxOf(page, 'chips'), null);
@@ -1901,7 +1901,7 @@ test(
       ['weather', 'people'],
     );
     await page.evaluate(() => {
-      window.__card._collapsed = undefined;
+      window.__card._boxes._collapsed = undefined; // read again from the storage
       window.__card._renderBoxes(true);
     });
     assert.match((await boxOf(page, 'weather')).classes, /\bcollapsed\b/);
@@ -2551,7 +2551,7 @@ test(
     assert.deepEqual(await button(), { pressed: 'false', icon: 'mdi:cctv-off', label: 'Camera icons' });
     // Remembered: read again, as a new card on this device does.
     await page.evaluate(() => {
-      window.__card._collapsed = undefined;
+      window.__card._boxes._collapsed = undefined; // read again from the storage
       window.__card._renderBoxes(true);
     });
     assert.deepEqual(await pinsOf(page), []);

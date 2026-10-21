@@ -115,6 +115,13 @@ const BLOCK_NUMBERS: { [block: string]: string[] } = {
 const NUMBER = /^-?\d+(\.\d+)?$/;
 
 // Shared with the editor.
+// A switch of the config (yes/no or true/false): on, or fallback when it is missing.
+export function switchOn(config: any, key: string, fallback: boolean): boolean {
+  const value = config ? config[key] : undefined;
+  if (value === undefined || value === null || value === '') return fallback;
+  return value === 'yes' || value === true;
+}
+
 export const isObject = (value: unknown): boolean =>
   value !== null && typeof value === 'object' && !Array.isArray(value);
 
