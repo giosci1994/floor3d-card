@@ -11,8 +11,6 @@ export interface Floor3dCardConfig {
   type: string;
   path: string;
   name: string;
-  font: string;
-  attribute: string;
   objfile: string;
   mtlfile: string;
   objectlist: string;
@@ -66,10 +64,9 @@ export interface Floor3dCardConfig {
   selectionMode: string;
   editModeNotifications: string;
   shadow: string;
-  entities: any;
+  entities: EntityConfig[];
   lock_camera: string;
   click: string;
-  action: string;
   overlay: string;
   width: number;
   height: number;
@@ -80,64 +77,20 @@ export interface Floor3dCardConfig {
   overlay_height: string;
   overlay_font: string;
   overlay_fontsize: string;
-  entity: string;
-  entity_template: string;
-  cover: any;
-  type3d: string;
-  object_id: string;
-  object_groups: any;
-  object_group: string;
+  object_groups: ObjectGroup[];
   zoom_areas: any;
-  objects: any;
-  lumens: number;
-  decay: number;
-  distance: number;
-  colorcondition: any;
-  light: any;
-  door: any;
-  doortype: string;
   extralightmode: string;
-  room: any;
   zoom: string;
-  elevation: number;
-  transparency: number;
   show_axes: string;
-  label: string;
-  label_text: string;
-  side: string;
-  direction: string;
-  degrees: number;
-  percentage: number;
-  hinge: string;
-  pane: string;
-  text: any;
-  gesture: any;
-  rotate: any;
-  round_per_second: number;
-  axis: string;
-  span: string;
-  vertical_alignment: string;
-  textbgcolor: string;
-  textfgcolor: string;
   camera_position: any;
   camera_rotate: any;
   camera_target: any;
-  light_direction: any;
-  light_target: string;
-  radius: number;
   sky: string;
   north: any;
   x: number;
   y: number;
   z: number;
-  hide: any;
-  show: any;
-  state: string;
-  target: any;
-  domain: string;
   camera: string;
-  service: string;
-  color: string;
   show_warning: boolean;
   show_error: boolean;
   language: string; // en, it, de, nb; missing or auto: the language of the user
@@ -159,7 +112,6 @@ export interface Floor3dCardConfig {
   sky_power: number | string; // a number or a numeric sensor
   sky_color: string;
   ground_color: string;
-  long_press_action: string;
   // State colours
   state_colors: string;
   open_color: string;
@@ -170,30 +122,48 @@ export interface Floor3dCardConfig {
   room_colors: string;
   maps: any; // sensor maps: changed presets and maps of other sensors (see maps.ts)
   alarm_view: string; // yes: the camera goes to a room when one of its alarms goes on
-  alarm: any; // options of type3d: alarm
-  climate: any; // options of type3d: climate
   temperature_min: number | string;
   temperature_max: number | string;
   illuminance_min: number | string;
   illuminance_max: number | string;
-  shower: any;
-  tracker: any;
-  image: any;
-  info: any;
 }
 
-export interface EntityFloor3dCardConfig {
-  hide: any;
+// An entity of the card (entities): what it does to its objects in the model (type3d), with the
+// options of its type in a block of the same name (light, door, cover...).
+export interface EntityConfig {
   entity: string;
-  type3d: 'light' | 'color' | 'hide' | 'text';
-  object_id: string;
-  lumens: number;
-  conditions: ConditionsFloor3dCardConfig[];
-  state: string;
+  type3d: string; // light, color, hide, show, door, cover, text, info, room, rotate, gesture, image...
+  object_id?: string; // an object of the model, a name with * (Lamp_*), or an object group <name>
+  entity_template?: string; // [[[ ]]]: the state the card uses, from the state of the entity
+  action?: string; // a tap on its objects: more-info, overlay or default
+  long_press_action?: string;
+  light?: any;
+  colorcondition?: any; // type3d: color, a colour for each state
+  hide?: any;
+  show?: any;
+  door?: any;
+  cover?: any;
+  text?: any;
+  info?: any;
+  room?: any;
+  rotate?: any;
+  gesture?: any;
+  alarm?: any;
+  climate?: any;
+  shower?: any;
+  tracker?: any;
+  image?: any;
 }
 
-export interface ConditionsFloor3dCardConfig {
-  condition: string;
-  state: string;
-  color: string;
+// The objects of an entity, found from its object_id (helpers.ts): the card reads them by the
+// position of the entity in the configuration.
+export interface EntityObjects {
+  entity: string;
+  objects: { object_id: string }[];
+}
+
+// object_groups: several objects under one name, <name> in the object_id of an entity.
+export interface ObjectGroup {
+  object_group: string;
+  objects: { object_id: string }[];
 }

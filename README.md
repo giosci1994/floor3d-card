@@ -1,30 +1,41 @@
 ![floor3d-card mod](docs/images/banner.png)
 
-> **This is a fork** of [adizanni/floor3d-card](https://github.com/adizanni/floor3d-card) with updated libraries (three.js 0.186, Lit 3), a new card editor, bug fixes and new features, all described in [FORK.md](FORK.md). If the fork is useful to you, you can support it on [Buy Me a Coffee](https://buymeacoffee.com/giosci1994u). After the list below, this page is the original documentation: the donation link and the ExportToHASS plugin there refer to the original card and its author.
+# floor3d-card mod
 
-## What this fork adds
+The 3D model of your home in a Home Assistant card, live: lamps that light the rooms with their colour and their shadows, doors and covers that open, rooms coloured by their sensors, alarms that blink, the sun, the sky and the weather, people, cameras and the energy of the house, all on the model.
 
-- [Card editor](FORK.md#card-editor): settings in sections; lists of entities, groups, views and rooms; objects picked with a tap in the preview; a pause while you edit.
-- [Languages](FORK.md#languages): the card and its editor in English, Italian and German (the card also in Norwegian), in the language of each user.
-- [Light](FORK.md#light-and-colours): the sun of `sun.sun` with its shadows, sun and sky from sensors for cloudy days, one light for a lamp made of many objects, and shadows kept within what the device can draw.
-- [Room maps](FORK.md#sensor-maps): temperature, presence, illuminance, humidity, CO₂, PM2.5, VOC, power or any other sensor, with a legend.
-- [Alarms](FORK.md#alarms) and [heating](FORK.md#heating-and-cooling): a room blinks with smoke, gas or a water leak; radiators glow while they heat.
-- [Covers](FORK.md#covers): roller shades and curtains that shorten, and venetian blinds whose slats turn with the tilt.
-- [Sky and weather](FORK.md#sky-and-weather): a sky behind the house that follows the sun, with stars and moon at night, a lawn under the house, and the forecast in a corner.
-- [Boxes](FORK.md#boxes): what is on or open (a tap shows it in the model), energy, people, alarm panel, and any entity as a chip.
-- [Cameras](FORK.md#cameras): an icon on the map where each camera is, and its picture popping up when the doorbell rings or it sees motion.
-- [New types](FORK.md#new-features): a TV screen that lights the room with its picture, person trackers, a shower, info boxes.
-- And more: [views from the page address](FORK.md#views-from-the-page-address), [object ids with `*`](FORK.md#object-ids-with-), [compressed models](FORK.md#compressed-models), and many [bugs of the original card fixed](FORK.md#fixes).
+> A fork of [adizanni/floor3d-card](https://github.com/adizanni/floor3d-card), with the same `custom:floor3d-card` and the same configuration: a card that worked with the original works with this one. Every change is described in [FORK.md](FORK.md). If it is useful to you, you can support it on [Buy Me a Coffee](https://buymeacoffee.com/giosci1994u).
 
-# floor3d-card (aka Your Home Digital Twin)
+## New in 2.13
 
-[!["Buy Me A Coffee"](https://www.buymeacoffee.com/assets/img/custom_images/orange_img.png)](https://buymeacoffee.com/AndyHA)
+A cleaner and faster base for what comes next, with nothing to change in your configuration:
 
-Javascript Module for the Home Assistant visualization Card for 3D Models with bindings to entity states.
+- **Lighter on large models.** A change of state, and every frame of an alarm, no longer search the objects through the whole model (thousands of objects in a model of Sweet Home 3D): each object is found once.
+- **The code in modules.** The card was one file of 7,000 lines; now each part (the boxes, the cameras, the sky, the rooms and every type of entity) is a module of its own, with tests in the browser for each of them.
+- **Updated libraries:** three.js 0.186, Lit 3, tween.js 25.
 
-| New Tutorial [![Alt text](https://img.youtube.com/vi/ArBy7uqSJkY/0.jpg)](https://www.youtube.com/watch?v=ArBy7uqSJkY) | Your First Card [![Alt text](https://img.youtube.com/vi/4qrDpDnPK6I/0.jpg)](https://youtu.be/4qrDpDnPK6I)  |
-| ------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+## What the card does
 
+- **Models:** OBJ + MTL from Sweet Home 3D, or GLB, also compressed with Draco or meshopt (several times smaller); levels, with a menu to show them; a loading screen with its progress. See [Compressed models](FORK.md#compressed-models).
+- **[Card editor](FORK.md#card-editor):** settings in sections, lists of entities, object groups, views and rooms, objects picked with a tap in the preview, a pause while you edit. A card added from the card picker asks for the model and opens on it.
+- **[Light and shadows](FORK.md#light-and-colours):** lamps in the colour and brightness of the light entity, one light for a lamp of many objects, the sun of `sun.sun` with its shadows, sun and sky from sensors for cloudy days, and shadows kept within what the device can draw (the editor says which lights have them).
+- **Entities on the model (`type3d`):** lights, colours, objects shown or hidden, [doors](#door) that swing or slide, [covers](FORK.md#covers) that slide, roll up or turn their slats, [text on objects](FORK.md#text-on-objects), info boxes, objects that [turn](FORK.md#fans) with a fan or to the angle of a sensor, a TV screen that lights the room with its picture, [person trackers](FORK.md#trackers) from presence radars, a shower, [alarm](FORK.md#alarms) and [heating](FORK.md#heating-and-cooling) objects.
+- **[Room maps](FORK.md#sensor-maps):** rooms coloured by temperature, presence, illuminance, humidity, CO₂, PM2.5, VOC, power or any other sensor, with the value and a legend; open doors and windows in [colour](FORK.md#state-colours), red with the alarm armed.
+- **[Alarms](FORK.md#alarms) and [heating](FORK.md#heating-and-cooling):** a room blinks with smoke, gas or a water leak and the camera goes there; radiators glow while they heat; a room shows the target of its thermostat.
+- **[Sky and weather](FORK.md#sky-and-weather):** a sky behind the house that follows the sun, with stars and the moon at night, a lawn under the house that opens over the basement, and the forecast in a corner.
+- **[Boxes](FORK.md#boxes) in the corners:** what is on or open (a tap shows it in the model), energy, people, the alarm panel and any entity as a chip; they fold, and stay out of each other's way on a phone.
+- **[Cameras](FORK.md#cameras):** an icon on the map where each camera is, and its picture popping up when the doorbell rings or it sees motion.
+- **Views:** zoom areas with their own camera and level, [views from the page address](FORK.md#views-from-the-page-address), [taps and long presses](FORK.md#tap-and-long-press) on the objects.
+- **[Languages](FORK.md#languages):** English, Italian and German (the card also in Norwegian), in the language of each user.
+- **Shorter configuration:** [object ids with `*`](FORK.md#object-ids-with-), [yes/no or true/false](FORK.md#shorter-configuration), and many [bugs of the original card fixed](FORK.md#fixes).
+
+| ![Evening: lamps on, each with its own shadows](docs/images/evening.jpg) | ![Room map by temperature](docs/images/map-temperature.jpg) |
+| :---: | :---: |
+| Lamps with their shadows | Rooms coloured by temperature |
+| ![The sky by day and at sunset, with the forecast box](docs/images/sky-weather.jpg) | ![The boxes on a computer and on a phone](docs/images/boxes.jpg) |
+| The sky and the weather | The boxes in the corners |
+| ![A roller shade and a venetian blind](docs/images/covers.jpg) | ![At night: stars, moon and the cameras](docs/images/cameras.jpg) |
+| Covers and blinds | Cameras on the map |
 
 ## Installation
 
@@ -43,11 +54,27 @@ If the original floor3d-card is installed, remove it from HACS first: both defin
 Copy all the files (`.js` and `.wasm`) of the [latest release](https://github.com/giosci1994/floor3d-card/releases/latest) into a folder of `/config/www` and add `floor3d-card.js` as a resource (details in [FORK.md](FORK.md#installation)). It's **required** to load this card as `module`.
 
 ```yaml
-- url: /local/floor3d-card/floor3d-card.js?v=2.12.2 # the version: change it at every update
+- url: /local/floor3d-card/floor3d-card.js?v=2.13.0 # the version: change it at every update
   type: module
 ```
 
 See Home Assistant documentation for adding custom cards (https://developers.home-assistant.io/docs/frontend/custom-ui/custom-card) and registering JavaScript resources (https://developers.home-assistant.io/docs/frontend/custom-ui/registering-resources).
+
+## Getting started
+
+1. Model your home, for example with [Sweet Home 3D](http://www.sweethome3d.com/), and export it as OBJ (or convert it to GLB): see [Model Design and Installation](#model-design-and-installation) below.
+2. Copy the files of the model into a folder of `/config/www`, for example `/config/www/floor3d/` (it is `/local/floor3d/` for the card).
+3. In a dashboard, add the card **floor3d-card mod** from the card picker. The editor opens on the 3D model: set the folder and the file of the model.
+4. Add the entities: for each one choose its type and pick its object with a tap on the model in the preview.
+
+The video tutorials of the original card still show how a model is made and bound to the entities:
+
+| Tutorial [![Tutorial](https://img.youtube.com/vi/ArBy7uqSJkY/0.jpg)](https://www.youtube.com/watch?v=ArBy7uqSJkY) | Your First Card [![Your first card](https://img.youtube.com/vi/4qrDpDnPK6I/0.jpg)](https://youtu.be/4qrDpDnPK6I) |
+| --- | --- |
+
+# Configuration reference
+
+The options of the original card, still valid in this one. The options this fork adds are described in [FORK.md](FORK.md), where each section above links.
 
 ## Model Design and Installation
 
@@ -70,7 +97,7 @@ When you are finished, configure a new card (either in panel mode or regular) wi
 ### Note: GLB format
 
 If you want to generate a glb file instead of the wavefront (obj) file to load the card (it is faster and more optimized), you can follow this procedure in Windows:
-Install nodejs here https://nodejs.org/dist/v16.14.2/node-v16.14.2-x64.msi
+Install Node.js from https://nodejs.org/
 Once installed you can open a command prompt (or powershell) and type the following command:
 ```bash
 npm install -g obj2gltf
@@ -92,9 +119,9 @@ In this fork the yes/no switches also accept `true`/`false`, and the objects of 
 | entities         | array  | none         | list of enitities to bind to 3D model objects.                                                                                                                             |
 | object_groups    | array  | none         | list of object groups to apply grouped entity bindings.                                                                                                                    |
 | style            | string | none         | the style that will be applied to the canvas element of the card.                                                                                                          |
-| path             | string | **Required** | path to the Waterforont obj (objects), mtl (material) and other files.                                                                                                     |
-| objfile          | string | **Required** | object file name (.obj) for Waterfront format or glb file name for the binary (condensed) 3d format (still experimental).                                                                                                                                 |
-| mtlfile          | string | **Required** | material file name (.mtl) Waterfront format. Only relevant when objefile has obj extension (no glb)                                                                                                                               |
+| path             | string | **Required** | path to the Wavefront obj (objects), mtl (material) and other files.                                                                                                     |
+| objfile          | string | **Required** | object file name (.obj) for the Wavefront format or glb file name for the binary 3d format.                                                                                                                                 |
+| mtlfile          | string | **Required** | material file name (.mtl) of the Wavefront format. Only relevant when objfile has the obj extension (no glb)                                                                                                                               |
 | backgroundColor  | string | '#aaaaaa'    | canvas background color: #RGB notation (ex #aaaaaa), color name (ex. 'white') or 'transparent' for a transparent background; this fork adds 'sky', a sky that follows the sun, with stars and moon at night (see [FORK.md](FORK.md#sky-and-weather))                                       |
 | header  | string | 'yes'    | if the header will be displayed or not                                                                                                                                                   |
 | editModeNotifications | string | 'yes'    | 'yes' to use the double click in edit mode to pop up the object ids or the camera position, 'no' to stop displaying popups                                            | 
@@ -559,3 +586,7 @@ Steps to dramatically improve the rendering.
 - B. **Chrome** In NVIDIA Control Panel 3D Settings->Manage 3D Settings->Program Settings Tab->1. Select a program to customise->Google Chrome-> 2. Select The preferred graphics processor->High performance NVIDIA → 3. OpenGL rendering GPU → NVIDIA; In Chrome address bar, type chrome://flags/#use-angle. Select OpenGL. Restart Chrome; In Chrome address bar, type chrome://gpu. Search for ‘GL_RENDERER’ and check if it say 'ANGLE (NVIDIA … OpenGL … ); I still experiment with ‘chrome://flags/#enable-drdc’.
 
 - C. **Edge** In NVIDIA Control Panel 3D Settings->Manage 3D Settings->Program Settings Tab->1. Select a program to customise->Edge-> 2. Select The preferred graphics processor->High performance NVIDIA → 3. OpenGL rendering GPU → NVIDIA; In Chrome address bar, type edge://flags/#use-angle. Select OpenGL. Restart Edge; I couldn’t figure out how to do it in Edge. It should be like chrome, because Edge is chromium. But for some reason it doesn’t work. Checking edge://gpu GL_RENDERER shows Direct3D11 instead of OpenGL.
+
+## Credits
+
+The original card is by [adizanni](https://github.com/adizanni), and so is most of the configuration reference above, from its documentation, and the [ExportToHASS](https://github.com/adizanni/ExportToHASS) plugin for Sweet Home 3D. You can support the original card on [Buy Me a Coffee](https://buymeacoffee.com/AndyHA).

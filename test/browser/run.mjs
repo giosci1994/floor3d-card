@@ -437,7 +437,7 @@ test('reload (refresh button of the editor): the model comes back, without error
 const roomState = (page) =>
   page.evaluate(() =>
     Object.fromEntries(
-      window.__card._roomViews.map((r) => [
+      window.__card._roomMaps.views.map((r) => [
         r.name,
         {
           visible: r.overlays[0].visible,
@@ -573,7 +573,7 @@ test(
     await flown(page, 'the camera flies to the room');
     const target = await page.evaluate(() => {
       const t = window.__card._controls.target;
-      const c = window.__card._roomViews[0].box.getCenter(t.clone());
+      const c = window.__card._roomMaps.views[0].box.getCenter(t.clone());
       return t.distanceTo(c);
     });
     assert.ok(target < 1, 'the camera looks at the room: ' + target);
@@ -1006,7 +1006,7 @@ test(
       page.evaluate(() => {
         const card = window.__card;
         const i = card._config.entities.findIndex((e) => e.entity === 'cover.blind');
-        const set = card._slatSets.get(i)[0];
+        const set = card._openings._slatSets.get(i)[0];
         const lowest = set.slats.reduce((a, b) => (a.center[1] < b.center[1] ? a : b));
         const position = set.geometry.getAttribute('position');
         const ys = lowest.vertices.map((v) => position.getY(v));
@@ -1069,7 +1069,7 @@ test(
     const { page, errors } = await open(house({ objfile: 'covers.obj', entities }), coverStates);
     assert.equal(await keeps(page, 'shade'), true);
     assert.equal(await keeps(page, 'blind'), true);
-    const angle = () => page.evaluate(() => Math.round(window.__card._slatAngles.get(1)));
+    const angle = () => page.evaluate(() => Math.round(window.__card._openings._slatAngles.get(1)));
     assert.equal(await angle(), -60, 'tilt 0: tilt_closed');
     await page.evaluate(() => {
       window.__setState('cover.shade', 'open', { current_position: 100 });
@@ -1381,7 +1381,7 @@ test(
     ]);
     assert.equal(boxes.energy.text, '1.2 kW 3.4 kW 500 W 80% Washer1.9 kW Heater800 W');
     const living = await page.evaluate(() =>
-      window.__card._roomViews
+      window.__card._roomMaps.views
         .find((r) => r.name === 'Living room')
         .box.getCenter(window.__card._controls.target.clone())
         .toArray()
@@ -1400,7 +1400,7 @@ test(
     );
     assert.equal(await page.evaluate(() => window.__card.shadowRoot.querySelectorAll('.f3d-people .away').length), 2);
     const bedroom = await page.evaluate(() =>
-      window.__card._roomViews
+      window.__card._roomMaps.views
         .find((r) => r.name === 'Bedroom')
         .box.getCenter(window.__card._controls.target.clone())
         .toArray()
@@ -1453,7 +1453,7 @@ test(
       const card = window.__card;
       card._config = { ...card._config, chips: undefined, energy_show: 'no', weather_show: false, hideMapMenu: 'yes' };
       card._renderBoxes(true);
-      card._subscribeWeather();
+      card._boxes.subscribeWeather();
       card._renderMenus();
     });
     assert.equal(await boxOf(page, 'chips'), null);
@@ -1791,7 +1791,7 @@ test(
         const card = window.__card;
         const g = card._scene.getObjectByName('f3d_ground');
         return {
-          sunBox: Math.round((card._sun.shadow.camera.right / card._modelRadius) * 10) / 10,
+          sunBox: Math.round((card._env.sun.shadow.camera.right / card._modelRadius) * 10) / 10,
           units: card._textureUnits.units,
           ...(g && {
             receiveShadow: g.receiveShadow,
@@ -1901,7 +1901,7 @@ test(
       ['weather', 'people'],
     );
     await page.evaluate(() => {
-      window.__card._collapsed = undefined;
+      window.__card._boxes._collapsed = undefined; // read again from the storage
       window.__card._renderBoxes(true);
     });
     assert.match((await boxOf(page, 'weather')).classes, /\bcollapsed\b/);
@@ -2022,7 +2022,7 @@ test(
         const card = window.__card;
         const kids = [...card._content.children];
         return {
-          pins: kids.indexOf(card._pinsEl),
+          pins: kids.indexOf(card._cameras._pinsEl),
           canvas: kids.indexOf(card._renderer.domElement),
           levelbar: kids.indexOf(card._levelbar),
         };
@@ -2044,8 +2044,8 @@ test(
         card._renderer &&
         card._renderer !== window.__before &&
         card._modelready &&
-        card._pinsEl &&
-        card._pinsEl.isConnected
+        card._cameras._pinsEl &&
+        card._cameras._pinsEl.isConnected
       );
     };
     await until(page, back, null, 'the icons come back after a reload', 120000);
@@ -2077,7 +2077,7 @@ test(
     const sprites = () =>
       page.evaluate(() => {
         const card = window.__card;
-        return card._sprites.map((name) => {
+        return card._texts._sprites.map((name) => {
           const s = card._scene.getObjectByName(name);
           const canvas = s.material.map.image;
           const corner = Array.from(canvas.getContext('2d').getImageData(0, 0, 1, 1).data);
@@ -2378,8 +2378,8 @@ test(
     const boxes = () =>
       page.evaluate(() => {
         const card = window.__card;
-        return card._sprites.map((name, i) => ({
-          text: card._info[i] + card._unit_of_measurement[i],
+        return card._texts._sprites.map((name, i) => ({
+          text: card._texts._info[i] + card._texts._unit_of_measurement[i],
           picture: card._scene.getObjectByName(name).material.map.image.toDataURL(),
         }));
       });
@@ -2476,10 +2476,10 @@ test(
     assert.ok(later[1] !== first[1], '12,5 is a speed');
     assert.ok(Math.abs(later[1] - first[1]) < Math.abs(later[0] - first[0]), 'slower than 50');
     assert.ok(later[3] !== first[3], 'on: turning');
-    const speed = await page.evaluate(() => window.__card._rotation_state.slice());
+    const speed = await page.evaluate(() => window.__card._rotating._rotation_state.slice());
     assert.deepEqual(speed, [0.5, 0.125, 0, 1]);
     await page.evaluate(() => window.__setState('sensor.wind', '0'));
-    assert.equal(await page.evaluate(() => window.__card._rotation_state[0]), 0, '0: stopped');
+    assert.equal(await page.evaluate(() => window.__card._rotating._rotation_state[0]), 0, '0: stopped');
     assert.deepEqual(errors, []);
     await page.close();
   },
@@ -2551,7 +2551,7 @@ test(
     assert.deepEqual(await button(), { pressed: 'false', icon: 'mdi:cctv-off', label: 'Camera icons' });
     // Remembered: read again, as a new card on this device does.
     await page.evaluate(() => {
-      window.__card._collapsed = undefined;
+      window.__card._boxes._collapsed = undefined; // read again from the storage
       window.__card._renderBoxes(true);
     });
     assert.deepEqual(await pinsOf(page), []);
@@ -3118,6 +3118,122 @@ test(
       assert.ok(warnings.includes('warning: floor3d-card: ' + w), warnings.join('\n'));
     }
     assert.ok(!warnings.some((w) => /ERROR|TypeError/.test(w)), 'no "ERROR" in the log, no error of the card');
+    assert.deepEqual(errors, []);
+    await page.close();
+  },
+);
+
+test('show, shower and tracker entities follow their states', { timeout: TIMEOUT }, async () => {
+  const { page, errors } = await open(
+    house({
+      entities: [
+        { entity: 'light.lamp_1', type3d: 'show', object_id: 'sofa', show: { state: 'on' } },
+        { entity: 'light.lamp_2', type3d: 'shower', object_id: 'table', shower: { count: 50 } },
+        {
+          entity: 'sensor.radar_x',
+          type3d: 'tracker',
+          object_id: 'floor_living',
+          tracker: { sensor_y: 'sensor.radar_y', scale: 0.1 },
+        },
+      ],
+    }),
+    states({ 'sensor.radar_x': { state: '0', attributes: {} }, 'sensor.radar_y': { state: '0', attributes: {} } }),
+  );
+  const look = () =>
+    page.evaluate(() => {
+      const card = window.__card;
+      return {
+        sofa: card._scene.getObjectByName('sofa').visible,
+        shower: card._showers._groups[1].visible,
+        tracker: card._trackers._views[2].present,
+      };
+    });
+  // A radar reports 0, 0 when nobody is there.
+  assert.deepEqual(await look(), { sofa: true, shower: true, tracker: false });
+  await page.evaluate(() => {
+    window.__setState('light.lamp_1', 'off');
+    window.__setState('light.lamp_2', 'off');
+    window.__setState('sensor.radar_x', '1200');
+    window.__setState('sensor.radar_y', '800');
+  });
+  assert.deepEqual(await look(), { sofa: false, shower: false, tracker: true });
+  await page.evaluate(() => {
+    window.__setState('light.lamp_1', 'on');
+    window.__setState('light.lamp_2', 'on');
+    window.__setState('sensor.radar_x', 'unavailable');
+  });
+  assert.deepEqual(await look(), { sofa: true, shower: true, tracker: false });
+  assert.deepEqual(errors, []);
+  await page.close();
+});
+
+test(
+  'at a state change the objects already found are not searched in the whole model again',
+  { timeout: TIMEOUT },
+  async () => {
+    const { page, errors } = await open(
+      house({
+        entities: [
+          ...lamps(1),
+          {
+            entity: 'binary_sensor.door',
+            type3d: 'door',
+            object_id: 'wardrobe',
+            door: { doortype: 'slide', side: 'left', percentage: 100 },
+          },
+          {
+            entity: 'switch.a',
+            type3d: 'color',
+            object_id: 'table',
+            colorcondition: [{ state: 'on', color: '#ff0000' }],
+          },
+          { entity: 'switch.b', type3d: 'hide', object_id: 'sofa', hide: { state: 'off' } },
+        ],
+      }),
+      states({
+        'binary_sensor.door': { state: 'off', attributes: {} },
+        'switch.a': { state: 'off', attributes: {} },
+        'switch.b': { state: 'on', attributes: {} },
+      }),
+    );
+    // Every search of the scene by name from now on.
+    await page.evaluate(() => {
+      const scene = window.__card._scene;
+      const search = scene.getObjectByName.bind(scene);
+      window.__searches = [];
+      scene.getObjectByName = (name) => {
+        window.__searches.push(name);
+        return search(name);
+      };
+    });
+    const look = () =>
+      page.evaluate(() => {
+        const card = window.__card;
+        return {
+          lamp: card._scene.getObjectByName('lamp_1_light').intensity > 0,
+          table: '#' + card._scene.getObjectByName('table').material.color.getHexString(),
+          sofa: card._scene.getObjectByName('sofa').visible,
+        };
+      });
+    await page.evaluate(() => {
+      window.__setState('light.lamp_1', 'off');
+      window.__setState('binary_sensor.door', 'on');
+      window.__setState('switch.a', 'on');
+      window.__setState('switch.b', 'off');
+    });
+    await still(page);
+    const searches = await page.evaluate(() => window.__searches.splice(0));
+    assert.deepEqual(searches, [], 'no search of the scene at the state changes');
+    assert.deepEqual(await look(), { lamp: false, table: '#ff0000', sofa: false });
+    await page.evaluate(() => {
+      window.__setState('light.lamp_1', 'on');
+      window.__setState('switch.a', 'off');
+      window.__setState('switch.b', 'on');
+    });
+    const back = await look();
+    assert.equal(back.lamp, true);
+    assert.equal(back.sofa, true);
+    assert.notEqual(back.table, '#ff0000');
     assert.deepEqual(errors, []);
     await page.close();
   },
