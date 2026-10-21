@@ -36,6 +36,9 @@ export interface EntityHost {
   objectNamesFor(ids: string[]): string[]; // the objects of the model that ids name (names with *, <groups>)
   stateWithTemplate(entity: EntityConfig): string; // the state of the entity, through entity_template
   levelShown(level: number | undefined): boolean;
+  // An object of the scene by its name, at the state changes: as scene.getObjectByName, without
+  // going through the whole model again for an object already found.
+  object(name: string): THREE.Object3D | undefined;
 }
 
 // An object that turns or slides (rotate, door, cover) turns around pivot, a point of the scene: its

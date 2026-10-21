@@ -154,7 +154,7 @@ export class Texts {
     (this._sprites || []).forEach((name, i) => {
       const sprite =
         name && this.host.config.entities[i] && this.host.config.entities[i].type3d == 'info'
-          ? this.host.scene.getObjectByName(name)
+          ? this.host.object(name)
           : undefined;
       if (sprite) sprite.visible = this.host.levelShown(sprite.userData.level);
     });
@@ -377,8 +377,8 @@ export class Texts {
   private _updateroom(entity: EntityConfig, text: string, uom: string, i: number): void {
     //update sprite text and other change conditions
 
-    const _roomMesh: THREE.Object3D = this.host.scene.getObjectByName(this._rooms[i]);
-    const _roomSprite: THREE.Object3D = this.host.scene.getObjectByName(this._sprites[i]);
+    const _roomMesh: THREE.Object3D = this.host.object(this._rooms[i]);
+    const _roomSprite: THREE.Object3D = this.host.object(this._sprites[i]);
     const _roomCanvas: HTMLCanvasElement = this._canvas[i];
 
     if (_roomMesh && entity) {
@@ -391,7 +391,7 @@ export class Texts {
   }
 
   private _updateinfo(item: EntityConfig, text: string, uom: string, index: number): void {
-    const sprite: any = this.host.scene.getObjectByName(this._sprites[index]);
+    const sprite: any = this.host.object(this._sprites[index]);
     const canvas = this._canvas[index];
     if (sprite && canvas) {
       const info = item.info || {};
@@ -405,7 +405,7 @@ export class Texts {
   }
 
   private _updatetext(entity: EntityConfig, state: string, canvas: HTMLCanvasElement, uom: string): void {
-    const _foundobject: any = this.host.scene.getObjectByName(entity.object_id);
+    const _foundobject: any = this.host.object(entity.object_id);
 
     if (_foundobject) {
       this._updateTextCanvas(entity.text, canvas, state + uom);
@@ -605,7 +605,7 @@ export class Texts {
   private _updateroomcolor(item: any, index: number): void {
     // Change the color of the room when, for the bound entity, when the state matches the condition
 
-    let _room: any = this.host.scene.getObjectByName(this._rooms[index]);
+    let _room: any = this.host.object(this._rooms[index]);
 
     const color: string = item.room.color ? item.room.color : '#ffffff';
 

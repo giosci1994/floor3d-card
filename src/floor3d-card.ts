@@ -243,6 +243,7 @@ export class Floor3dCard extends LitElement {
   // Editor of the card (only in the preview): a tap picks an object, and some objects are highlighted.
   private _pickMode = false;
   private _highlightHelpers: THREE.Object3D[] = [];
+  private _found = new Map<string, THREE.Object3D>(); // the objects found by _object
   private _editorListener = (ev: Event): void => this._onEditor((ev as CustomEvent).detail);
   private _intersectionObserver?: IntersectionObserver;
   private _zoommenu?: HTMLElement;
@@ -1015,6 +1016,26 @@ export class Floor3dCard extends LitElement {
     });
   }
 
+  // An object of the scene by its name, for the state changes and the frames of an alarm: a search of
+  // the scene goes through every object of the model, thousands in a model of Sweet Home 3D. An
+  // object found is kept while it is still in the scene with that name; a name not found is searched
+  // again every time, as its object may be added later (the light of a lamp, the box of a room).
+  private _object(name: string): THREE.Object3D | undefined {
+    // No name (an option left out, as the pane of a door): the names of three.js are strings, so the
+    // search would find nothing.
+    if (name === undefined || name === null) return undefined;
+    const kept = this._found.get(name);
+    if (kept && kept.name === name) {
+      let root = kept;
+      while (root.parent) root = root.parent;
+      if (root === this._scene) return kept;
+    }
+    const found = this._scene.getObjectByName(name);
+    if (found) this._found.set(name, found);
+    else this._found.delete(name);
+    return found;
+  }
+
   private _modelObjectNames(): string[] {
     const names = new Set<string>();
     (this._raycastinglevels || []).forEach((level) => (level || []).forEach((o) => o.name && names.add(o.name)));
@@ -1047,7 +1068,7 @@ export class Floor3dCard extends LitElement {
     });
     this._highlightHelpers = [];
     this._objectNamesFor(ids).forEach((name) => {
-      const object = this._scene.getObjectByName(name);
+      const object = this._object(name);
       if (!object) return;
       const helper = new THREE.BoxHelper(object, color);
       const material = helper.material as THREE.LineBasicMaterial;
@@ -1225,6 +1246,7 @@ export class Floor3dCard extends LitElement {
     //create and initialize scene and camera
 
     this._scene = new THREE.Scene();
+    this._found.clear();
 
     // The near plane follows the distance from the target (_updateNearPlane): 0.1 cm with a
     // standard depth buffer made coplanar surfaces flicker.
@@ -1999,7 +2021,7 @@ export class Floor3dCard extends LitElement {
 
   private _setSelectionMaterials(show: boolean): void {
     this._selectedobjects.forEach((objectName) => {
-      let object: any = this._scene.getObjectByName(objectName);
+      let object: any = this._object(objectName);
       if (object) {
         object.material = show ? this._selectedmaterial : this._initialobjectmaterials[objectName];
       }
@@ -2249,6 +2271,7 @@ export class Floor3dCard extends LitElement {
       objectNamesFor: (ids) => card._objectNamesFor(ids),
       stateWithTemplate: (entity) => card._statewithtemplate(entity),
       levelShown: (level) => card._levelShown(level),
+      object: (name) => card._object(name),
     };
   }
 
@@ -2708,7 +2731,7 @@ export class Floor3dCard extends LitElement {
     const box = new THREE.Box3();
     const levels = new Set<number>();
     this._objectNamesFor(ids).forEach((name) => {
-      const object = this._scene.getObjectByName(name);
+      const object = this._object(name);
       if (!object) return;
       box.union(new THREE.Box3().setFromObject(object));
       if (object.userData && object.userData.level !== undefined) levels.add(object.userData.level);
@@ -2959,7 +2982,7 @@ export class Floor3dCard extends LitElement {
     this._config.entities.forEach((entity, i) => {
       if (entity.type3d != 'alarm' || !this._object_ids[i]) return;
       this._object_ids[i].objects.forEach((o) => {
-        const obj: any = this._scene.getObjectByName(o.object_id);
+        const obj: any = this._object(o.object_id);
         const tint = obj && obj.material === obj.userData.tintMaterial ? obj.userData.tintMaterial : null;
         if (!tint) return;
         (Array.isArray(tint) ? tint : [tint]).forEach((m) => {
@@ -2974,7 +2997,7 @@ export class Floor3dCard extends LitElement {
   private _tintObjects(index: number, color: THREE.Color | null, intensity: number): void {
     if (!this._object_ids[index]) return;
     this._object_ids[index].objects.forEach((o) => {
-      const obj: any = this._scene.getObjectByName(o.object_id);
+      const obj: any = this._object(o.object_id);
       if (!obj || !obj.material) return;
       if (!obj.userData.baseMaterial) obj.userData.baseMaterial = obj.material;
       if (!color) {
@@ -3005,7 +3028,7 @@ export class Floor3dCard extends LitElement {
     this._config.entities.forEach((entity, i) => {
       if (entity.type3d != 'door' || !isOpen(this._states[i]) || !this._object_ids[i]) return;
       this._object_ids[i].objects.forEach((o) => {
-        const obj: any = this._scene.getObjectByName(o.object_id);
+        const obj: any = this._object(o.object_id);
         const tint = obj && obj.userData.tintMaterial;
         if (!tint) return;
         (Array.isArray(tint) ? tint : [tint]).forEach((m) => {
@@ -3020,7 +3043,7 @@ export class Floor3dCard extends LitElement {
 
     let j = 0;
     this._object_ids[index].objects.forEach((element) => {
-      let _object: any = this._scene.getObjectByName(element.object_id);
+      let _object: any = this._object(element.object_id);
 
       if (_object) {
         let i: any;
@@ -3056,7 +3079,7 @@ export class Floor3dCard extends LitElement {
     // hide the object when the state is equal to the configured value
     this._object_ids[index].objects.forEach((element) => {
       //object clickable: check layers solution
-      const _object: any = this._scene.getObjectByName(element.object_id);
+      const _object: any = this._object(element.object_id);
 
       if (_object) {
         if (this._states[index] == entity.hide.state) {
@@ -3073,7 +3096,7 @@ export class Floor3dCard extends LitElement {
   private _updateshow(entity: EntityConfig, index: number): void {
     // hide the object when the state is equal to the configured value
     this._object_ids[index].objects.forEach((element) => {
-      const _object: any = this._scene.getObjectByName(element.object_id);
+      const _object: any = this._object(element.object_id);
 
       if (_object) {
         if (this._states[index] == entity.show.state) {

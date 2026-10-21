@@ -3166,3 +3166,75 @@ test('show, shower and tracker entities follow their states', { timeout: TIMEOUT
   assert.deepEqual(errors, []);
   await page.close();
 });
+
+test(
+  'at a state change the objects already found are not searched in the whole model again',
+  { timeout: TIMEOUT },
+  async () => {
+    const { page, errors } = await open(
+      house({
+        entities: [
+          ...lamps(1),
+          {
+            entity: 'binary_sensor.door',
+            type3d: 'door',
+            object_id: 'wardrobe',
+            door: { doortype: 'slide', side: 'left', percentage: 100 },
+          },
+          {
+            entity: 'switch.a',
+            type3d: 'color',
+            object_id: 'table',
+            colorcondition: [{ state: 'on', color: '#ff0000' }],
+          },
+          { entity: 'switch.b', type3d: 'hide', object_id: 'sofa', hide: { state: 'off' } },
+        ],
+      }),
+      states({
+        'binary_sensor.door': { state: 'off', attributes: {} },
+        'switch.a': { state: 'off', attributes: {} },
+        'switch.b': { state: 'on', attributes: {} },
+      }),
+    );
+    // Every search of the scene by name from now on.
+    await page.evaluate(() => {
+      const scene = window.__card._scene;
+      const search = scene.getObjectByName.bind(scene);
+      window.__searches = [];
+      scene.getObjectByName = (name) => {
+        window.__searches.push(name);
+        return search(name);
+      };
+    });
+    const look = () =>
+      page.evaluate(() => {
+        const card = window.__card;
+        return {
+          lamp: card._scene.getObjectByName('lamp_1_light').intensity > 0,
+          table: '#' + card._scene.getObjectByName('table').material.color.getHexString(),
+          sofa: card._scene.getObjectByName('sofa').visible,
+        };
+      });
+    await page.evaluate(() => {
+      window.__setState('light.lamp_1', 'off');
+      window.__setState('binary_sensor.door', 'on');
+      window.__setState('switch.a', 'on');
+      window.__setState('switch.b', 'off');
+    });
+    await still(page);
+    const searches = await page.evaluate(() => window.__searches.splice(0));
+    assert.deepEqual(searches, [], 'no search of the scene at the state changes');
+    assert.deepEqual(await look(), { lamp: false, table: '#ff0000', sofa: false });
+    await page.evaluate(() => {
+      window.__setState('light.lamp_1', 'on');
+      window.__setState('switch.a', 'off');
+      window.__setState('switch.b', 'on');
+    });
+    const back = await look();
+    assert.equal(back.lamp, true);
+    assert.equal(back.sofa, true);
+    assert.notEqual(back.table, '#ff0000');
+    assert.deepEqual(errors, []);
+    await page.close();
+  },
+);

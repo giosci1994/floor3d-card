@@ -209,7 +209,7 @@ export class Lamps {
     // Illuminate the light object when, for the bound device, one of its attribute gets modified in HA. See set hass property
 
     this.host.objectIds[i].objects.forEach((element) => {
-      const light: any = this.host.scene.getObjectByName(element.object_id + '_light');
+      const light: any = this.host.object(element.object_id + '_light');
 
       if (!light) {
         return;

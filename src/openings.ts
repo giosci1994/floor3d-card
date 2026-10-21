@@ -283,7 +283,7 @@ export class Openings {
   private _updatedoor(entity: EntityConfig, i: number): void {
     // perform action on door objects
 
-    const _obj: any = this.host.scene.getObjectByName(this.host.objectIds[i].objects[0].object_id);
+    const _obj: any = this.host.object(this.host.objectIds[i].objects[0].object_id);
 
     let door: THREE.Mesh;
 
@@ -299,9 +299,9 @@ export class Openings {
           this._rotatedoorpivot(entity, i);
         }
         if (entity.door.doortype == 'slide') {
-          let pane = this.host.scene.getObjectByName(entity.door.pane);
+          let pane = this.host.object(entity.door.pane);
           if (!pane) {
-            pane = this.host.scene.getObjectByName(this.host.objectIds[i].objects[0].object_id);
+            pane = this.host.object(this.host.objectIds[i].objects[0].object_id);
           }
           let percentage: number;
           if (typeof entity.door.slide_percentage !== 'undefined') {
@@ -325,7 +325,7 @@ export class Openings {
   private _rotatedoorpivot(entity: EntityConfig, index: number) {
     //For a swing door, rotate the objects along the configured axis and the degrees of opening
     this.host.objectIds[index].objects.forEach((element) => {
-      let _obj: any = this.host.scene.getObjectByName(element.object_id);
+      let _obj: any = this.host.object(element.object_id);
 
       const targetRotation: THREE.Vector3 = new THREE.Vector3(0, 0, 0);
       const direction = entity.door.swing_direction || entity.door.direction;
@@ -412,7 +412,7 @@ export class Openings {
     }
 
     this.host.objectIds[index].objects.forEach((element, i) => {
-      let _obj: any = this.host.scene.getObjectByName(element.object_id);
+      let _obj: any = this.host.object(element.object_id);
       const originalPosition = this._slidingdoorposition[index][i];
       if (!_obj || !originalPosition) return; // an object missing from the model
 
@@ -438,10 +438,10 @@ export class Openings {
   }
 
   private _updatecover(item: EntityConfig, state: string, i: number): void {
-    let pane = this.host.scene.getObjectByName(item.cover.pane);
+    let pane = this.host.object(item.cover.pane);
 
     if (!pane) {
-      pane = this.host.scene.getObjectByName(this.host.objectIds[i].objects[0].object_id);
+      pane = this.host.object(this.host.objectIds[i].objects[0].object_id);
     }
     // A cover that reports current_position is drawn there, also while it is opening or closing
     // (0 is closed); the others are fully open or fully closed.
@@ -470,7 +470,7 @@ export class Openings {
     const sign = side == 'up' || side == 'right' ? 1 : -1;
     const shift = sign * size[axis] * share; // where the free edge goes
     objects.forEach((element, k) => {
-      const object = this.host.scene.getObjectByName(element.object_id);
+      const object = this.host.object(element.object_id);
       const original = this._slidingdoorposition[index][k];
       if (!object || !original) return;
       const position = original.clone();

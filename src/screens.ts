@@ -101,7 +101,7 @@ export class Screens {
   private _update(item: EntityConfig, index: number): void {
     let _foundobject: any;
     if (this.host.objectIds[index].objects.length > 0) {
-      _foundobject = this.host.scene.getObjectByName(this.host.objectIds[index].objects[0].object_id);
+      _foundobject = this.host.object(this.host.objectIds[index].objects[0].object_id);
     }
     if (_foundobject) {
       const picture = this.host.hass.states[item.entity].attributes['entity_picture'];
@@ -145,7 +145,7 @@ export class Screens {
         this._requests[index] = null;
         const state = this.host.hass.states[item.entity].state;
         const offState = item.image && item.image.lighting_off_state ? item.image.lighting_off_state : 'unavailable';
-        const light: any = this.host.scene.getObjectByName(this.host.objectIds[index].objects[0].object_id + '_light');
+        const light: any = this.host.object(this.host.objectIds[index].objects[0].object_id + '_light');
         if (state === offState || ['off', 'standby', 'unavailable', 'unknown'].includes(state)) {
           if (light) {
             light.intensity = 0;
@@ -206,7 +206,7 @@ export class Screens {
     // screen of the model showed nothing, and a screen switched off and on again stayed black).
     material.color.setScalar(lumens ? Number(item.image.lumens) * SCREEN_EMISSIVE_SCALE : 1);
     material.needsUpdate = true;
-    const light: any = this.host.scene.getObjectByName(this.host.objectIds[index].objects[0].object_id + '_light');
+    const light: any = this.host.object(this.host.objectIds[index].objects[0].object_id + '_light');
     if (light && lumens && item.image.lighting_lumens) {
       light.intensity = this.lamps.intensity(item.image.lighting_lumens);
       // From the picture already loaded: before, it was downloaded a second time, and the light
