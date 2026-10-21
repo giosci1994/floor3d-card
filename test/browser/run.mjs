@@ -2476,10 +2476,10 @@ test(
     assert.ok(later[1] !== first[1], '12,5 is a speed');
     assert.ok(Math.abs(later[1] - first[1]) < Math.abs(later[0] - first[0]), 'slower than 50');
     assert.ok(later[3] !== first[3], 'on: turning');
-    const speed = await page.evaluate(() => window.__card._rotation_state.slice());
+    const speed = await page.evaluate(() => window.__card._rotating._rotation_state.slice());
     assert.deepEqual(speed, [0.5, 0.125, 0, 1]);
     await page.evaluate(() => window.__setState('sensor.wind', '0'));
-    assert.equal(await page.evaluate(() => window.__card._rotation_state[0]), 0, '0: stopped');
+    assert.equal(await page.evaluate(() => window.__card._rotating._rotation_state[0]), 0, '0: stopped');
     assert.deepEqual(errors, []);
     await page.close();
   },
