@@ -72,79 +72,49 @@ export class Texts {
     refresh: (entity, i, state) => this._refreshInfo(entity, i, state),
   };
 
-  // The states are read again: the texts, labels and units as they are now.
+  // The states are read again: the texts, labels and units as they are now. An entity that is
+  // missing has none yet; every array is read by the position of the entity in the config.
   public prepare(): void {
-    this._unit_of_measurement = [];
-    this._rooms = [];
-    this._sprites = [];
     this._canvas = [];
+    this._unit_of_measurement = [];
     this._text = [];
     this._spritetext = [];
+    this._rooms = [];
+    this._sprites = [];
     this._info = [];
-    this.host.config.entities.forEach((entity) => {
-      if (!this.host.hass.states[entity.entity]) {
-        // Every array is read by the position of the entity in the config: keep them aligned.
-        this._canvas.push(null);
-        this._unit_of_measurement.push('');
-        this._text.push('');
-        this._spritetext.push('');
-        this._rooms.push('');
-        this._sprites.push('');
-        this._info.push('');
-        return;
-      }
-      this._canvas.push(null);
-      if (this.host.hass.states[entity.entity].attributes['unit_of_measurement']) {
-        this._unit_of_measurement.push(this.host.hass.states[entity.entity].attributes['unit_of_measurement']);
-      } else {
-        this._unit_of_measurement.push('');
-      }
+    this.host.config.entities.forEach((entity, i) => {
+      this._canvas[i] = null;
+      this._unit_of_measurement[i] = '';
+      this._text[i] = '';
+      this._spritetext[i] = '';
+      this._rooms[i] = '';
+      this._sprites[i] = '';
+      this._info[i] = '';
+      const stateObj = this.host.hass.states[entity.entity];
+      if (!stateObj) return;
+      const attributes = stateObj.attributes;
+      if (attributes['unit_of_measurement']) this._unit_of_measurement[i] = attributes['unit_of_measurement'];
       if (entity.type3d == 'text') {
-        if (entity.text.attribute) {
-          if (this.host.hass.states[entity.entity].attributes[entity.text.attribute]) {
-            this._text.push(this.host.hass.states[entity.entity].attributes[entity.text.attribute]);
-          } else {
-            this._text.push(this.host.stateWithTemplate(entity));
-          }
-        } else {
-          this._text.push(this.host.stateWithTemplate(entity));
-        }
-      } else {
-        this._text.push('');
-      }
-      if (entity.type3d == 'room') {
-        this._rooms.push(entity.object_id + '_room');
-        this._sprites.push(entity.object_id + '_sprites');
+        // An attribute of the entity, else its state.
+        const own = entity.text.attribute && attributes[entity.text.attribute];
+        this._text[i] = own ? own : this.host.stateWithTemplate(entity);
+      } else if (entity.type3d == 'room') {
+        this._rooms[i] = entity.object_id + '_room';
+        this._sprites[i] = entity.object_id + '_sprites';
         if (entity.room.attribute) {
-          if (this.host.hass.states[entity.entity].attributes[entity.room.attribute]) {
-            this._spritetext.push(this.host.hass.states[entity.entity].attributes[entity.room.attribute]);
-          } else {
-            this._spritetext.push(this.host.stateWithTemplate(entity));
-          }
-        } else {
-          if (entity.room.label_text) {
-            if (entity.room.label_text == 'template') {
-              this._spritetext.push(this.host.stateWithTemplate(entity));
-              this._unit_of_measurement.pop();
-              this._unit_of_measurement.push('');
-            } else {
-              this._spritetext.push(this.host.hass.states[entity.entity].state);
-            }
-          } else {
-            this._spritetext.push('');
-          }
+          const own = attributes[entity.room.attribute];
+          this._spritetext[i] = own ? own : this.host.stateWithTemplate(entity);
+        } else if (entity.room.label_text == 'template') {
+          // The template writes the unit, if it wants one.
+          this._spritetext[i] = this.host.stateWithTemplate(entity);
+          this._unit_of_measurement[i] = '';
+        } else if (entity.room.label_text) {
+          this._spritetext[i] = stateObj.state;
         }
-      } else {
-        this._spritetext.push('');
-        this._rooms.push('');
-        this._sprites.push('');
-      }
-      if (entity.type3d == 'info') {
-        this._info.push(this._infoText(entity));
+      } else if (entity.type3d == 'info') {
+        this._info[i] = this._infoText(entity);
         // A text of its own (info.text) has its unit in it, if it wants one.
-        if (entity.info && entity.info.text) this._unit_of_measurement[this._unit_of_measurement.length - 1] = '';
-      } else {
-        this._info.push('');
+        if (entity.info && entity.info.text) this._unit_of_measurement[i] = '';
       }
     });
   }
