@@ -29,10 +29,10 @@ import { STATUS_COLORS, StatusKind } from './boxes';
 import * as TWEEN from '@tweenjs/tween.js';
 import { mdiAlertCircleOutline, mdiCubeOutline } from '@mdi/js';
 import * as THREE from 'three';
-import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
-import { MTLLoader } from 'three/examples/jsm/loaders/MTLLoader.js';
-import { GLTFLoader, GLTF } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
+import { MTLLoader } from 'three/addons/loaders/MTLLoader.js';
+import { GLTFLoader, GLTF } from 'three/addons/loaders/GLTFLoader.js';
 import { Object3D } from 'three';
 
 const LIGHT_ANIMATION_FRAME_MS = 33; // only trackers or the shower moving: at most 30 frames per second
@@ -1320,11 +1320,11 @@ export class Floor3dCard extends LitElement {
           const extensions = glbExtensions(buffer);
           const loader = new GLTFLoader();
           if (extensions.includes('EXT_meshopt_compression')) {
-            const { MeshoptDecoder } = await import('three/examples/jsm/libs/meshopt_decoder.module.js');
+            const { MeshoptDecoder } = await import('three/addons/libs/meshopt_decoder.module.js');
             loader.setMeshoptDecoder(MeshoptDecoder);
           }
           if (extensions.includes('KHR_draco_mesh_compression')) {
-            const { DRACOLoader } = await import('three/examples/jsm/loaders/DRACOLoader.js');
+            const { DRACOLoader } = await import('three/addons/loaders/DRACOLoader.js');
             let decoderPath = this._config.draco_decoder_path;
             if (decoderPath && !decoderPath.endsWith('/')) decoderPath += '/';
             const dracoLoader = new DRACOLoader().setDecoderPath(decoderPath || DRACO_DECODER);
