@@ -214,14 +214,10 @@ console.info(
   'color: white; font-weight: bold; background: dimgray',
 );
 
-// This puts your card into the UI card picker dialog
-(window as any).customCards = (window as any).customCards || [];
-(window as any).customCards.push({
-  type: 'floor3d-card',
-  name: 'Floor3d Card',
-  preview: true,
-  description: 'A custom card to visualize and activate entities in a live 3D model',
-});
+// The camera going to objects or a room (boxes in the corners, alarm_view) comes from at least this
+// many degrees above them.
+const MIN_FLIGHT_ELEVATION = 65;
+
 class ModelSource {
   public static OBJ = 0;
   public static GLB = 1;
@@ -304,6 +300,11 @@ export class Floor3dCard extends LitElement {
   private _boxDeps = new Map<string, unknown[]>();
   private _shownStatus?: StatusKind;
   private _shownTimer?: number;
+  // The levels before the first tap on the status box, and those the taps left: at its end the
+  // levels go back, unless they were changed meanwhile (see _toggleStatus).
+  private _levelsBefore?: boolean[];
+  private _levelsShown?: boolean[];
+  private _levelMiddles?: number[]; // the middle of the height of each level (see _levelsUpTo)
   private _cornerObserver?: ResizeObserver; // the card changes width (a phone turned): placed again
   private _boxesChanged = false; // a box was drawn, added or removed: the corners are placed again
   private _collapsed?: Set<string>; // the boxes folded on this device (weather, people), read once
@@ -522,139 +523,12 @@ export class Floor3dCard extends LitElement {
     return document.createElement('floor3d-card-editor');
   }
 
-  public static getStubConfig(hass: HomeAssistant, entities: string[], entitiesFallback: string[]): object {
-    const _arrayFilter = (array: any[], conditions: Array<(value: any) => boolean>, maxSize: number) => {
-      if (!maxSize || maxSize > array.length) {
-        maxSize = array.length;
-      }
-
-      const filteredArray: any[] = [];
-
-      for (let i = 0; i < array.length && filteredArray.length < maxSize; i++) {
-        let meetsConditions = true;
-
-        for (const condition of conditions) {
-          if (!condition(array[i])) {
-            meetsConditions = false;
-            break;
-          }
-        }
-
-        if (meetsConditions) {
-          filteredArray.push(array[i]);
-        }
-      }
-
-      return filteredArray;
-    };
-
-    const _findEntities = (
-      hass: HomeAssistant,
-      maxEntities: number,
-      entities: string[],
-      entitiesFallback: string[],
-      includeDomains?: string[],
-      entityFilter?: (stateObj: HassEntity) => boolean,
-    ) => {
-      const conditions: Array<(value: string) => boolean> = [];
-
-      if (includeDomains?.length) {
-        conditions.push((eid) => includeDomains!.includes(eid.split('.')[0]));
-      }
-
-      if (entityFilter) {
-        conditions.push((eid) => hass.states[eid] && entityFilter(hass.states[eid]));
-      }
-
-      const entityIds = _arrayFilter(entities, conditions, maxEntities);
-
-      if (entityIds.length < maxEntities && entitiesFallback.length) {
-        const fallbackEntityIds = _findEntities(
-          hass,
-          maxEntities - entityIds.length,
-          entitiesFallback,
-          [],
-          includeDomains,
-          entityFilter,
-        );
-
-        entityIds.push(...fallbackEntityIds);
-      }
-
-      return entityIds;
-    };
-
-    //build a valid stub config
-
-    let includeDomains = ['binary_sensor'];
-    let maxEntities = 2;
-
-    let foundEntities = _findEntities(hass, maxEntities, entities, entitiesFallback, includeDomains);
-
-    const url = new URL(import.meta.url);
-    let asset = url.pathname.split('/').pop();
-    let path = url.pathname.replace(asset, '');
-
-    if (path.includes('hacsfiles')) {
-      path = '/local/community/floor3d-card/';
-    }
-
-    const conf = {
-      path: path,
-      name: 'Home',
-      objfile: 'home.glb',
-      backgroundColor: '#aaaaaa',
-      globalLightPower: 0.8,
-      overlay_alignment: 'top-left',
-      north: { x: 0, z: -1 },
-      camera_position: { x: 609.3072605703628, y: 905.5330092468828, z: 376.66437610591277 },
-      camera_rotate: { x: -1.0930244719682243, y: 0.5200808414019678, z: 0.7648717152512469 },
-      camera_target: { x: 37.36890424945437, y: 18.64464320782064, z: -82.55051697031719 },
-      object_groups: [
-        {
-          object_group: 'RoundTable',
-          objects: ['Round_table_1', 'Round_table_2', 'Round_table_3'],
-        },
-        {
-          object_group: 'EntranceDoor',
-          objects: ['Door_9', 'Door_7', 'Door_5'],
-        },
-      ],
-      entities: [],
-    };
-
-    if (foundEntities[0]) {
-      conf.entities.push({
-        entity: foundEntities[0],
-        type3d: 'door',
-        object_id: '<EntranceDoor>',
-        door: { doortype: 'swing', direction: 'inner', hinge: 'Door_3', percentage: 90 },
-      });
-    }
-    if (foundEntities[1]) {
-      conf.entities.push({
-        entity: foundEntities[1],
-        type3d: 'hide',
-        object_id: '<RoundTable>',
-        hide: { state: 'off' },
-      });
-    }
-
-    includeDomains = ['light'];
-    maxEntities = 1;
-
-    let foundLights = _findEntities(hass, maxEntities, entities, entitiesFallback, includeDomains);
-
-    if (foundLights[0]) {
-      conf.entities.push({
-        entity: foundLights[0],
-        type3d: 'light',
-        object_id: 'Bowl_2',
-        light: { lumens: 800 },
-      });
-    }
-
-    return conf;
+  // The configuration of a card added from the card picker of Home Assistant: the folder the editor
+  // suggests and no model yet, so the card says what to set (see _showNoModel). Before 2.12.2 it
+  // was the example of the original card, a home.glb and objects that nobody has, and the new card
+  // showed an error.
+  public static getStubConfig(): object {
+    return { path: '/local/floor3d/', objfile: '' };
   }
 
   public setConfig(config: Floor3dCardConfig): void {
@@ -775,7 +649,8 @@ export class Floor3dCard extends LitElement {
     if (this.isPanel !== undefined) {
       return this.isPanel;
     }
-    // Older Home Assistant versions: look for the panel view in the page structure.
+    // Without isPanel from Home Assistant (in the other views it doesn't pass it): the panel view in
+    // the page structure.
 
     let root: any = document.querySelector('home-assistant');
     root = root && root.shadowRoot;
@@ -1299,6 +1174,12 @@ export class Floor3dCard extends LitElement {
     this._toEditor({ paused: true });
   }
 
+  // An entity with objects of the model to act on (see createObjectGroupConfigArray): those without
+  // are left out, the others go on. A tracker draws its own marker and needs none.
+  private _hasObjects(entity: Floor3dCardConfig, i: number): boolean {
+    return entity.type3d == 'tracker' || !!(this._object_ids[i] && this._object_ids[i].objects.length);
+  }
+
   // Names of the objects of the model (without the level prefix), for the object menus of the editor.
   // Object ids with * (Lamp_*) become the objects of the model they match, as for an object group.
   // One that matches nothing stays as it is: the entity is then left out as for a missing object.
@@ -1584,7 +1465,7 @@ export class Floor3dCard extends LitElement {
             }
           }
           this._config.entities.forEach((entity, i) => {
-            if (hass.states[entity.entity]) {
+            if (hass.states[entity.entity] && this._hasObjects(entity, i)) {
               let state = this._statewithtemplate(entity);
               if (entity.type3d == 'cover') {
                 // Both can change: the position while the cover moves, the state when it starts or stops.
@@ -1886,41 +1767,41 @@ export class Floor3dCard extends LitElement {
     this._renderer.toneMappingExposure = this._num(this._config.exposure, 1);
     this._renderer.localClippingEnabled = true;
 
-    if (this._config.path && this._config.path != '') {
-      let path = this._config.path;
-      const lastChar = path.charAt(path.length - 1);
-      if (lastChar == '.') {
-        path = '';
-      } else if (lastChar != '/') {
-        path = path + '/';
+    if (!this._config.path || !this._config.objfile) {
+      this._showNoModel();
+      return;
+    }
+    let path = this._config.path;
+    const lastChar = path.charAt(path.length - 1);
+    if (lastChar == '.') {
+      path = '';
+    } else if (lastChar != '/') {
+      path = path + '/';
+    }
+
+    let fileExt = this._config.objfile.split('?')[0].split('.').pop();
+
+    this._showLoading(fileExt == 'obj' && this._config.mtlfile ? 'loading_materials' : 'loading_model');
+
+    if (fileExt == 'obj') {
+      //waterfront format
+      if (this._config.mtlfile && this._config.mtlfile != '') {
+        const mtlLoader: MTLLoader = new MTLLoader();
+        mtlLoader.setPath(path);
+        mtlLoader.load(
+          this._config.mtlfile,
+          this._onLoaded3DMaterials.bind(this),
+          this._onLoadMaterialProgress.bind(this),
+          this._loadError(path + this._config.mtlfile),
+        );
+      } else {
+        this._loadOBJ(path);
       }
-
-      let fileExt = this._config.objfile.split('?')[0].split('.').pop();
-
-      this._showLoading(fileExt == 'obj' && this._config.mtlfile ? 'loading_materials' : 'loading_model');
-
-      if (fileExt == 'obj') {
-        //waterfront format
-        if (this._config.mtlfile && this._config.mtlfile != '') {
-          const mtlLoader: MTLLoader = new MTLLoader();
-          mtlLoader.setPath(path);
-          mtlLoader.load(
-            this._config.mtlfile,
-            this._onLoaded3DMaterials.bind(this),
-            this._onLoadMaterialProgress.bind(this),
-            this._loadError(path + this._config.mtlfile),
-          );
-        } else {
-          this._loadOBJ(path);
-        }
-        this._modeltype = ModelSource.OBJ;
-      } else if (fileExt == 'glb') {
-        //glb format
-        this._loadGLB(path);
-        this._modeltype = ModelSource.GLB;
-      }
-    } else {
-      throw new Error('Path is empty');
+      this._modeltype = ModelSource.OBJ;
+    } else if (fileExt == 'glb') {
+      //glb format
+      this._loadGLB(path);
+      this._modeltype = ModelSource.GLB;
     }
   }
 
@@ -2048,6 +1929,18 @@ export class Floor3dCard extends LitElement {
         }, 0),
       );
     });
+  }
+
+  // A card without its model yet (just added from the card picker, or path or objfile left empty):
+  // where to set it, in place of the loading screen.
+  private _showNoModel(): void {
+    if (!this._content) return;
+    const el = this._loadingScreen();
+    el.classList.remove('error');
+    el.classList.add('setup');
+    el.querySelector('path').setAttribute('d', mdiCubeOutline);
+    el.querySelector('.f3d-title').textContent = this._t('no_model');
+    el.querySelector('.f3d-detail').textContent = this._t('no_model_detail');
   }
 
   private _showLoadError(file: string, error: any): void {
@@ -2191,6 +2084,7 @@ export class Floor3dCard extends LitElement {
   private _initobjects(object: THREE.Object3D) {
     let level = 0;
     this._levels = [];
+    this._levelMiddles = undefined;
     this._raycasting = [];
     this._raycastinglevels = [];
     //TODO: explore solution with layers
@@ -2323,6 +2217,45 @@ export class Floor3dCard extends LitElement {
     });
     this._updateRaycasting();
     this._showWithLevels();
+  }
+
+  // Shows the levels for which shown(level) is true and hides the others; false when nothing changed.
+  private _applyLevels(shown: (level: number) => boolean): boolean {
+    let changed = false;
+    this._levels.forEach((element, i) => {
+      const visible = shown(i);
+      if (this._displaylevels[i] !== visible) changed = true;
+      this._displaylevels[i] = visible;
+      element.visible = visible;
+    });
+    if (!changed) return false;
+    this._updateRaycasting();
+    this._showWithLevels();
+    if (this._levelbar) render(this._getLevelBar(), this._levelbar);
+    this._scheduleRender();
+    return true;
+  }
+
+  // The levels of some objects and those under them shown, the levels above hidden, so that the
+  // objects can be seen (#28). A level is above when the middle of its height is higher than the
+  // middle of the highest of their levels: the rule of the ground (see _showWithLevels), so that the
+  // stairs of a basement that reach the ground floor don't make it a level above.
+  private _levelsUpTo(levels: number[]): void {
+    if (!this._displaylevels || !this._levels || this._levels.length < 2 || !levels.length) return;
+    const middles = this._middles();
+    const top = Math.max(...levels.map((level) => middles[level] ?? -Infinity));
+    this._applyLevels((i) => levels.includes(i) || middles[i] <= top);
+  }
+
+  // The middle of the height of each level (-Infinity for an empty one), computed once per model.
+  private _middles(): number[] {
+    if (!this._levelMiddles) {
+      this._levelMiddles = this._levels.map((level) => {
+        const box = level ? new THREE.Box3().setFromObject(level) : null;
+        return box && !box.isEmpty() ? (box.min.y + box.max.y) / 2 : -Infinity;
+      });
+    }
+    return this._levelMiddles;
   }
 
   private _updateRaycasting() {
@@ -2848,7 +2781,7 @@ export class Floor3dCard extends LitElement {
             this._degrees.push(0);
             this._slidingdoor.push(null);
             this._slidingdoorposition.push([]);
-            if (this._hass.states[entity.entity]) {
+            if (this._hass.states[entity.entity] && this._hasObjects(entity, i)) {
               if (entity.type3d == 'rotate') {
                 // Empty (only a sensor sets the speed): 1, as NaN made the object vanish.
                 this._round_per_seconds.push(this._num(entity.rotate.round_per_second, 1));
@@ -3244,7 +3177,7 @@ export class Floor3dCard extends LitElement {
           }
         });
         this._config.entities.forEach((entity, i) => {
-          if (entity.entity === '') return;
+          if (entity.entity === '' || !this._hasObjects(entity, i)) return;
           try {
             if (entity.type3d == 'light') {
               this._updatelight(entity, i);
@@ -3510,10 +3443,11 @@ export class Floor3dCard extends LitElement {
     });
   }
 
-  // What follows the levels shown: the boxes of the info type, and the ground, which hides when only
-  // levels under it are shown (a basement under ground_floor_level), so that they can be seen. A level
-  // is under the ground when the middle of its height is: in 2.11.3 its top had to be, and the stairs
-  // or the walls of a basement that reach a little above the ground kept the ground over it.
+  // What follows the levels shown: the boxes of the info type, and the ground, which opens over the
+  // levels under it when only those are shown (a basement under ground_floor_level), so that they can
+  // be seen with the ground around the house (until 2.12.1 all of it hid). A level is under the
+  // ground when the middle of its height is: in 2.11.3 its top had to be, and the stairs or the walls
+  // of a basement that reach a little above the ground kept the ground over it.
   private _showWithLevels(): void {
     (this._sprites || []).forEach((name, i) => {
       const sprite =
@@ -3524,9 +3458,57 @@ export class Floor3dCard extends LitElement {
     });
     if (this._ground) {
       const middles: number[] = this._ground.userData.levelMiddles || [];
-      this._ground.visible =
-        !middles.length || middles.some((middle, level) => middle > this._ground.position.y && this._levelShown(level));
+      const y = this._ground.position.y;
+      const above = !middles.length || middles.some((middle, level) => middle > y && this._levelShown(level));
+      const under = above
+        ? []
+        : this._levels.filter((level, i) => level && middles[i] > -Infinity && middles[i] <= y && this._levelShown(i));
+      this._ground.visible = above || under.length > 0;
+      this._setGroundHole(under);
     }
+  }
+
+  // A rectangular hole in the ground over levels (the basement, its walls included): four vertical
+  // planes, and what is inside all four of them (clipIntersection) isn't drawn. Its sides are earth,
+  // down to the bottom of the levels: the walls of a basement end under the ground (by the thickness
+  // of the floor above them, in Sweet Home 3D), and the background showed between them and the
+  // ground. No levels: no hole.
+  private _setGroundHole(levels: THREE.Object3D[]): void {
+    const material = this._ground.material as THREE.MeshLambertMaterial;
+    const box = new THREE.Box3();
+    levels.forEach((level) => box.union(new THREE.Box3().setFromObject(level)));
+    const planes = box.isEmpty()
+      ? null
+      : [
+          new THREE.Plane(new THREE.Vector3(-1, 0, 0), box.min.x),
+          new THREE.Plane(new THREE.Vector3(1, 0, 0), -box.max.x),
+          new THREE.Plane(new THREE.Vector3(0, 0, -1), box.min.z),
+          new THREE.Plane(new THREE.Vector3(0, 0, 1), -box.max.z),
+        ];
+    // The number of planes is part of the shader: it is built again only when it changes.
+    if (!!planes !== !!material.clippingPlanes) material.needsUpdate = true;
+    material.clippingPlanes = planes;
+    material.clipIntersection = true;
+    this._ground.userData.hole = planes ? [box.min.x, box.max.x, box.min.z, box.max.z] : null;
+    let earth = this._ground.getObjectByName('f3d_ground_earth') as THREE.Mesh | undefined;
+    if (!planes) {
+      if (earth) earth.visible = false;
+      return;
+    }
+    if (!earth) {
+      // The inside of a box, without the top that faces the camera (BackSide).
+      earth = new THREE.Mesh(
+        new THREE.BoxGeometry(1, 1, 1),
+        new THREE.MeshLambertMaterial({ color: 0x3b2a1d, side: THREE.BackSide }),
+      );
+      earth.name = 'f3d_ground_earth';
+      this._ground.add(earth);
+    }
+    const ground = this._ground.position;
+    const depth = Math.max(ground.y - box.min.y + 1, 1);
+    earth.scale.set(box.max.x - box.min.x, depth, box.max.z - box.min.z);
+    earth.position.set((box.min.x + box.max.x) / 2 - ground.x, -depth / 2, (box.min.z + box.max.z) / 2 - ground.z);
+    earth.visible = true;
   }
 
   private _updateshowerstate(_item: Floor3dCardConfig, index: number) {
@@ -4702,10 +4684,7 @@ export class Floor3dCard extends LitElement {
       bottom - 0.5 + this._num(this._config.ground_floor_level, 0),
       this._modelCenter.z,
     );
-    ground.userData.levelMiddles = this._levels.map((level) => {
-      const box = level ? new THREE.Box3().setFromObject(level) : null;
-      return box && !box.isEmpty() ? (box.min.y + box.max.y) / 2 : -Infinity;
-    });
+    ground.userData.levelMiddles = this._middles();
     ground.receiveShadow = this._config.shadow == 'yes';
     ground.castShadow = false;
     ground.renderOrder = -1; // before the glass of the windows, which shows it through
@@ -5050,7 +5029,10 @@ export class Floor3dCard extends LitElement {
     const ids = indices.flatMap((i) =>
       ((this._object_ids && this._object_ids[i] && this._object_ids[i].objects) || []).map((o) => o.object_id),
     );
+    // The levels as they were before the first tap: they come back at the end (decided with #28).
+    if (!this._shownStatus && this._displaylevels) this._levelsBefore = this._displaylevels.slice();
     this._showObjects(ids, STATUS_COLORS[kind]);
+    if (this._displaylevels) this._levelsShown = this._displaylevels.slice();
     this._shownStatus = kind;
     this._renderStatus(true);
   }
@@ -5068,11 +5050,17 @@ export class Floor3dCard extends LitElement {
     window.clearTimeout(this._shownTimer);
     this._shownTimer = undefined;
     this._setHighlight([]);
-    this._render();
     if (this._shownStatus) {
+      // The end of the status box: the levels go back as they were, unless they were changed
+      // meanwhile (the buttons of the levels, a view, a tap on the energy or people box).
+      const before = this._levelsBefore;
+      const unchanged = JSON.stringify(this._displaylevels) === JSON.stringify(this._levelsShown);
+      if (before && unchanged) this._applyLevels((i) => before[i] !== false);
+      this._levelsBefore = this._levelsShown = undefined;
       this._shownStatus = undefined;
       this._renderStatus(true);
     }
+    this._render();
   }
 
   private _flyToObjects(ids: string[]): void {
@@ -6138,21 +6126,25 @@ export class Floor3dCard extends LitElement {
     this._flyToBox(room.box, room.level !== undefined ? [room.level] : []);
   }
 
-  // The camera above a box, from the side it was looking from, high enough to see all of it; the
-  // levels of the box are shown if they were hidden.
+  // The camera above a box, from the side it was looking from, high enough to see all of it, and
+  // from at least 65° above it, so that the walls of the room don't hide what is inside (37° until
+  // 2.12.1). The levels of the box and those under it are shown, the levels above hidden (#28).
   private _flyToBox(box: THREE.Box3, levels: number[]): void {
     const target = box.getCenter(new THREE.Vector3());
     const size = box.getSize(new THREE.Vector3());
     const direction = this._camera.position.clone().sub(this._controls.target);
     if (direction.lengthSq() < 1e-6) direction.set(0, 1, 1);
     direction.normalize();
-    if (direction.y < 0.6) {
-      direction.y = 0.6;
-      direction.normalize();
+    const lowest = THREE.MathUtils.degToRad(MIN_FLIGHT_ELEVATION);
+    if (direction.y < Math.sin(lowest)) {
+      // The same side, higher up.
+      const side = new THREE.Vector2(direction.x, direction.z);
+      if (side.lengthSq() < 1e-6) side.set(0, 1);
+      side.normalize().multiplyScalar(Math.cos(lowest));
+      direction.set(side.x, Math.sin(lowest), side.y);
     }
     const position = target.clone().add(direction.multiplyScalar(Math.max(size.x, size.z, 300) * 1.8));
-    if (this._displaylevels && levels.some((level) => this._displaylevels[level] === false))
-      this._setVisibleLevel(levels.length === 1 ? levels[0] : -1);
+    this._levelsUpTo(levels);
     this._flyTo(position, target);
   }
 
@@ -6933,8 +6925,11 @@ export class Floor3dCard extends LitElement {
         filter: grayscale(1);
         opacity: 0.55;
       }
+      /* The coloured stripe inside the border of the box (a wider left border met the thin one at the
+         rounded corners and looked like two walls); the text stays where it was. */
       .f3d-alarm_panel {
-        border-left: 4px solid var(--f3d-panel, #9e9e9e);
+        box-shadow: inset 4px 0 0 var(--f3d-panel, #9e9e9e);
+        padding-left: 13px;
         cursor: pointer;
       }
       .f3d-alarm_panel ha-icon {
@@ -7203,8 +7198,12 @@ export class Floor3dCard extends LitElement {
       .f3d-loading.error .f3d-title {
         color: var(--error-color, #db4437);
       }
-      .f3d-loading.error .f3d-bar {
+      .f3d-loading.error .f3d-bar,
+      .f3d-loading.setup .f3d-bar {
         display: none;
+      }
+      .f3d-loading.setup .f3d-icon {
+        animation: none;
       }
       @keyframes f3d-slide {
         from {
@@ -7238,9 +7237,18 @@ export class Floor3dCard extends LitElement {
 }
 
 // The original card (adizanni/floor3d-card) defines the same elements: when both are loaded, the first
-// one stays and the other one leaves it alone instead of failing.
+// one stays and the other one leaves it alone instead of failing. The card picker of Home Assistant
+// lists this card under its name in HACS, and only when it is the one defined: until 2.12.1 it also
+// listed it when the original was, with the same name as the original.
 if (!customElements.get('floor3d-card')) {
   customElements.define('floor3d-card', Floor3dCard);
+  (window as any).customCards = (window as any).customCards || [];
+  (window as any).customCards.push({
+    type: 'floor3d-card',
+    name: 'floor3d-card mod',
+    preview: true,
+    description: 'A custom card to visualize and activate entities in a live 3D model',
+  });
 } else {
   console.warn(
     'floor3d-card mod: custom:floor3d-card is already defined by another resource, probably the original card',

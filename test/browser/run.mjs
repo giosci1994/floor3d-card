@@ -1953,35 +1953,42 @@ test(
 // --- 2.11.3: issue #25 ---------------------------------------------------------------------------
 
 test(
-  'ground_floor_level: the ground at the floor of the ground floor, hidden when only the levels under it are shown',
+  'ground_floor_level: the ground at the floor of the ground floor, open over the levels under it when only those are shown',
   { timeout: TIMEOUT },
   async () => {
+    // Where it is, whether it shows, and whether it has a hole (over the basement, since 2.12.2).
     const ground = (page) =>
       page.evaluate(() => {
         const g = window.__card._scene.getObjectByName('f3d_ground');
-        return { y: Math.round(g.position.y * 10) / 10, visible: g.visible };
+        return { y: Math.round(g.position.y * 10) / 10, visible: g.visible, hole: !!g.material.clippingPlanes };
       });
     // basement.obj: the basement on level 0, 270 deep, its stairs up through the ground floor (290);
     // the house on level 1.
     let { page, errors } = await open(house({ objfile: 'basement.obj', ground: 'grass', ground_floor_level: '270' }));
-    assert.deepEqual(await ground(page), { y: 269.5, visible: true }, 'the value of the option, not its name');
+    assert.deepEqual(
+      await ground(page),
+      { y: 269.5, visible: true, hole: false },
+      'the value of the option, not its name',
+    );
     await page.evaluate(() => window.__card._setVisibleLevel(0));
-    assert.equal(
-      (await ground(page)).visible,
-      false,
+    assert.deepEqual(
+      await ground(page),
+      { y: 269.5, visible: true, hole: true },
       'only the basement: no ground over it, though its stairs reach above it',
     );
     await page.evaluate(() => window.__card._setVisibleLevel(1));
-    assert.equal((await ground(page)).visible, true);
+    assert.equal((await ground(page)).hole, false);
     await page.evaluate(() => window.__card._toggleVisibleLevel(1));
-    assert.equal((await ground(page)).visible, false, 'the buttons of the levels too');
+    assert.deepEqual(await ground(page), { y: 269.5, visible: false, hole: false }, 'no level shown: no ground');
+    await page.evaluate(() => window.__card._toggleVisibleLevel(0));
+    assert.deepEqual(await ground(page), { y: 269.5, visible: true, hole: true }, 'the buttons of the levels too');
     await page.evaluate(() => window.__card._setVisibleLevel(-1));
-    assert.equal((await ground(page)).visible, true);
+    assert.deepEqual(await ground(page), { y: 269.5, visible: true, hole: false });
     assert.deepEqual(errors, []);
     await page.close();
 
     ({ page, errors } = await open(house({ ground: 'grass' })));
-    assert.deepEqual(await ground(page), { y: -0.5, visible: true }, 'without it: just under the model');
+    assert.deepEqual(await ground(page), { y: -0.5, visible: true, hole: false }, 'without it: just under the model');
     assert.deepEqual(errors, []);
     await page.close();
   },
@@ -2267,7 +2274,7 @@ test(
 );
 
 test(
-  'card editor: while an object group is open nothing goes to Home Assistant (picked, chosen in the menu, a tap on the editor); it goes when it is closed, or with a tap elsewhere',
+  'card editor: while an object group is open nothing goes to Home Assistant (picked, chosen in the menu, a tap on the editor); it goes when it is closed, or with a tap on a button elsewhere',
   { timeout: TIMEOUT },
   async () => {
     const config = house({ object_groups: [{ object_group: 'furniture', objects: [] }] });
@@ -2330,14 +2337,16 @@ test(
     let sent = await page.evaluate(() => window.__sent);
     assert.equal(sent.length, 1);
     assert.deepEqual(sent[0].object_groups, [{ object_group: 'furniture', objects: ['table', 'bed', 'sofa'] }]);
-    // Open again: a tap outside the editor and the preview (the Save button of the dialog) sends it.
+    // Open again: a tap on a button outside the editor and the preview (the Save button of the
+    // dialog) sends it.
     await page.evaluate(async () => {
       const ed = window.__ed;
       ed._edit('object_groups', 0);
       await ed.updateComplete;
       const group = ed._config.object_groups[0];
       ed._setItem('object_groups', 0, { ...group, objects: group.objects.slice(0, 1) });
-      document.body.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, composed: true }));
+      const save = document.body.appendChild(document.createElement('ha-button'));
+      save.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, composed: true }));
     });
     sent = await page.evaluate(() => window.__sent);
     assert.equal(sent.length, 2);
@@ -2783,6 +2792,332 @@ test(
       { type: 'hass-more-info', detail: { entityId: 'binary_sensor.window' }, bubbles: true, composed: true },
       { type: 'config-changed', detail: 'Home', bubbles: true, composed: true },
     ]);
+    assert.deepEqual(errors, []);
+    await page.close();
+  },
+);
+
+test(
+  'the alarm panel box: its coloured stripe is inside the border, which is the same on the four sides',
+  { timeout: TIMEOUT },
+  async () => {
+    const { page, errors } = await open(
+      house({ alarm_panel: 'alarm_control_panel.home' }),
+      states({ 'alarm_control_panel.home': { state: 'armed_away', attributes: {} } }),
+    );
+    const look = await page.evaluate(() => {
+      const el = window.__card.shadowRoot.querySelector('.f3d-alarm_panel');
+      const style = getComputedStyle(el);
+      const sides = ['Top', 'Right', 'Bottom', 'Left'];
+      return {
+        widths: sides.map((side) => style['border' + side + 'Width']),
+        colors: sides.map((side) => style['border' + side + 'Color']),
+        stripe: style.boxShadow,
+        colour: getComputedStyle(el.querySelector('ha-icon')).color, // the colour of the state
+      };
+    });
+    assert.deepEqual(look.widths, ['1px', '1px', '1px', '1px'], 'the same thin border on every side');
+    assert.equal(new Set(look.colors).size, 1, 'one colour of the border: ' + look.colors.join(', '));
+    assert.equal(look.stripe, look.colour + ' 4px 0px 0px 0px inset', 'the stripe, in the colour of the state, inside');
+    assert.deepEqual(errors, []);
+    await page.close();
+  },
+);
+
+test(
+  'a card added from the card picker: no model of the original card; the card says where to set the model, and the editor opens there',
+  { timeout: TIMEOUT },
+  async () => {
+    const { page, errors } = await open(house());
+    const result = await page.evaluate(async () => {
+      const Card = customElements.get('floor3d-card');
+      const hass = window.__hass();
+      const stub = Card.getStubConfig(hass, Object.keys(hass.states), []);
+      // The new card, as Home Assistant creates it, and one without even a path.
+      const cards = [stub, {}].map((config) => {
+        const card = document.createElement('floor3d-card');
+        card.setConfig({ type: 'custom:floor3d-card', ...config });
+        card.hass = hass;
+        document.body.append(card);
+        return card;
+      });
+      await Promise.all(cards.map((card) => card.updateComplete));
+      await new Promise((r) => setTimeout(r, 300));
+      const screens = cards.map((card) => {
+        const el = card.shadowRoot.querySelector('.f3d-loading');
+        return {
+          setup: !!el && el.classList.contains('setup'),
+          title: el && el.querySelector('.f3d-title').textContent,
+          detail: el && el.querySelector('.f3d-detail').textContent,
+          canvas: !!card.shadowRoot.querySelector('canvas'),
+        };
+      });
+      const ed = await Card.getConfigElement();
+      ed.hass = hass;
+      ed.setConfig({ type: 'custom:floor3d-card', ...stub });
+      document.body.append(ed);
+      ed._mode = 'ready';
+      await ed.updateComplete;
+      return {
+        stub,
+        screens,
+        expanded: ed._expanded,
+        texts: [cards[0]._t('no_model'), cards[0]._t('no_model_detail')],
+      };
+    });
+    assert.deepEqual(result.stub, { path: '/local/floor3d/', objfile: '' }, 'no home.glb, objects or entities');
+    for (const screen of result.screens) {
+      assert.deepEqual(screen, { setup: true, title: result.texts[0], detail: result.texts[1], canvas: false });
+    }
+    assert.match(result.texts[1], /\/local\/floor3d\//);
+    assert.deepEqual(result.expanded, ['model'], 'the editor opens on the 3D model');
+    assert.deepEqual(errors, [], 'no error, no file asked for');
+    await page.close();
+  },
+);
+
+test(
+  'card editor: with an object group open, a tap on the background of the dialog, its scroll bar or a swipe sends nothing; a button outside the editor sends it, tapped or focused',
+  { timeout: TIMEOUT },
+  async () => {
+    const { page, errors } = await open(house({ object_groups: [{ object_group: 'furniture', objects: [] }] }));
+    await page.evaluate(async () => {
+      const card = window.__card;
+      card.preview = true;
+      const ed = await card.constructor.getConfigElement();
+      ed.hass = window.__hass();
+      ed.setConfig(JSON.parse(JSON.stringify(card._config)));
+      window.__sent = [];
+      ed.addEventListener('config-changed', (ev) => window.__sent.push(ev.detail.config));
+      // The dialog of Home Assistant around the editor, as far as the taps are concerned.
+      const dialog = document.body.appendChild(document.createElement('div'));
+      dialog.innerHTML =
+        '<div class="content" style="overflow: auto; height: 60px"><div style="height: 300px"></div></div>' +
+        '<ha-button>Save</ha-button><ha-icon-button></ha-icon-button><button>Show code editor</button>';
+      dialog.querySelector('.content').append(ed);
+      window.__dialog = dialog;
+      await new Promise((r) => setTimeout(r, 300));
+      ed._mode = 'ready';
+      ed._edit('object_groups', 0);
+      await ed.updateComplete;
+      window.__ed = ed;
+    });
+    // A change in the group, then a tap or the focus on target.
+    const change = (objects, target, event) =>
+      page.evaluate(
+        ({ objects, target, event }) => {
+          const ed = window.__ed;
+          ed._setItem('object_groups', 0, { ...ed._config.object_groups[0], objects });
+          const el = target ? window.__dialog.querySelector(target) : window.__dialog;
+          el.dispatchEvent(
+            event === 'focusin'
+              ? new FocusEvent('focusin', { bubbles: true, composed: true })
+              : new PointerEvent('pointerdown', { bubbles: true, composed: true, pointerType: event }),
+          );
+        },
+        { objects, target, event },
+      );
+    const sent = () =>
+      page.evaluate(() => window.__sent.map((c) => c.object_groups[0].objects.map((o) => o.object_id || o)));
+    await change([{ object_id: 'table' }], null, 'mouse'); // the background of the dialog
+    await change([{ object_id: 'table' }, { object_id: 'bed' }], '.content', 'mouse'); // its scroll bar
+    await change([{ object_id: 'bed' }], '.content', 'touch'); // a swipe on a phone
+    await page.waitForTimeout(1300); // longer than the delay of the editor
+    assert.deepEqual(await sent(), [], 'nothing sent while the group is open');
+    await change([{ object_id: 'sofa' }], 'ha-button', 'mouse'); // Save
+    await change([{ object_id: 'table' }], 'ha-icon-button', 'touch'); // the X, on a phone
+    await change([{ object_id: 'wardrobe' }], 'button', 'focusin'); // a button from the keyboard
+    assert.deepEqual(await sent(), [['sofa'], ['table'], ['wardrobe']]);
+    // Without a group open, the focus alone sends nothing (leaving a field and taps do, as before).
+    await page.evaluate(async () => {
+      window.__ed._back();
+      await window.__ed.updateComplete;
+      window.__sent = [];
+      window.__ed._update({ ...window.__ed._config, name: 'Home' });
+      window.__dialog
+        .querySelector('button')
+        .dispatchEvent(new FocusEvent('focusin', { bubbles: true, composed: true }));
+    });
+    assert.deepEqual(await page.evaluate(() => window.__sent.length), 0);
+    assert.deepEqual(errors, []);
+    await page.close();
+  },
+);
+
+test(
+  'the card picker lists the card as floor3d-card mod, and not when another card defined floor3d-card first',
+  { timeout: TIMEOUT },
+  async () => {
+    const { page, errors } = await open(house());
+    const entries = await page.evaluate(() => (window.customCards || []).filter((c) => c.type === 'floor3d-card'));
+    assert.deepEqual(
+      entries.map((c) => [c.name, c.preview]),
+      [['floor3d-card mod', true]],
+    );
+    assert.deepEqual(errors, []);
+    await page.close();
+    // The original card, loaded first by another resource, with its own entry.
+    const other = await browser.newPage();
+    await other.addInitScript(() => {
+      customElements.define(
+        'floor3d-card',
+        class extends HTMLElement {
+          setConfig() {}
+        },
+      );
+      window.customCards = [{ type: 'floor3d-card', name: 'Floor3d Card' }];
+    });
+    server.put('picker.json', house());
+    server.put('picker-states.json', states());
+    await other.goto(`${server.url}/test/index.html?cfg=picker.json&st=picker-states.json`);
+    await until(other, () => window.__card, null, 'the test page creates the card');
+    assert.deepEqual(await other.evaluate(() => window.customCards.map((c) => c.name)), ['Floor3d Card']);
+    await other.close();
+  },
+);
+
+test(
+  '#28: a tap on the status box hides the levels above its objects, the camera comes from 65° above, and the levels come back at its end',
+  { timeout: TIMEOUT },
+  async () => {
+    // basement.obj: the basement on level 0 (its stairs reach the ground floor), the house on level 1.
+    const entities = [
+      ...lamps(1), // lamp_1, under the ceiling of the ground floor: level 1
+      {
+        entity: 'binary_sensor.cellar',
+        type3d: 'color',
+        object_id: 'basement_stairs', // level 0
+        colorcondition: [{ state: 'on', color: '#ff0000' }],
+      },
+    ];
+    const { page, errors } = await open(
+      house({ objfile: 'basement.obj', status_show: 'yes', entities }),
+      states({ 'binary_sensor.cellar': { state: 'on', attributes: { device_class: 'door' } } }),
+    );
+    const levels = () => page.evaluate(() => window.__card._displaylevels.slice());
+    const tap = (kind) =>
+      page.evaluate((icon) => {
+        const chips = [...window.__card.shadowRoot.querySelectorAll('.f3d-status .chip')];
+        chips.find((c) => c.querySelector('ha-icon').getAttribute('icon') === icon).click();
+      }, kind);
+    // How many degrees above its target the camera is.
+    const elevation = () =>
+      page.evaluate(() => {
+        const card = window.__card;
+        const d = card._camera.position.clone().sub(card._controls.target);
+        return Math.round((Math.asin(d.y / d.length()) * 180) / Math.PI);
+      });
+    assert.deepEqual(await levels(), [true, true]);
+    // The open door of the basement: the house above it hides, the camera looks from high up.
+    await tap('mdi:door-open');
+    await flown(page);
+    assert.deepEqual(await levels(), [true, false], 'only the basement');
+    assert.ok((await elevation()) >= 64, 'from 65° above at least: ' + (await elevation()));
+    // A second tap ends it: the levels as before.
+    await tap('mdi:door-open');
+    assert.deepEqual(await levels(), [true, true], 'the house again');
+    // The basement, then the lamp of the ground floor: its level shows again, with the one under it.
+    await tap('mdi:door-open');
+    await flown(page);
+    assert.deepEqual(await levels(), [true, false]);
+    await tap('mdi:lightbulb-on');
+    await flown(page);
+    assert.deepEqual(await levels(), [true, true], 'a lamp of a level above: that level again');
+    await tap('mdi:lightbulb-on');
+    assert.deepEqual(await levels(), [true, true]);
+    // Levels changed by hand meanwhile stay as they were set.
+    await tap('mdi:door-open');
+    await flown(page);
+    await page.evaluate(() => window.__card._toggleVisibleLevel(0));
+    await tap('mdi:door-open');
+    assert.deepEqual(await levels(), [false, false], 'the choice made by hand stays');
+    assert.deepEqual(errors, []);
+    await page.close();
+  },
+);
+
+test(
+  'a hole in the ground over the basement when only the levels under it are shown, the ground around the house stays; it closes with the ground floor',
+  { timeout: TIMEOUT },
+  async () => {
+    // A magenta ground, easy to tell from the model. basement.obj: the basement on level 0, under the
+    // walls of the house (300-1100 x 400-1000), the house on level 1.
+    const { page, errors } = await open(
+      house({ objfile: 'basement.obj', ground: '#ff00ff', ground_floor_level: '270' }),
+    );
+    const magenta = ([r, g, b]) => r > 2 * g + 30 && b > 2 * g + 30;
+    // The colour at a point of the model (x, y, z in cm), and where it is on the canvas.
+    const colourAt = async (p) => {
+      const [x, y] = await projected(page, p);
+      const box = await page.evaluate(() => window.__card._renderer.domElement.getBoundingClientRect().toJSON());
+      const fx = (x - box.left) / box.width;
+      const fy = (y - box.top) / box.height;
+      assert.ok(fx > 0 && fx < 1 && fy > 0 && fy < 1, 'on the canvas: ' + p.join(', '));
+      return pixelAt(page, fx, fy);
+    };
+    const inside = [700, 270, 700]; // over the middle of the basement
+    const outside = [150, 270, 700]; // the garden, west of the house
+    await page.evaluate(() => window.__card._setVisibleLevel(0));
+    assert.ok(!magenta(await colourAt(inside)), 'the basement through the hole: ' + (await colourAt(inside)));
+    assert.ok(magenta(await colourAt(outside)), 'the ground around the house: ' + (await colourAt(outside)));
+    // The rectangle: as wide and deep as the walls of the basement (800 x 600).
+    const [x0, x1, z0, z1] = await page.evaluate(() =>
+      window.__card._scene.getObjectByName('f3d_ground').userData.hole.map((v) => Math.round(v)),
+    );
+    assert.deepEqual([x1 - x0, z1 - z0], [800, 600]);
+    // Its sides are earth, down to the floor of the basement: not the background between the top
+    // of the walls of the basement and the ground.
+    const earth = await page.evaluate(() => {
+      const e = window.__card._scene.getObjectByName('f3d_ground_earth');
+      return { visible: e.visible, size: e.scale.toArray().map(Math.round) };
+    });
+    assert.deepEqual(earth, { visible: true, size: [800, 271, 600] });
+    // The ground floor again (its own lawn covers the ground of the card there): no hole.
+    await page.evaluate(() => window.__card._setVisibleLevel(-1));
+    assert.deepEqual(
+      await page.evaluate(() => {
+        const g = window.__card._scene.getObjectByName('f3d_ground');
+        return [g.visible, g.userData.hole, g.material.clippingPlanes, g.getObjectByName('f3d_ground_earth').visible];
+      }),
+      [true, null, null, false],
+    );
+    assert.deepEqual(errors, []);
+    await page.close();
+  },
+);
+
+test(
+  'an entity without object_id or with a group that does not exist: a warning, and the entities after it keep their objects',
+  { timeout: TIMEOUT },
+  async () => {
+    const warnings = [];
+    const red = [{ state: 'on', color: '#ff0000' }];
+    const green = [{ state: 'on', color: '#00ff00' }];
+    const { page, errors } = await open(
+      house({
+        // No object_groups: a <group> stopped the card ("object_groups is not iterable").
+        entities: [
+          { entity: 'light.lamp_1', type3d: 'light', light: { lumens: 300 } }, // no object_id
+          { entity: 'light.lamp_2', type3d: 'color', object_id: 'table', colorcondition: red },
+          { entity: 'light.lamp_3', type3d: 'hide', object_id: '<missing>', hide: { state: 'off' } },
+          { entity: 'light.lamp_4', type3d: 'color', object_id: 'sofa', colorcondition: green },
+        ],
+      }),
+      states(),
+      (p) => p.on('console', (m) => ['warning', 'log'].includes(m.type()) && warnings.push(m.type() + ': ' + m.text())),
+    );
+    const result = await page.evaluate(() => ({
+      objects: window.__card._object_ids.map((o) => o.objects.map((x) => x.object_id)),
+      colours: ['table', 'sofa'].map(
+        (n) => '#' + window.__card._scene.getObjectByName(n).material.color.getHexString(),
+      ),
+    }));
+    assert.deepEqual(result.objects, [[], ['table'], [], ['sofa']], 'one entry per entity, in their order');
+    assert.deepEqual(result.colours, ['#ff0000', '#00ff00'], 'each entity colours its own object');
+    for (const w of ['entity light.lamp_1 has no object_id', 'entity light.lamp_3: no object group missing']) {
+      assert.ok(warnings.includes('warning: floor3d-card: ' + w), warnings.join('\n'));
+    }
+    assert.ok(!warnings.some((w) => /ERROR|TypeError/.test(w)), 'no "ERROR" in the log, no error of the card');
     assert.deepEqual(errors, []);
     await page.close();
   },

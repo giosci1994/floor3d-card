@@ -37,6 +37,8 @@
     "preparing": "Preparing the 3D scene",
     "load_error": "The model could not be loaded",
     "setup_error": "an error while setting up the model, see the browser console",
+    "no_model": "Choose the 3D model",
+    "no_model_detail": "In the card editor, under 3D model, set the folder of the model (for example /local/floor3d/) and its file: a .glb, or an .obj with its .mtl, exported for example from Sweet Home 3D.",
     "clear_selections": "clear selections ({count})",
     "enable_selection": "Enable Selection",
     "disable_selection": "Disable Selection",

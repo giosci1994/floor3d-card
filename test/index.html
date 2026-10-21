@@ -169,16 +169,10 @@
       const huiRoot = mk('hui-root', panel.attachShadow({ mode: 'open' }));
       huiRoot.lovelace = { config: { views: [] }, editMode: false };
       mk('hui-view', huiRoot.attachShadow({ mode: 'open' }));
-      const which = new URLSearchParams(location.search).get('v') || 'fixed';
-      await import(
-        which === 'orig'
-          ? './original.js'
-          : which === 'dist'
-            ? './floor3d-card.js'
-            : which === 'cand'
-              ? './candidate.js?b=' + Date.now()
-              : '../floor3d-card.js?b=' + Date.now()
-      );
+      // The card: the build served next to the test folder (the browser tests), or with v=dist the
+      // .js files copied into it (see Test page in FORK.md).
+      const which = new URLSearchParams(location.search).get('v') === 'dist' ? 'dist' : 'build';
+      await import(which === 'dist' ? './floor3d-card.js' : '../floor3d-card.js?b=' + Date.now());
       const config = await (
         await fetch('./' + (new URLSearchParams(location.search).get('cfg') || 'config.json'))
       ).json();

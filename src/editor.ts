@@ -176,6 +176,13 @@ function entityFromForm(data: any, original: any): any {
   return entity;
 }
 
+// Buttons, links, menu entries and tabs of Home Assistant (button, ha-button, ha-icon-button,
+// ha-list-item...): a tap on one may save, close or leave the editor (see _flushListener).
+const CONTROL = /^(button|a)$|-(button|item|tab)$/;
+const CONTROL_ROLES = ['button', 'link', 'menuitem', 'tab'];
+const isControl = (el: EventTarget): boolean =>
+  el instanceof Element && (CONTROL.test(el.localName) || CONTROL_ROLES.includes(el.getAttribute('role') || ''));
+
 // Components of Home Assistant used by the editor. They are defined once any built-in editor with
 // forms has been loaded: in the card dialog they usually are; otherwise the editors of the entities
 // and tile cards load them.
@@ -233,12 +240,21 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
     // While an object group is open its objects come one after the other (picked in the preview,
     // chosen in the menu, taken out): Home Assistant would build the preview again after each of
     // them, back at its first view. So the config waits: leaving a field, a tap on the editor or on
-    // the preview don't send it. It goes when the group is closed; a tap elsewhere (the Save button of
-    // the dialog) still sends it.
-    if (this._groupOpen && ev && (ev.type === 'focusout' || this._inPreview(ev) || ev.composedPath().includes(this)))
-      return;
+    // the preview don't send it. It goes when the group is closed, with a tap on a button outside
+    // the editor and the preview (Save, the X of the dialog, "Show code editor"), or when such a
+    // button gets the focus (Save from the keyboard). A tap on the background of the dialog, on its
+    // scroll bar or a swipe on a phone sent it until 2.12.1: the tenth time of #25.
+    if (this._groupOpen && ev && !this._onControlOutside(ev)) return;
+    if (ev && ev.type === 'focusin' && !this._groupOpen) return; // without a group, focus sends nothing
     this._flush();
   };
+
+  // A tap on a control outside the editor and the preview, or the focus coming to one.
+  private _onControlOutside(ev: Event): boolean {
+    if (ev.type === 'focusout') return false;
+    const path = ev.composedPath();
+    return !path.includes(this) && !this._inPreview(ev) && path.some(isControl);
+  }
 
   // A tap on the card next to the editor (the preview).
   private _inPreview(ev: Event): boolean {
@@ -278,6 +294,7 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
     // waiting: Home Assistant always has the last one.
     this.addEventListener('focusout', this._flushListener);
     window.addEventListener('pointerdown', this._flushListener, true);
+    window.addEventListener('focusin', this._flushListener, true);
     this._paused = previewState.paused;
     this._toPreview({ request: 'objects' });
     if (this._mode === 'loading') {
@@ -298,6 +315,7 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
     window.removeEventListener(PREVIEW_EVENT, this._previewListener);
     this.removeEventListener('focusout', this._flushListener);
     window.removeEventListener('pointerdown', this._flushListener, true);
+    window.removeEventListener('focusin', this._flushListener, true);
     this._flush();
     // The next editor starts with a live preview; a preview still paused shows the model.
     const paused = previewState.paused;
