@@ -3122,3 +3122,47 @@ test(
     await page.close();
   },
 );
+
+test('show, shower and tracker entities follow their states', { timeout: TIMEOUT }, async () => {
+  const { page, errors } = await open(
+    house({
+      entities: [
+        { entity: 'light.lamp_1', type3d: 'show', object_id: 'sofa', show: { state: 'on' } },
+        { entity: 'light.lamp_2', type3d: 'shower', object_id: 'table', shower: { count: 50 } },
+        {
+          entity: 'sensor.radar_x',
+          type3d: 'tracker',
+          object_id: 'floor_living',
+          tracker: { sensor_y: 'sensor.radar_y', scale: 0.1 },
+        },
+      ],
+    }),
+    states({ 'sensor.radar_x': { state: '0', attributes: {} }, 'sensor.radar_y': { state: '0', attributes: {} } }),
+  );
+  const look = () =>
+    page.evaluate(() => {
+      const card = window.__card;
+      return {
+        sofa: card._scene.getObjectByName('sofa').visible,
+        shower: card._showers[1].visible,
+        tracker: card._trackers[2].present,
+      };
+    });
+  // A radar reports 0, 0 when nobody is there.
+  assert.deepEqual(await look(), { sofa: true, shower: true, tracker: false });
+  await page.evaluate(() => {
+    window.__setState('light.lamp_1', 'off');
+    window.__setState('light.lamp_2', 'off');
+    window.__setState('sensor.radar_x', '1200');
+    window.__setState('sensor.radar_y', '800');
+  });
+  assert.deepEqual(await look(), { sofa: false, shower: false, tracker: true });
+  await page.evaluate(() => {
+    window.__setState('light.lamp_1', 'on');
+    window.__setState('light.lamp_2', 'on');
+    window.__setState('sensor.radar_x', 'unavailable');
+  });
+  assert.deepEqual(await look(), { sofa: true, shower: true, tracker: false });
+  assert.deepEqual(errors, []);
+  await page.close();
+});
