@@ -3144,8 +3144,8 @@ test('show, shower and tracker entities follow their states', { timeout: TIMEOUT
       const card = window.__card;
       return {
         sofa: card._scene.getObjectByName('sofa').visible,
-        shower: card._showers[1].visible,
-        tracker: card._trackers[2].present,
+        shower: card._showers._groups[1].visible,
+        tracker: card._trackers._views[2].present,
       };
     });
   // A radar reports 0, 0 when nobody is there.

@@ -14,6 +14,9 @@ import { BoxesHost, CornerBoxes } from './corner-boxes';
 import { CameraOverlay, CamerasHost } from './camera-overlay';
 import { Environment, EnvironmentHost } from './environment';
 import { RoomMaps, RoomsHost, RoomView } from './rooms';
+import { EntityHandler, EntityHost, onNewState } from './entity-types';
+import { Trackers } from './trackers';
+import { Showers } from './showers';
 import { CLIMATE_COLORS, activeAlarms, climateAction } from './maps';
 import { localize, pickLanguage } from './localize/localize';
 import { findSlats, slatAngle, Slat, tiltSlats } from './slats';
@@ -36,8 +39,6 @@ import { Object3D } from 'three';
 // seen from about 1.5 m); light_power, exposure, sun_power and sky_power in the config adjust them.
 const LAMP_INTENSITY_PER_LUMEN = 47; // 0.130 build: 0.003 per lumen with the legacy light model
 const SCREEN_EMISSIVE_SCALE = 0.25; // TV screen glow: image.lumens x this
-const TRACKER_SMOOTHING = 0.25; // seconds: trackers glide to each new position instead of jumping
-const TRACKER_FADE = 0.35; // seconds to appear or disappear
 const LIGHT_ANIMATION_FRAME_MS = 33; // only trackers or the shower moving: at most 30 frames per second
 const MOVING_SHADOW_MS = 300; // shadows of a moving door: redrawn at most this often, and at the end
 const ROTATE_RAMP = 1.5; // seconds for a fan to reach full speed or to stop, when rotate.ramp is missing
@@ -134,24 +135,6 @@ interface SlatSet {
   normals?: Float32Array;
 }
 
-interface TrackerView {
-  group: THREE.Group;
-  materials: [THREE.Material, number][]; // material and its opacity when fully visible
-  target: THREE.Vector3;
-  present: boolean; // the sensors report a position
-  opacity: number; // 0..1, fades towards present ? 1 : 0
-  label?: THREE.Sprite;
-  labelText?: string;
-  height: number;
-}
-
-// What the card does with the entities of a type3d (see _entityTypes).
-interface EntityHandler {
-  setup?(entity: Floor3dCardConfig, i: number): void;
-  show?(entity: Floor3dCardConfig, i: number): void;
-  refresh?(entity: Floor3dCardConfig, i: number, state: string): boolean;
-}
-
 /* eslint no-console: 0 */
 console.info(
   `%c  FLOOR3D-CARD \n%c  ${localize('common.version')} ${CARD_VERSION}    `,
@@ -244,6 +227,9 @@ export class Floor3dCard extends LitElement {
   private _env = new Environment(this._environmentHost());
   // The rooms coloured by a map, their labels, the Map menu and its legend (rooms.ts).
   private _roomMaps = new RoomMaps(this._roomsHost());
+  // The entity types in modules of their own (see entity-types.ts).
+  private _trackers = new Trackers(this._entityHost());
+  private _showers = new Showers(this._entityHost());
   // The cameras on screen (camera-overlay.ts): their icons over the model, the picture that pops up.
   private _cameras = new CameraOverlay(this._camerasHost(), this._boxes);
   private _pivot: THREE.Vector3[];
@@ -306,7 +292,6 @@ export class Floor3dCard extends LitElement {
   private _textureUnits?: { units: number; material: string };
   private _modelCenter?: THREE.Vector3;
   private _modelRadius?: number;
-  private _trackers: TrackerView[] = [];
   private _colorDeps?: HassEntity[];
   private _alarmPulse = false; // alarm triggered with something open: the openings blink
   private _roomAlarms = false; // a room or an object of type alarm blinks: an alarm is on
@@ -329,10 +314,8 @@ export class Floor3dCard extends LitElement {
   private _highlightHelpers: THREE.Object3D[] = [];
   private _editorListener = (ev: Event): void => this._onEditor((ev as CustomEvent).detail);
   private _intersectionObserver?: IntersectionObserver;
-  private _showers?: THREE.Group[];
   private _info?: string[];
   private _zoommenu?: HTMLElement;
-  private _trackerPrev?: HassEntity[][];
   private _renderPending?: boolean;
   private _missingLogged?: { [entity: string]: boolean };
   private _overlay: HTMLDivElement;
@@ -493,7 +476,7 @@ export class Floor3dCard extends LitElement {
     this._shadowLights = [];
     this._shadowStatus = undefined;
     this._textureUnits = undefined;
-    this._trackers = [];
+    this._trackers.reset();
     this._env.reset();
 
     this._renderer.setAnimationLoop(null);
@@ -1264,13 +1247,12 @@ export class Floor3dCard extends LitElement {
           this._spritetext = [];
           this._position = [];
           this._info = [];
-          this._showers = [];
+          this._showers.reset();
 
           this._config.entities.forEach((entity) => {
             if (hass.states[entity.entity]) {
               this._states.push(this._statewithtemplate(entity));
               this._canvas.push(null);
-              this._showers.push(null);
               if (hass.states[entity.entity].attributes['unit_of_measurement']) {
                 this._unit_of_measurement.push(hass.states[entity.entity].attributes['unit_of_measurement']);
               } else {
@@ -1340,7 +1322,6 @@ export class Floor3dCard extends LitElement {
               // Every array is read by the position of the entity in the config: keep them aligned.
               this._states.push('');
               this._canvas.push(null);
-              this._showers.push(null);
               this._unit_of_measurement.push('');
               this._text.push('');
               this._spritetext.push('');
@@ -2472,28 +2453,45 @@ export class Floor3dCard extends LitElement {
       show: (entity, i) => this._updateinfo(entity, this._info[i], this._unit_of_measurement[i], i),
       refresh: (entity, i, state) => this._refreshInfo(entity, i, state),
     },
-    shower: {
-      setup: (entity, i) => this._setupShower(entity, i),
-      show: (entity, i) => this._updateshowerstate(entity, i),
-      refresh: this._onNewState((entity, i) => this._updateshowerstate(entity, i)),
-    },
-    tracker: {
-      setup: (entity, i) => this._createTracker(entity, i),
-      show: (entity, i) => this._updatetracker(entity, i),
-      refresh: (entity, i) => this._refreshTracker(entity, i),
-    },
+    shower: this._showers.handler,
+    tracker: this._trackers.handler,
     image: {
       setup: (entity, i) => this._setupImage(entity, i),
       refresh: (entity, i) => this._refreshImage(entity, i),
     },
   };
 
-  // The refresh of a type whose objects follow only the state: apply when the state changes.
+  // The refresh of a type whose objects follow only the state (see entity-types.ts).
   private _onNewState(apply: (entity: Floor3dCardConfig, i: number) => boolean | void): EntityHandler['refresh'] {
-    return (entity, i, state) => {
-      if (this._states[i] === state) return false;
-      this._states[i] = state;
-      return apply(entity, i) !== false;
+    return onNewState(this._entityHost(), apply);
+  }
+
+  // What the modules of the entity types read of the card.
+  private _entityHost(): EntityHost {
+    // eslint-disable-next-line @typescript-eslint/no-this-alias
+    const card = this;
+    return {
+      get config() {
+        return card._config;
+      },
+      get hass() {
+        return card._hass;
+      },
+      get scene() {
+        return card._scene;
+      },
+      get model() {
+        return card._bboxmodel;
+      },
+      get objectIds() {
+        return card._object_ids;
+      },
+      get states() {
+        return card._states;
+      },
+      num: (value, fallback) => card._num(value, fallback),
+      scheduleRender: () => card._scheduleRender(),
+      animate: () => card._startOrStopAnimationLoop(),
     };
   }
 
@@ -2914,45 +2912,6 @@ export class Floor3dCard extends LitElement {
     this._scene.add(sprite);
   }
 
-  // shower: the drops of water under each object, hidden until the shower is on.
-  private _setupShower(entity: Floor3dCardConfig, i: number): void {
-    const group = new THREE.Group();
-    group.name = entity.object_id + '_shower_group';
-    this._bboxmodel.add(group);
-    this._showers[i] = group;
-    group.visible = false;
-    this._object_ids[i].objects.forEach((element) => {
-      const _foundobject = this._scene.getObjectByName(element.object_id);
-      if (_foundobject) {
-        const count = entity.shower && entity.shower.count ? entity.shower.count : 200;
-        const geometry = new THREE.BufferGeometry();
-        const vertices = [];
-        const width = entity.shower && entity.shower.width ? entity.shower.width : 20;
-        for (let p = 0; p < count; p++) {
-          vertices.push((Math.random() - 0.5) * width, Math.random() * 5, (Math.random() - 0.5) * width);
-        }
-        geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
-        const material = new THREE.PointsMaterial({
-          color: entity.shower && entity.shower.color ? new THREE.Color(entity.shower.color) : 0xaaaaaa,
-          size: entity.shower && entity.shower.size ? entity.shower.size : 1,
-          transparent: true,
-          opacity: 0.8,
-        });
-        const points = new THREE.Points(geometry, material);
-        points.name = element.object_id + '_shower_points';
-        const box = new THREE.Box3().setFromObject(_foundobject);
-        const center = new THREE.Vector3();
-        box.getCenter(center);
-        points.position.copy(center);
-        points.position.y = box.min.y;
-        group.add(points);
-      } else {
-        console.warn('F3D: Shower target NOT matched:', element.object_id);
-      }
-    });
-    this._updateshowerstate(entity, i);
-  }
-
   // A new state or position of a cover, a new tilt of its slats.
   private _refreshCover(entity: Floor3dCardConfig, i: number, state: string): boolean {
     let changed = false;
@@ -3005,23 +2964,6 @@ export class Floor3dCard extends LitElement {
     this._text[i] = key;
     this._updateimage(entity, i);
     return true;
-  }
-
-  // A tracker moves when one of its entities changes.
-  private _refreshTracker(entity: Floor3dCardConfig, i: number): boolean {
-    // Only when an entity of the tracker changed (Home Assistant replaces the state object of an
-    // entity that changes), not at every update of any entity.
-    const tr = entity.tracker || {};
-    const deps = [entity.entity, tr.sensor_x, tr.sensor_y, tr.zone].map((id) =>
-      id ? this._hass.states[id] : undefined,
-    );
-    if (!this._trackerPrev) this._trackerPrev = [];
-    const prev = this._trackerPrev[i];
-    if (!prev || deps.some((s, k) => s !== prev[k])) {
-      this._trackerPrev[i] = deps;
-      this._updatetracker(entity, i);
-    }
-    return false;
   }
 
   // A new text, from the state (with entity_template) or from an attribute.
@@ -3349,48 +3291,6 @@ export class Floor3dCard extends LitElement {
     this._env.followLevels(this._levels, (level) => this._levelShown(level));
   }
 
-  private _updateshowerstate(_item: Floor3dCardConfig, index: number) {
-    if (this._showers[index]) {
-      const state = this._states[index] ? String(this._states[index]).toLowerCase() : '';
-      if (['on', 'active', 'true', '1'].includes(state)) {
-        this._showers[index].visible = true;
-      } else {
-        this._showers[index].visible = false;
-      }
-      this._startOrStopAnimationLoop();
-    } else {
-      console.warn('F3D: Shower object not found for index:', index);
-    }
-  }
-
-  private _animateshowers(step?: number) {
-    step = step > 0 ? Math.min(step, 4) : 1;
-    if (this._showers) {
-      this._showers.forEach((shower, index) => {
-        if (shower && shower.visible) {
-          shower.children.forEach((child) => {
-            const points = child as THREE.Points;
-            const positions = points.geometry.attributes.position.array as Float32Array;
-            const velocity =
-              this._config.entities[index].shower && this._config.entities[index].shower.velocity
-                ? this._config.entities[index].shower.velocity
-                : 5;
-            const height =
-              this._config.entities[index].shower && this._config.entities[index].shower.height
-                ? this._config.entities[index].shower.height
-                : 100;
-            for (let i = 1; i < positions.length; i += 3) {
-              positions[i] -= velocity * step;
-              if (positions[i] < -height) {
-                positions[i] = 0;
-              }
-            }
-            points.geometry.attributes.position.needsUpdate = true;
-          });
-        }
-      });
-    }
-  }
   private _updatecover(item: Floor3dCardConfig, state: string, i: number): void {
     let pane = this._scene.getObjectByName(item.cover.pane);
 
@@ -4239,222 +4139,6 @@ export class Floor3dCard extends LitElement {
     });
   }
 
-  // Tracker: a glowing head at the configured height, a thin stem and a halo on the floor, all in
-  // the colour of the tracker. It glides to each new position and fades in and out.
-  private _createTracker(entity: Floor3dCardConfig, i: number): void {
-    const tracker = entity.tracker || {};
-    const size = this._num(tracker.size, 15);
-    const height = this._num(tracker.height, 150);
-    const color = new THREE.Color(tracker.color || '#FF5500');
-
-    const headMaterial = new THREE.MeshStandardMaterial({
-      color,
-      emissive: color,
-      emissiveIntensity: 0.6,
-      roughness: 0.4,
-      transparent: true,
-      opacity: 0,
-    });
-    const head = new THREE.Mesh(new THREE.SphereGeometry(size, 24, 16), headMaterial);
-    head.position.y = height;
-
-    const stemHeight = Math.max(height - size, 1);
-    const stemMaterial = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0, depthWrite: false });
-    const stem = new THREE.Mesh(new THREE.CylinderGeometry(size * 0.12, size * 0.12, stemHeight, 8), stemMaterial);
-    stem.position.y = stemHeight / 2;
-
-    const haloMaterial = new THREE.MeshBasicMaterial({
-      color,
-      transparent: true,
-      opacity: 0,
-      depthWrite: false,
-      side: THREE.DoubleSide,
-    });
-    const halo = new THREE.Mesh(new THREE.RingGeometry(size * 1.1, size * 2.6, 48), haloMaterial);
-    halo.rotation.x = -Math.PI / 2;
-    halo.position.y = 1;
-
-    const group = new THREE.Group();
-    group.name = entity.object_id + '_tracker';
-    group.visible = false;
-    group.add(head, stem, halo);
-    group.traverse((o) => {
-      o.castShadow = false;
-      o.receiveShadow = false;
-    });
-    this._scene.add(group);
-
-    this._trackers[i] = {
-      group,
-      materials: [
-        [headMaterial, 0.95],
-        [stemMaterial, 0.35],
-        [haloMaterial, 0.5],
-      ],
-      target: new THREE.Vector3(),
-      present: false,
-      opacity: 0,
-      height,
-    };
-  }
-
-  private _updatetracker(item: Floor3dCardConfig, index: number): void {
-    const tv = this._trackers[index];
-    if (!tv) return;
-    const tracker = item.tracker || {};
-    const value = (id: string): number => {
-      const s = this._hass.states[id];
-      if (!s || ['unavailable', 'unknown', 'none', ''].includes(String(s.state))) return NaN;
-      return parseFloat(s.state);
-    };
-    const stateObj = this._hass.states[item.entity];
-    let x = NaN;
-    let y = 0;
-    if (tracker.sensor_x) {
-      x = value(tracker.sensor_x);
-    } else if (stateObj && stateObj.attributes && stateObj.attributes.x !== undefined) {
-      x = parseFloat(stateObj.attributes.x);
-    } else {
-      x = value(item.entity);
-    }
-    if (tracker.sensor_y) {
-      y = value(tracker.sensor_y);
-    } else if (stateObj && stateObj.attributes && stateObj.attributes.y !== undefined) {
-      y = parseFloat(stateObj.attributes.y);
-    }
-    // Radar slots report 0,0 when nobody is there; the tracking sensors become unavailable.
-    if (isNaN(x) || isNaN(y) || (x === 0 && y === 0)) {
-      this._setTrackerPresent(tv, false);
-      return;
-    }
-
-    // Sensor coordinates to millimetres (unit: mm, cm or m), optionally mirrored, then scaled,
-    // rotated and moved to the position of the sensor in the model.
-    const toMm = tracker.unit == 'm' ? 1000 : tracker.unit == 'cm' ? 10 : 1;
-    let xMm = x * toMm;
-    let yMm = y * toMm;
-    if (tracker.flip_x === true || tracker.flip_x == 'yes') xMm = -xMm;
-    if (tracker.flip_y === true || tracker.flip_y == 'yes') yMm = -yMm;
-    const scale = this._num(tracker.scale, 0.001);
-    const rotation = (this._num(tracker.sensor_rotation, 0) * Math.PI) / 180;
-    const sensorPos = tracker.sensor_position || [0, 0, 0];
-    const x3d = xMm * scale;
-    const z3d = yMm * scale;
-    const cos = Math.cos(rotation);
-    const sin = Math.sin(rotation);
-    tv.target.set(
-      Number(sensorPos[0]) + x3d * cos - z3d * sin,
-      Number(sensorPos[1]) || 0,
-      Number(sensorPos[2]) + x3d * sin + z3d * cos,
-    );
-    // Appearing: start where the person is, not from where the previous track ended.
-    if (tv.opacity == 0) tv.group.position.copy(tv.target);
-
-    const zone = tracker.zone ? this._hass.states[tracker.zone] : undefined;
-    const zoneText =
-      zone && !['unavailable', 'unknown', '-', ''].includes(String(zone.state)) ? String(zone.state) : '';
-    this._setTrackerLabel(
-      tv,
-      tracker.label == 'no' ? '' : zoneText,
-      tracker.color || '#FF5500',
-      this._num(tracker.size, 15),
-    );
-
-    this._setTrackerPresent(tv, true);
-    this._startOrStopAnimationLoop();
-    this._scheduleRender();
-  }
-
-  private _setTrackerPresent(tv: TrackerView, present: boolean): void {
-    if (tv.present === present) return;
-    tv.present = present;
-    if (present) tv.group.visible = true;
-    this._startOrStopAnimationLoop();
-    this._scheduleRender();
-  }
-
-  // Name of the zone above the head (tracker.zone), always the same size on screen.
-  private _setTrackerLabel(tv: TrackerView, text: string, color: string, size: number): void {
-    if (text === (tv.labelText || '')) return;
-    tv.labelText = text;
-    if (!text) {
-      if (tv.label) tv.label.visible = false;
-      return;
-    }
-    if (!tv.label) {
-      const material = new THREE.SpriteMaterial({
-        transparent: true,
-        opacity: 0,
-        depthTest: false,
-        sizeAttenuation: false,
-      });
-      tv.label = new THREE.Sprite(material);
-      tv.label.renderOrder = 20;
-      tv.label.position.y = tv.height + size * 2.8;
-      tv.group.add(tv.label);
-      tv.materials.push([material, 1]);
-      material.opacity = tv.opacity;
-    }
-    const canvas = document.createElement('canvas');
-    const ctx = canvas.getContext('2d');
-    const font = '600 40px Roboto, Arial, sans-serif';
-    ctx.font = font;
-    const width = Math.ceil(ctx.measureText(text).width) + 56;
-    canvas.width = width;
-    canvas.height = 64;
-    ctx.font = font;
-    ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
-    ctx.beginPath();
-    ctx.roundRect(0, 0, width, 64, 16);
-    ctx.fill();
-    ctx.fillStyle = color;
-    ctx.beginPath();
-    ctx.arc(24, 32, 8, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = 'white';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(text, 42, 34);
-    const texture = new THREE.CanvasTexture(canvas);
-    texture.colorSpace = THREE.SRGBColorSpace;
-    const material = tv.label.material as THREE.SpriteMaterial;
-    if (material.map) material.map.dispose();
-    material.map = texture;
-    material.needsUpdate = true;
-    const h = 0.045; // fraction of the height of the view
-    tv.label.scale.set((h * width) / 64, h, 1);
-    tv.label.visible = true;
-  }
-
-  // Every frame while needed: glide towards the last position and fade in or out.
-  private _animateTrackers(dt: number): void {
-    const k = 1 - Math.exp(-dt / TRACKER_SMOOTHING);
-    const fade = dt / TRACKER_FADE;
-    for (const tv of this._trackers) {
-      if (!tv) continue;
-      if (tv.present) {
-        if (tv.group.position.distanceToSquared(tv.target) > 0.25) {
-          tv.group.position.lerp(tv.target, k);
-        } else {
-          tv.group.position.copy(tv.target);
-        }
-      }
-      const goal = tv.present ? 1 : 0;
-      if (tv.opacity != goal) {
-        tv.opacity = goal > tv.opacity ? Math.min(goal, tv.opacity + fade) : Math.max(goal, tv.opacity - fade);
-        for (const [material, full] of tv.materials) material.opacity = full * tv.opacity;
-        tv.group.visible = tv.opacity > 0;
-      }
-    }
-  }
-
-  private _trackersNeedAnimation(): boolean {
-    return this._trackers.some(
-      (tv) =>
-        tv &&
-        (tv.opacity != (tv.present ? 1 : 0) || (tv.present && tv.group.position.distanceToSquared(tv.target) > 0.25)),
-    );
-  }
-
   // Centre and radius of the model, once it has been placed by _setCamera.
   private _computeModelBounds(): void {
     const sphere = new THREE.Box3().setFromObject(this._bboxmodel).getBoundingSphere(new THREE.Sphere());
@@ -5222,10 +4906,10 @@ export class Floor3dCard extends LitElement {
     // Showers, rotations, tweens (doors, covers, camera moves) and trackers still gliding or
     // fading (the model may not be loaded yet)
     return (
-      !!(this._showers && this._showers.some((shower) => shower && shower.visible)) ||
+      this._showers.running ||
       this._rotating() ||
       TWEEN.getAll().length > 0 ||
-      this._trackersNeedAnimation() ||
+      this._trackers.needAnimation() ||
       this._alarmPulse ||
       this._roomAlarms
     );
@@ -5263,7 +4947,7 @@ export class Floor3dCard extends LitElement {
     const rotating = this._rotating();
     const tweening = TWEEN.getAll().length > 0;
     const objectTweens = tweening && TWEEN.getAll().some((t) => !this._cameraTweens.includes(t));
-    const showering = !!(this._showers && this._showers.some((shower) => shower && shower.visible));
+    const showering = this._showers.running;
 
     (this._rotation_state || []).forEach((target, index) => {
       // Spin up and coast down at a constant rate: full speed in rotate.ramp seconds (0: at once).
@@ -5298,11 +4982,11 @@ export class Floor3dCard extends LitElement {
     });
 
     // Step proportional to elapsed time (60 fps = 1 step), capped after long pauses.
-    this._animateshowers(clockDelta * 60);
+    this._showers.animate(clockDelta * 60);
 
     TWEEN.update();
 
-    this._animateTrackers(clockDelta);
+    this._trackers.animate(clockDelta);
     if (this._alarmPulse) this._pulseOpenings(now);
     if (this._roomAlarms) this._pulseAlarms(now);
 
@@ -5320,7 +5004,7 @@ export class Floor3dCard extends LitElement {
     const throttled =
       light &&
       now - this._lastRenderTime < LIGHT_ANIMATION_FRAME_MS &&
-      (showering || this._alarmPulse || this._roomAlarms || this._trackersNeedAnimation());
+      (showering || this._alarmPulse || this._roomAlarms || this._trackers.needAnimation());
     if (!throttled && (this._isVisible || this._needsAnimationLoop())) {
       this._lastRenderTime = now;
       this._render();
