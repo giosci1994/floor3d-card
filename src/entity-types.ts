@@ -26,6 +26,12 @@ export interface EntityHost {
   num(value: unknown, fallback: number): number;
   scheduleRender(): void;
   animate(): void; // the animation loop starts, or stops once nothing moves
+  readonly levels: THREE.Object3D[]; // the objects of each level
+  render(): void;
+  // The lights take part in the shadow budget of the card (the texture units of the GPU).
+  enableShadow(light: THREE.PointLight | THREE.SpotLight, bias: number): void;
+  refreshLightShadow(light: THREE.Light): void; // its shadow map is redrawn if it is out of date
+  manageLightShadows(light: THREE.Light): void; // extralightmode: only the lights that are on cast shadows
 }
 
 // The refresh of a type whose objects follow only the state: apply when the state changes.

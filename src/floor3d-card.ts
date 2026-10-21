@@ -17,6 +17,8 @@ import { RoomMaps, RoomsHost, RoomView } from './rooms';
 import { EntityHandler, EntityHost, onNewState } from './entity-types';
 import { Trackers } from './trackers';
 import { Showers } from './showers';
+import { Lamps, rgbToHex } from './lamps';
+import { Screens } from './screens';
 import { CLIMATE_COLORS, activeAlarms, climateAction } from './maps';
 import { localize, pickLanguage } from './localize/localize';
 import { findSlats, slatAngle, Slat, tiltSlats } from './slats';
@@ -34,11 +36,6 @@ import { MTLLoader } from 'three/examples/jsm/loaders/MTLLoader.js';
 import { GLTFLoader, GLTF } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { Object3D } from 'three';
 
-// three.js >= 0.155 always uses physical light units, and the model is in centimetres. These
-// factors keep the brightness close to the three.js 0.130 build at typical room distances (a lamp
-// seen from about 1.5 m); light_power, exposure, sun_power and sky_power in the config adjust them.
-const LAMP_INTENSITY_PER_LUMEN = 47; // 0.130 build: 0.003 per lumen with the legacy light model
-const SCREEN_EMISSIVE_SCALE = 0.25; // TV screen glow: image.lumens x this
 const LIGHT_ANIMATION_FRAME_MS = 33; // only trackers or the shower moving: at most 30 frames per second
 const MOVING_SHADOW_MS = 300; // shadows of a moving door: redrawn at most this often, and at the end
 const ROTATE_RAMP = 1.5; // seconds for a fan to reach full speed or to stop, when rotate.ramp is missing
@@ -184,7 +181,6 @@ export class Floor3dCard extends LitElement {
   private _displaylevels: boolean[];
   private _zoom: any[];
   private _states?: string[];
-  private _color?: number[][];
   private _raycasting: THREE.Object3D[];
   private _raycastinglevels: THREE.Object3D[][];
   private _initialmaterial?: THREE.Material[][];
@@ -193,8 +189,6 @@ export class Floor3dCard extends LitElement {
   private _initialobjectmaterials: { [key: string]: THREE.Material };
   private _selectedobjects: string[];
   private _selectionModeEnabled: boolean;
-  private _brightness?: number[];
-  private _lights?: string[];
   private _rooms?: string[];
   private _sprites?: string[];
   private _canvas?: HTMLCanvasElement[];
@@ -230,6 +224,8 @@ export class Floor3dCard extends LitElement {
   // The entity types in modules of their own (see entity-types.ts).
   private _trackers = new Trackers(this._entityHost());
   private _showers = new Showers(this._entityHost());
+  private _lamps = new Lamps(this._entityHost());
+  private _screens = new Screens(this._entityHost(), this._lamps);
   // The cameras on screen (camera-overlay.ts): their icons over the model, the picture that pops up.
   private _cameras = new CameraOverlay(this._camerasHost(), this._boxes);
   private _pivot: THREE.Vector3[];
@@ -259,8 +255,6 @@ export class Floor3dCard extends LitElement {
   private _templateErrors = new Set<string>();
   // TV screens: the picture being loaded for each entity (a newer one, or the TV switched off,
   // drops it), and the entities whose picture failed to load (logged once).
-  private _pictureRequests: object[] = [];
-  private _pictureErrors = new Set<string>();
   private _resizeTimeout?: number;
   private _resizeObserver: ResizeObserver;
   private _performActionListener: EventListener;
@@ -1237,9 +1231,6 @@ export class Floor3dCard extends LitElement {
           //prepares to save the state
           this._states = [];
           this._unit_of_measurement = [];
-          this._color = [];
-          this._brightness = [];
-          this._lights = [];
           this._rooms = [];
           this._sprites = [];
           this._canvas = [];
@@ -1248,6 +1239,8 @@ export class Floor3dCard extends LitElement {
           this._position = [];
           this._info = [];
           this._showers.reset();
+          this._screens.reset();
+          this._lamps.prepare();
 
           this._config.entities.forEach((entity) => {
             if (hass.states[entity.entity]) {
@@ -1307,16 +1300,6 @@ export class Floor3dCard extends LitElement {
                 this._info.push('');
               }
               this._position.push(entity.type3d == 'cover' ? this._coverPosition(hass.states[entity.entity]) : null);
-              if (entity.type3d == 'light') {
-                this._lights.push(entity.object_id + '_light');
-              } else {
-                this._lights.push('');
-              }
-              this._color.push(this._lightColor(hass.states[entity.entity]));
-              let j = this._brightness.push(-1) - 1;
-              if (hass.states[entity.entity].attributes['brightness']) {
-                this._brightness[j] = hass.states[entity.entity].attributes['brightness'];
-              }
             } else {
               console.warn('floor3d-card: entity <' + entity.entity + '> not found');
               // Every array is read by the position of the entity in the config: keep them aligned.
@@ -1329,9 +1312,6 @@ export class Floor3dCard extends LitElement {
               this._sprites.push('');
               this._info.push('');
               this._position.push(null);
-              this._lights.push('');
-              this._color.push([255, 255, 255]);
-              this._brightness.push(-1);
             }
           });
         }
@@ -2330,61 +2310,6 @@ export class Floor3dCard extends LitElement {
     this._camera.updateProjectionMatrix();
   }
 
-  private _setNoShadowLight(object: THREE.Object3D): void {
-    object.receiveShadow = true;
-    object.castShadow = false;
-
-    return;
-  }
-
-  // The light of a lamp in the middle of box (at its top or bottom with vertical_alignment): a spot
-  // with light_target or light_direction, otherwise a point light. Off until _updatelight.
-  private _addLampLight(entity: Floor3dCardConfig, i: number, box: THREE.Box3, level: number, name: string): void {
-    const x = (box.max.x - box.min.x) / 2 + box.min.x;
-    const z = (box.max.z - box.min.z) / 2 + box.min.z;
-    let y = (box.max.y - box.min.y) / 2 + box.min.y;
-    if (entity.light.vertical_alignment == 'top') y = box.max.y;
-    else if (entity.light.vertical_alignment == 'bottom') y = box.min.y;
-
-    const decay = entity.light.decay ? Number(entity.light.decay) : 2;
-    const distance = entity.light.distance ? Number(entity.light.distance) : 600;
-
-    let light: THREE.PointLight | THREE.SpotLight;
-    if (entity.light.light_target || entity.light.light_direction) {
-      const angle = entity.light.angle ? THREE.MathUtils.degToRad(entity.light.angle) : Math.PI / 10;
-      const slight = new THREE.SpotLight(new THREE.Color('#ffffff'), 0, distance, angle, 0.5, decay);
-      this._levels[level].add(slight);
-      const target = new THREE.Object3D();
-      this._levels[level].add(target);
-      slight.position.set(x, y, z);
-      if (entity.light.light_direction) {
-        target.position.set(
-          x + entity.light.light_direction.x,
-          y + entity.light.light_direction.y,
-          z + entity.light.light_direction.z,
-        );
-      } else {
-        const tobj = this._scene.getObjectByName(entity.light.light_target);
-        if (tobj) new THREE.Box3().setFromObject(tobj).getCenter(target.position);
-      }
-      slight.target = target;
-      light = slight;
-    } else {
-      const plight = new THREE.PointLight(new THREE.Color('#ffffff'), 0, distance, decay);
-      this._levels[level].add(plight);
-      plight.position.set(x, y, z);
-      light = plight;
-    }
-
-    light.userData.entityIndex = i; // for the shadows the editor reports (see _shadowReport)
-    if (entity.light.shadow == 'no') {
-      light.castShadow = false;
-    } else {
-      this._enableShadow(light, -0.0001);
-    }
-    light.name = name;
-  }
-
   private _onLoaded3DMaterials(materials: MTLLoader.MaterialCreator): void {
     // Materials Loaded Event: last root material passed to the function
     materials.preload();
@@ -2401,11 +2326,7 @@ export class Floor3dCard extends LitElement {
   // render again). The state of a type without refresh is kept (alarm and climate are tinted by
   // _updateStateColors, gesture and camera are read on a tap).
   private _entityTypes: { [type3d: string]: EntityHandler } = {
-    light: {
-      setup: (entity, i) => this._setupLight(entity, i),
-      show: (entity, i) => this._updatelight(entity, i),
-      refresh: (entity, i, state) => this._refreshLight(entity, i, state),
-    },
+    light: this._lamps.handler,
     color: {
       setup: (_, i) => this._setupColor(i),
       show: (entity, i) => this._updatecolor(entity, i),
@@ -2455,10 +2376,7 @@ export class Floor3dCard extends LitElement {
     },
     shower: this._showers.handler,
     tracker: this._trackers.handler,
-    image: {
-      setup: (entity, i) => this._setupImage(entity, i),
-      refresh: (entity, i) => this._refreshImage(entity, i),
-    },
+    image: this._screens.handler,
   };
 
   // The refresh of a type whose objects follow only the state (see entity-types.ts).
@@ -2492,6 +2410,13 @@ export class Floor3dCard extends LitElement {
       num: (value, fallback) => card._num(value, fallback),
       scheduleRender: () => card._scheduleRender(),
       animate: () => card._startOrStopAnimationLoop(),
+      get levels() {
+        return card._levels;
+      },
+      render: () => card._render(),
+      enableShadow: (light, bias) => card._enableShadow(light, bias),
+      refreshLightShadow: (light) => card._refreshLightShadow(light as ShadowLight),
+      manageLightShadows: (light) => card._manage_light_shadows(light),
     };
   }
 
@@ -2764,98 +2689,6 @@ export class Floor3dCard extends LitElement {
     }
   }
 
-  // light: the light of each object of the lamp, or one for all of them.
-  private _setupLight(entity: Floor3dCardConfig, i: number): void {
-    // Add Virtual Light Objects
-    const parts: THREE.Object3D[] = this._object_ids[i].objects
-      .map((element) => this._scene.getObjectByName(element.object_id))
-      .filter((part) => part);
-    // The parts of the lamp don't stop its light.
-    parts.forEach((part) => {
-      this._setNoShadowLight(part);
-      part.traverseAncestors(this._setNoShadowLight.bind(this));
-    });
-    if (parts.length > 0 && (entity.light.single == 'yes' || entity.light.light_object)) {
-      // One light for all the objects of the lamp (a chandelier, a row of spots): on
-      // light_object, or in the middle of them all. Each light costs GPU time, and with
-      // shadows a texture unit: five spots of a lamp were five lights.
-      const on = entity.light.light_object ? this._scene.getObjectByName(entity.light.light_object) : undefined;
-      if (entity.light.light_object && !on) {
-        console.warn(
-          'floor3d-card: light_object ' + entity.light.light_object + ' of ' + entity.entity + ' is not in the model',
-        );
-      }
-      const box = new THREE.Box3();
-      if (on) box.setFromObject(on);
-      else parts.forEach((part) => box.expandByObject(part));
-      // Named after the first object: _updatelight finds it through the objects of the entity.
-      this._addLampLight(entity, i, box, (on || parts[0]).userData.level, parts[0].name + '_light');
-    } else {
-      parts.forEach((part) => {
-        this._addLampLight(entity, i, new THREE.Box3().setFromObject(part), part.userData.level, part.name + '_light');
-      });
-    }
-  }
-
-  // image: a light in front of the screen, tinted by the picture (lighting_lumens).
-  private _setupImage(entity: Floor3dCardConfig, i: number): void {
-    this._object_ids[i].objects.forEach((element) => {
-      if (entity.image && entity.image.lighting_lumens && Number(entity.image.lighting_lumens) > 0) {
-        const _foundobject: any = this._scene.getObjectByName(element.object_id);
-        if (_foundobject) {
-          // One point light in front of the screen, tinted with the picture. The first
-          // version also added a spot light with the same name: only this light was
-          // ever found by name, so the spot stayed at 0 while still drawing shadows.
-          const screenBox = new THREE.Box3();
-          screenBox.setFromObject(_foundobject);
-          const center = new THREE.Vector3();
-          screenBox.getCenter(center);
-          const local = _foundobject.worldToLocal(center.clone());
-          const lightingDirection = entity.image.lighting_direction || 'positive_z';
-          const offset = 20;
-          let lx = local.x;
-          let ly = local.y;
-          let lz = local.z;
-          switch (lightingDirection) {
-            case 'positive_z':
-              lz += offset;
-              break;
-            case 'negative_z':
-              lz -= offset;
-              break;
-            case 'positive_x':
-              lx += offset;
-              break;
-            case 'negative_x':
-              lx -= offset;
-              break;
-            case 'positive_y':
-              ly += offset;
-              break;
-            case 'negative_y':
-              ly -= offset;
-              break;
-          }
-          const ambient = new THREE.PointLight(
-            new THREE.Color('#ffffff'),
-            0,
-            this._num(entity.image.lighting_distance, 800),
-            2,
-          );
-          ambient.name = element.object_id + '_light';
-          ambient.userData.entityIndex = i;
-          if (entity.image.lighting_shadow == 'no') {
-            ambient.castShadow = false;
-          } else {
-            this._enableShadow(ambient, -0.0001);
-          }
-          _foundobject.add(ambient);
-          ambient.position.set(lx, ly, lz);
-        }
-      }
-    });
-  }
-
   // color: the materials of the objects, kept to go back to them, and copies to colour.
   private _setupColor(i: number): void {
     // Clone Material to allow object color changes based on Color Conditions Objects
@@ -2928,42 +2761,6 @@ export class Floor3dCard extends LitElement {
       changed = true;
     }
     return changed;
-  }
-
-  // A light switched, or a new colour or brightness.
-  private _refreshLight(entity: Floor3dCardConfig, i: number, state: string): boolean {
-    let toupdate = false;
-    if (this._states[i] !== state) {
-      this._states[i] = state;
-      toupdate = true;
-    }
-    // Every colour mode, the temperature of Adaptive Lighting included. Before, only rgb
-    // and color_temp were read, the latter from the mireds Home Assistant dropped in
-    // 2026.3: a lamp changing temperature turned white, and xy or hs lamps kept the
-    // colour they had when the card was loaded.
-    const color = this._lightColor(this._hass.states[entity.entity]);
-    if (color && String(color) !== String(this._color[i])) {
-      toupdate = true;
-      this._color[i] = color;
-    }
-    if (this._hass.states[entity.entity].attributes['brightness']) {
-      if (this._hass.states[entity.entity].attributes['brightness'] !== this._brightness[i]) {
-        toupdate = true;
-        this._brightness[i] = this._hass.states[entity.entity].attributes['brightness'];
-      }
-    }
-    if (toupdate) this._updatelight(entity, i);
-    return toupdate;
-  }
-
-  // A new picture, or the screen switched on or off.
-  private _refreshImage(entity: Floor3dCardConfig, i: number): boolean {
-    const stateObj = this._hass.states[entity.entity];
-    const key = stateObj.attributes['entity_picture'] + '|' + stateObj.state;
-    if (key === this._text[i]) return false;
-    this._text[i] = key;
-    this._updateimage(entity, i);
-    return true;
   }
 
   // A new text, from the state (with entity_template) or from an attribute.
@@ -3632,63 +3429,6 @@ export class Floor3dCard extends LitElement {
     }
   }
 
-  // Colour of a light as [r, g, b]: rgb_color, that Home Assistant gives in every colour mode
-  // (computed from the temperature in color_temp mode), else the temperature in kelvin, or in the
-  // mireds of Home Assistant before 2026.3. Undefined while the light is off.
-  private _lightColor(stateObj: HassEntity): number[] | undefined {
-    const attributes = stateObj.attributes;
-    if (Array.isArray(attributes.rgb_color) && attributes.rgb_color.length >= 3) {
-      return attributes.rgb_color.slice(0, 3).map(Number);
-    }
-    if (Number(attributes.color_temp_kelvin) > 0)
-      return this._TemperatureToRGB(1000000 / Number(attributes.color_temp_kelvin));
-    if (Number(attributes.color_temp) > 0) return this._TemperatureToRGB(Number(attributes.color_temp));
-    return undefined;
-  }
-
-  // t in mireds
-  private _TemperatureToRGB(t: number): number[] {
-    let temp = 10000 / t; //kelvins = 1,000,000/mired (and that /100)
-    let r: number, g: number, b: number;
-    let rgb: number[] = [0, 0, 0];
-
-    if (temp <= 66) {
-      r = 255;
-      g = temp;
-      g = 99.470802 * Math.log(g) - 161.119568;
-
-      if (temp <= 19) {
-        b = 0;
-      } else {
-        b = temp - 10;
-        b = 138.517731 * Math.log(b) - 305.044793;
-      }
-    } else {
-      r = temp - 60;
-      r = 329.698727 * Math.pow(r, -0.13320476);
-
-      g = temp - 60;
-      g = 288.12217 * Math.pow(g, -0.07551485);
-
-      b = 255;
-    }
-    rgb = [r, g, b].map((v) => Math.max(0, Math.min(255, Math.floor(v)))); // the formula goes past 255 near 6600 K
-    return rgb;
-  }
-
-  private _RGBToHex(r: number, g: number, b: number): string {
-    // RGB Color array to hex string converter
-    let rs: string = r.toString(16);
-    let gs: string = g.toString(16);
-    let bs: string = b.toString(16);
-
-    if (rs.length == 1) rs = '0' + rs;
-    if (gs.length == 1) gs = '0' + gs;
-    if (bs.length == 1) bs = '0' + bs;
-
-    return '#' + rs + gs + bs;
-  }
-
   private _updatetext(entity: Floor3dCardConfig, state: string, canvas: HTMLCanvasElement, uom: string): void {
     const _foundobject: any = this._scene.getObjectByName(entity.object_id);
 
@@ -3713,48 +3453,6 @@ export class Floor3dCard extends LitElement {
         this._applyTextCanvas(canvas, _foundobject, entity.text);
       }
     }
-  }
-
-  private _updatelight(entity: Floor3dCardConfig, i: number): void {
-    // Illuminate the light object when, for the bound device, one of its attribute gets modified in HA. See set hass property
-
-    this._object_ids[i].objects.forEach((element) => {
-      const light: any = this._scene.getObjectByName(element.object_id + '_light');
-
-      if (!light) {
-        return;
-      }
-      const max = this._lampIntensity(entity.light.lumens ? entity.light.lumens : 800);
-
-      if (this._states[i] == 'on') {
-        if (this._brightness[i] != -1) {
-          light.intensity = max * (this._brightness[i] / 255);
-        } else {
-          light.intensity = max;
-        }
-        if (!this._color[i]) {
-          if (entity.light.color) {
-            light.color = new THREE.Color(entity.light.color);
-          } else {
-            light.color = new THREE.Color('#ffffff');
-          }
-        } else {
-          light.color = new THREE.Color(this._RGBToHex(this._color[i][0], this._color[i][1], this._color[i][2]));
-        }
-      } else {
-        light.intensity = 0;
-      }
-      if (this._config.extralightmode == 'yes') {
-        this._manage_light_shadows(light);
-      }
-      // Brightness and colour do not change the shadow map: it is redrawn only if it is out of date.
-      this._refreshLightShadow(light);
-    });
-  }
-
-  // Intensity of a lamp in three.js units (the model is in centimetres), light_power included.
-  private _lampIntensity(lumens: number | string): number {
-    return Number(lumens) * LAMP_INTENSITY_PER_LUMEN * this._num(this._config.light_power, 1);
   }
 
   private _num(value: any, fallback: number): number {
@@ -3972,160 +3670,6 @@ export class Floor3dCard extends LitElement {
       }
     }
     // The door moves with a tween: the animation loop redraws the shadows while it moves.
-  }
-
-  private _updateimage(item: Floor3dCardConfig, index: number): void {
-    let _foundobject: any;
-    if (this._object_ids[index].objects.length > 0) {
-      _foundobject = this._scene.getObjectByName(this._object_ids[index].objects[0].object_id);
-    }
-    if (_foundobject) {
-      const picture = this._hass.states[item.entity].attributes['entity_picture'];
-      if (picture && !['off', 'standby', 'unavailable', 'unknown'].includes(this._hass.states[item.entity].state)) {
-        // The picture goes on the screen once it has loaded, and the card redraws then. Before, the
-        // empty texture went on at once: the screen, transparent, disappeared, and nothing redrew
-        // it when the picture arrived (a screen capture of Android TV changes every few seconds).
-        const request = {};
-        this._pictureRequests[index] = request;
-        const texture = new THREE.TextureLoader().load(
-          picture,
-          (loaded) => {
-            // A newer picture was asked for meanwhile, or the TV was switched off.
-            if (this._pictureRequests[index] !== request) {
-              loaded.dispose();
-              return;
-            }
-            this._showPicture(item, index, _foundobject, loaded);
-            this._scheduleRender();
-          },
-          undefined,
-          () => {
-            if (this._pictureErrors.has(item.entity)) return;
-            this._pictureErrors.add(item.entity);
-            console.warn('floor3d-card: the picture of ' + item.entity + ' did not load: ' + picture);
-          },
-        );
-        texture.flipY = false;
-        texture.colorSpace = THREE.SRGBColorSpace;
-        if ((item.image && item.image.rotate) || (item.image && item.image.mirror)) {
-          texture.center.set(0.5, 0.5);
-        }
-        if (item.image && item.image.rotate) {
-          texture.rotation = (item.image.rotate * Math.PI) / 180;
-        }
-        if (item.image && item.image.mirror) {
-          texture.wrapS = THREE.RepeatWrapping;
-          texture.repeat.x = -1;
-        }
-      } else {
-        this._pictureRequests[index] = null;
-        const state = this._hass.states[item.entity].state;
-        const offState = item.image && item.image.lighting_off_state ? item.image.lighting_off_state : 'unavailable';
-        const light: any = this._scene.getObjectByName(this._object_ids[index].objects[0].object_id + '_light');
-        if (state === offState || ['off', 'standby', 'unavailable', 'unknown'].includes(state)) {
-          if (light) {
-            light.intensity = 0;
-          }
-          if (_foundobject instanceof THREE.Mesh) {
-            const material: any = _foundobject.material;
-            if (material && material.name && material.name.startsWith('f3dmat')) {
-              if (material.map) material.map.dispose();
-              material.map = null;
-              material.color.setHex(0x000000);
-              if (material.emissive) material.emissive.setHex(0x000000);
-              material.needsUpdate = true;
-            }
-          }
-          this._render();
-        } else if (light && item.image && item.image.lighting_lumens) {
-          light.intensity = this._lampIntensity(item.image.lighting_lumens);
-          this._refreshLightShadow(light);
-        }
-      }
-    }
-  }
-
-  // A picture of a TV screen, once loaded: it replaces the previous one (or the material of the
-  // model, the first time), glows with image.lumens and tints the light of the room with its
-  // average colour (image.lighting_lumens).
-  private _showPicture(
-    item: Floor3dCardConfig,
-    index: number,
-    object: any,
-    texture: THREE.Texture<HTMLImageElement>,
-  ): void {
-    if (!(object instanceof THREE.Mesh)) {
-      texture.dispose();
-      return;
-    }
-    const lumens = item.image && Number(item.image.lumens) > 0;
-    let material: any = object.material;
-    if (material.name.startsWith('f3dmat')) {
-      if (material.map && material.map !== texture) material.map.dispose();
-    } else {
-      // The screen gets a material of its own whose only texture is the picture. Every texture of a
-      // material takes one of the texture units the shadows leave (see _shadowBudget): with the
-      // picture, its glow and the textures of the model, the shader of the screen went past the
-      // limit of the GPU and the screen vanished. A screen that glows (image.lumens) is drawn
-      // without lights and shadows, as the light it gives off would be; otherwise the room lights
-      // the picture like a printed one.
-      if (lumens) {
-        material = new THREE.MeshBasicMaterial({ side: material.side });
-      } else {
-        material = material.clone();
-        Object.keys(material).forEach((key) => {
-          if (key !== 'map' && material[key] && material[key].isTexture) material[key] = null;
-        });
-        if (material.emissive) material.emissive.setHex(0x000000);
-      }
-      material.name = 'f3dmat' + object.name;
-      material.transparent = true;
-      object.material = material;
-    }
-    material.map = texture;
-    // The colour multiplies the picture: its glow with image.lumens, white without (before, a dark
-    // screen of the model showed nothing, and a screen switched off and on again stayed black).
-    material.color.setScalar(lumens ? Number(item.image.lumens) * SCREEN_EMISSIVE_SCALE : 1);
-    material.needsUpdate = true;
-    const light: any = this._scene.getObjectByName(this._object_ids[index].objects[0].object_id + '_light');
-    if (light && lumens && item.image.lighting_lumens) {
-      light.intensity = this._lampIntensity(item.image.lighting_lumens);
-      // From the picture already loaded: before, it was downloaded a second time, and the light
-      // could get the colour of the previous picture.
-      light.color.copy(this._averageColor(texture.image));
-      this._refreshLightShadow(light);
-    } else if (light) {
-      light.intensity = 0;
-    }
-  }
-
-  // Average colour of a picture, white when it can't be read (a picture from another site without
-  // CORS headers).
-  private _averageColor(image: CanvasImageSource): THREE.Color {
-    const color = new THREE.Color(1, 1, 1);
-    try {
-      const canvas = document.createElement('canvas');
-      canvas.width = 16;
-      canvas.height = 16;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return color;
-      ctx.drawImage(image, 0, 0, 16, 16);
-      const data = ctx.getImageData(0, 0, 16, 16).data;
-      let r = 0;
-      let g = 0;
-      let b = 0;
-      const count = data.length / 4;
-      for (let i = 0; i < data.length; i += 4) {
-        r += data[i];
-        g += data[i + 1];
-        b += data[i + 2];
-      }
-      // Picture bytes are sRGB: converted to the linear working space.
-      color.setRGB(r / count / 255, g / count / 255, b / count / 255, THREE.SRGBColorSpace);
-    } catch (e) {
-      console.warn('floor3d-card: the colour of the picture could not be read (CORS?): white light');
-    }
-    return color;
   }
 
   // One render per frame even when many updates arrive together. None while the animation loop
@@ -4774,7 +4318,7 @@ export class Floor3dCard extends LitElement {
             const colorarray = item.colorcondition[i].color.split(',');
             let color = '';
             if (colorarray.length == 3) {
-              color = this._RGBToHex(Number(colorarray[0]), Number(colorarray[1]), Number(colorarray[2]));
+              color = rgbToHex(Number(colorarray[0]), Number(colorarray[1]), Number(colorarray[2]));
             } else {
               color = item.colorcondition[i].color;
             }

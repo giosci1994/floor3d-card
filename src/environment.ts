@@ -9,7 +9,7 @@ import { moonPhase, skyBackground, weatherClouds } from './sky';
 import { grassTexture, groundAlpha, groundStyle } from './ground';
 
 // three.js >= 0.155 always uses physical light units, and the model is in centimetres: see the
-// lamps in floor3d-card.ts. globalLightPower, sun_power and sky_power in the config adjust these.
+// lamps in lamps.ts. globalLightPower, sun_power and sky_power in the config adjust these.
 const TORCH_SCALE = 0.66; // camera-following light: globalLightPower x this
 const SUN_INTENSITY = 2.4; // full daylight, multiplied by sun_power
 const SKY_INTENSITY = 1; // light of the sky on a floor, multiplied by sky_power
