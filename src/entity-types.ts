@@ -4,15 +4,15 @@
 // through EntityHost.
 import * as THREE from 'three';
 import { HomeAssistant } from './ha';
-import type { Floor3dCardConfig } from './types';
+import type { Floor3dCardConfig, EntityConfig, EntityObjects } from './types';
 
 export interface EntityHandler {
   // The model is loaded: the objects of the entity are set up (an entity whose state is missing is not).
-  setup?(entity: Floor3dCardConfig, i: number): void;
+  setup?(entity: EntityConfig, i: number): void;
   // Every entity is set up: its objects show its state.
-  show?(entity: Floor3dCardConfig, i: number): void;
+  show?(entity: EntityConfig, i: number): void;
   // Home Assistant sent new states (state: with entity_template): true when the card must render again.
-  refresh?(entity: Floor3dCardConfig, i: number, state: string): boolean;
+  refresh?(entity: EntityConfig, i: number, state: string): boolean;
 }
 
 // What the entity types read of the card. Entities are known by their position in the configuration.
@@ -21,7 +21,7 @@ export interface EntityHost {
   readonly hass: HomeAssistant;
   readonly scene: THREE.Scene;
   readonly model: THREE.Object3D; // the box of the model, centred
-  readonly objectIds: Floor3dCardConfig[]; // the objects of each entity
+  readonly objectIds: EntityObjects[]; // the objects of each entity
   readonly states: string[]; // the state of each entity, with entity_template
   num(value: unknown, fallback: number): number;
   scheduleRender(): void;
@@ -34,7 +34,7 @@ export interface EntityHost {
   manageLightShadows(light: THREE.Light): void; // extralightmode: only the lights that are on cast shadows
   invalidateShadows(): void; // something moved: the shadows are drawn again
   objectNamesFor(ids: string[]): string[]; // the objects of the model that ids name (names with *, <groups>)
-  stateWithTemplate(entity: Floor3dCardConfig): string; // the state of the entity, through entity_template
+  stateWithTemplate(entity: EntityConfig): string; // the state of the entity, through entity_template
   levelShown(level: number | undefined): boolean;
 }
 
@@ -64,7 +64,7 @@ export function pivotObject(object: THREE.Object3D, pivot: THREE.Vector3): void 
 // The refresh of a type whose objects follow only the state: apply when the state changes.
 export function onNewState(
   host: EntityHost,
-  apply: (entity: Floor3dCardConfig, i: number) => boolean | void,
+  apply: (entity: EntityConfig, i: number) => boolean | void,
 ): EntityHandler['refresh'] {
   return (entity, i, state) => {
     if (host.states[i] === state) return false;

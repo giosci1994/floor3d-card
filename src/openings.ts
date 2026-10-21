@@ -6,7 +6,7 @@ import * as TWEEN from '@tweenjs/tween.js';
 import type { HassEntity } from 'home-assistant-js-websocket';
 import { EntityHandler, EntityHost, onNewState, pivotObject } from './entity-types';
 import { findSlats, slatAngle, Slat, tiltSlats } from './slats';
-import type { Floor3dCardConfig } from './types';
+import type { EntityConfig } from './types';
 
 // A mesh with slats (cover.slats): its own geometry, its slats, and its positions and normals as
 // in the model.
@@ -93,7 +93,7 @@ export class Openings {
 
   // door: the hinge of a swing door, the axis and the angle it opens by; a sliding door slides from the
   // corner of its box.
-  private _setupDoor(entity: Floor3dCardConfig, i: number): void {
+  private _setupDoor(entity: EntityConfig, i: number): void {
     if (entity.door.doortype != 'swing' && entity.door.doortype != 'slide') {
       throw new Error('Invalid door type: ' + entity.door.doortype + '. Valid types are: swing, slide');
     }
@@ -211,7 +211,7 @@ export class Openings {
 
   // cover: the panes slide or shrink from the corner of their box, cut by a plane at the edge they go to;
   // then the slats, and the position of the cover now.
-  private _setupCover(entity: Floor3dCardConfig, i: number): void {
+  private _setupCover(entity: EntityConfig, i: number): void {
     // Without pane the first object is the pane, as in _updatecover. Before, such a cover
     // was not set up and its first update stopped every other update of the card.
     const pane: THREE.Mesh = (this.host.scene.getObjectByName(entity.cover.pane) ||
@@ -263,7 +263,7 @@ export class Openings {
   }
 
   // A new state or position of a cover, a new tilt of its slats.
-  private _refreshCover(entity: Floor3dCardConfig, i: number, state: string): boolean {
+  private _refreshCover(entity: EntityConfig, i: number, state: string): boolean {
     let changed = false;
     // Both can change: the position while the cover moves, the state when it starts or stops.
     const position = coverPosition(this.host.hass.states[entity.entity]);
@@ -280,7 +280,7 @@ export class Openings {
     return changed;
   }
 
-  private _updatedoor(entity: Floor3dCardConfig, i: number): void {
+  private _updatedoor(entity: EntityConfig, i: number): void {
     // perform action on door objects
 
     const _obj: any = this.host.scene.getObjectByName(this.host.objectIds[i].objects[0].object_id);
@@ -322,7 +322,7 @@ export class Openings {
     // The door moves with a tween: the animation loop redraws the shadows while it moves.
   }
 
-  private _rotatedoorpivot(entity: Floor3dCardConfig, index: number) {
+  private _rotatedoorpivot(entity: EntityConfig, index: number) {
     //For a swing door, rotate the objects along the configured axis and the degrees of opening
     this.host.objectIds[index].objects.forEach((element) => {
       let _obj: any = this.host.scene.getObjectByName(element.object_id);
@@ -437,7 +437,7 @@ export class Openings {
     this.host.animate();
   }
 
-  private _updatecover(item: Floor3dCardConfig, state: string, i: number): void {
+  private _updatecover(item: EntityConfig, state: string, i: number): void {
     let pane = this.host.scene.getObjectByName(item.cover.pane);
 
     if (!pane) {
@@ -525,7 +525,7 @@ export class Openings {
 
   // cover.slats: the slats of the objects named there (a blind exported as one object included,
   // see slats.ts), each mesh with a geometry of its own and its first positions.
-  private _initSlats(item: Floor3dCardConfig, i: number): void {
+  private _initSlats(item: EntityConfig, i: number): void {
     const ids = item.cover && item.cover.slats;
     if (!ids) return;
     const sets: SlatSet[] = [];
@@ -569,7 +569,7 @@ export class Openings {
 
   // The slats turn with current_tilt_position: tilt_closed degrees at 0, tilt_open at 100 (from
   // the model, 80 and 0 by default). Without the attribute they stay as in the model.
-  private _updateSlats(item: Floor3dCardConfig, i: number, animate = true): void {
+  private _updateSlats(item: EntityConfig, i: number, animate = true): void {
     const sets = this._slatSets.get(i);
     const stateObj = this.host.hass && this.host.hass.states[item.entity];
     if (!sets || !stateObj) return;

@@ -5,7 +5,7 @@ import { HomeAssistant, LovelaceCardEditor, fireEvent, forwardHaptic } from './h
 import { HassEntity } from 'home-assistant-js-websocket';
 import { createObjectGroupConfigArray, getLovelace } from './helpers';
 import { matchObjects, normalizeConfig, objectPattern } from './config';
-import type { Floor3dCardConfig } from './types';
+import type { Floor3dCardConfig, EntityConfig, EntityObjects } from './types';
 import { CARD_VERSION, EDITOR_EVENT, PREVIEW_EVENT } from './const';
 import DRACO_DECODER from 'virtual:draco-decoder';
 import { previewState } from './preview';
@@ -230,7 +230,7 @@ export class Floor3dCard extends LitElement {
   private _content?: HTMLElement;
   private _modeltype?: ModelSource;
   private _config!: Floor3dCardConfig;
-  private _object_ids?: Floor3dCardConfig[] = [];
+  private _object_ids?: EntityObjects[] = [];
   private _isVisible = true;
   // Set by Home Assistant's hui-card (2024+): layout of the hosting view ('panel', 'grid', ...).
   @property({ attribute: false }) public layout?: string;
@@ -992,7 +992,7 @@ export class Floor3dCard extends LitElement {
 
   // An entity with objects of the model to act on (see createObjectGroupConfigArray): those without
   // are left out, the others go on. A tracker draws its own marker and needs none.
-  private _hasObjects(entity: Floor3dCardConfig, i: number): boolean {
+  private _hasObjects(entity: EntityConfig, i: number): boolean {
     return entity.type3d == 'tracker' || !!(this._object_ids[i] && this._object_ids[i].objects.length);
   }
 
@@ -1118,7 +1118,7 @@ export class Floor3dCard extends LitElement {
     this._boxes.place();
   }
 
-  private _statewithtemplate(entity: Floor3dCardConfig): string {
+  private _statewithtemplate(entity: EntityConfig): string {
     if (this._hass.states[entity.entity]) {
       let state = this._hass.states[entity.entity].state;
 
@@ -2208,7 +2208,7 @@ export class Floor3dCard extends LitElement {
   };
 
   // The refresh of a type whose objects follow only the state (see entity-types.ts).
-  private _onNewState(apply: (entity: Floor3dCardConfig, i: number) => boolean | void): EntityHandler['refresh'] {
+  private _onNewState(apply: (entity: EntityConfig, i: number) => boolean | void): EntityHandler['refresh'] {
     return onNewState(this._entityHost(), apply);
   }
 
@@ -3052,7 +3052,7 @@ export class Floor3dCard extends LitElement {
     });
   }
 
-  private _updatehide(entity: Floor3dCardConfig, index: number): void {
+  private _updatehide(entity: EntityConfig, index: number): void {
     // hide the object when the state is equal to the configured value
     this._object_ids[index].objects.forEach((element) => {
       //object clickable: check layers solution
@@ -3070,7 +3070,7 @@ export class Floor3dCard extends LitElement {
     this._invalidateShadows();
   }
 
-  private _updateshow(entity: Floor3dCardConfig, index: number): void {
+  private _updateshow(entity: EntityConfig, index: number): void {
     // hide the object when the state is equal to the configured value
     this._object_ids[index].objects.forEach((element) => {
       const _object: any = this._scene.getObjectByName(element.object_id);

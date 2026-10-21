@@ -6,7 +6,7 @@ import * as THREE from 'three';
 import { EntityHandler, EntityHost, onNewState } from './entity-types';
 import { point } from './cameras';
 import { fitText, textLayout } from './textmap';
-import type { Floor3dCardConfig } from './types';
+import type { EntityConfig } from './types';
 
 // The pictures of several texts in one, one under the other, each in the middle of the line.
 function stackCanvases(canvases: HTMLCanvasElement[], background?: string): HTMLCanvasElement {
@@ -25,6 +25,14 @@ function stackCanvases(canvases: HTMLCanvasElement[], background?: string): HTML
     y += c.height;
   });
   return canvas;
+}
+
+// The look of a text on its canvas: the text, info or room block of the entity.
+interface TextStyle {
+  font?: string;
+  span?: string; // the share of the canvas the text takes, in %
+  textbgcolor?: string;
+  textfgcolor?: string;
 }
 
 export class Texts {
@@ -170,7 +178,7 @@ export class Texts {
   }
 
   // A new text, from the state (with entity_template) or from an attribute.
-  private _refreshText(entity: Floor3dCardConfig, i: number): boolean {
+  private _refreshText(entity: EntityConfig, i: number): boolean {
     let toupdate = false;
     if (entity.text.attribute) {
       if (this.host.hass.states[entity.entity].attributes[entity.text.attribute]) {
@@ -195,7 +203,7 @@ export class Texts {
   }
 
   // info: the sprite with the text of the box, over its object or at its own position.
-  private _setupInfo(entity: Floor3dCardConfig, i: number): void {
+  private _setupInfo(entity: EntityConfig, i: number): void {
     const sprite = new THREE.Sprite();
     sprite.name = entity.object_id + '_info';
     this._sprites[i] = sprite.name;
@@ -220,7 +228,7 @@ export class Texts {
   }
 
   // A new text or unit of an info box.
-  private _refreshInfo(entity: Floor3dCardConfig, i: number, state: string): boolean {
+  private _refreshInfo(entity: EntityConfig, i: number, state: string): boolean {
     // The box follows the state (before 2.11.4 it kept the one of the opening of the card).
     this.host.states[i] = state;
     const text = this._infoText(entity);
@@ -234,7 +242,7 @@ export class Texts {
   }
 
   // A new label of a room (type3d: room), from the state or an attribute.
-  private _refreshRoom(entity: Floor3dCardConfig, i: number): boolean {
+  private _refreshRoom(entity: EntityConfig, i: number): boolean {
     let toupdate = false;
     if (entity.room.attribute) {
       if (this.host.hass.states[entity.entity].attributes[entity.room.attribute]) {
@@ -268,7 +276,7 @@ export class Texts {
     return true;
   }
 
-  private _createroom(entity: Floor3dCardConfig, i: number): void {
+  private _createroom(entity: EntityConfig, i: number): void {
     // createroom
 
     const elevation: number = entity.room.elevation ? entity.room.elevation : 250;
@@ -366,7 +374,7 @@ export class Texts {
     return;
   }
 
-  private _updateroom(entity: Floor3dCardConfig, text: string, uom: string, i: number): void {
+  private _updateroom(entity: EntityConfig, text: string, uom: string, i: number): void {
     //update sprite text and other change conditions
 
     const _roomMesh: THREE.Object3D = this.host.scene.getObjectByName(this._rooms[i]);
@@ -382,7 +390,7 @@ export class Texts {
     }
   }
 
-  private _updateinfo(item: Floor3dCardConfig, text: string, uom: string, index: number): void {
+  private _updateinfo(item: EntityConfig, text: string, uom: string, index: number): void {
     const sprite: any = this.host.scene.getObjectByName(this._sprites[index]);
     const canvas = this._canvas[index];
     if (sprite && canvas) {
@@ -396,7 +404,7 @@ export class Texts {
     }
   }
 
-  private _updatetext(entity: Floor3dCardConfig, state: string, canvas: HTMLCanvasElement, uom: string): void {
+  private _updatetext(entity: EntityConfig, state: string, canvas: HTMLCanvasElement, uom: string): void {
     const _foundobject: any = this.host.scene.getObjectByName(entity.object_id);
 
     if (_foundobject) {
@@ -422,22 +430,22 @@ export class Texts {
     }
   }
 
-  private _createTextCanvas(entity: Floor3dCardConfig, text: string, uom: string): HTMLCanvasElement {
+  private _createTextCanvas(style: TextStyle, text: string, uom: string): HTMLCanvasElement {
     const canvas = document.createElement('canvas');
 
-    this._updateTextCanvas(entity, canvas, text + uom);
+    this._updateTextCanvas(style, canvas, text + uom);
 
     return canvas;
   }
 
-  private _updateTextCanvas(entity: Floor3dCardConfig, canvas: HTMLCanvasElement, text: string): void {
+  private _updateTextCanvas(style: TextStyle, canvas: HTMLCanvasElement, text: string): void {
     //Manages the update of the text entities according to their configuration and the new text of the entity state
 
     const ctx = canvas.getContext('2d');
 
     // Prepare the font to be able to measure
     let fontSize = 56;
-    ctx.font = `${fontSize}px ${entity.font ? entity.font : 'monospace'}`;
+    ctx.font = `${fontSize}px ${style.font ? style.font : 'monospace'}`;
 
     const textMetrics = ctx.measureText(text);
 
@@ -445,8 +453,8 @@ export class Texts {
     let height = fontSize;
 
     let perct = 1.0;
-    if (entity.span) {
-      perct = parseFloat(entity.span) / 100.0;
+    if (style.span) {
+      perct = parseFloat(style.span) / 100.0;
     }
     // Resize canvas to match text size
 
@@ -458,14 +466,14 @@ export class Texts {
     canvas.style.height = height + 'px';
 
     // Re-apply font since canvas is resized.
-    ctx.font = `${fontSize}px ${entity.font ? entity.font : 'monospace'}`;
+    ctx.font = `${fontSize}px ${style.font ? style.font : 'monospace'}`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
 
-    ctx.fillStyle = entity.textbgcolor ? entity.textbgcolor : 'transparent';
+    ctx.fillStyle = style.textbgcolor ? style.textbgcolor : 'transparent';
     ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
 
-    ctx.fillStyle = entity.textfgcolor ? entity.textfgcolor : 'white';
+    ctx.fillStyle = style.textfgcolor ? style.textfgcolor : 'white';
 
     ctx.fillText(text, width / 2, height / 2);
   }
@@ -625,7 +633,7 @@ export class Texts {
 
   // The text of an info box: the state (with entity_template), or info.text, a template [[[ ]]] as
   // entity_template or a text where $entity is the state.
-  private _infoText(entity: Floor3dCardConfig): string {
+  private _infoText(entity: EntityConfig): string {
     const own = entity.info && entity.info.text ? String(entity.info.text).trim() : '';
     if (!own) return this.host.stateWithTemplate(entity);
     if (own.startsWith('[[[') && own.endsWith(']]]'))

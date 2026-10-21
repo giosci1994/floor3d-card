@@ -3,7 +3,7 @@
 import * as THREE from 'three';
 import type { HassEntity } from 'home-assistant-js-websocket';
 import { EntityHandler, EntityHost } from './entity-types';
-import type { Floor3dCardConfig } from './types';
+import type { EntityConfig } from './types';
 
 const TRACKER_SMOOTHING = 0.25; // seconds: trackers glide to each new position instead of jumping
 const TRACKER_FADE = 0.35; // seconds to appear or disappear
@@ -38,7 +38,7 @@ export class Trackers {
 
   // Tracker: a glowing head at the configured height, a thin stem and a halo on the floor, all in
   // the colour of the tracker. It glides to each new position and fades in and out.
-  private _create(entity: Floor3dCardConfig, i: number): void {
+  private _create(entity: EntityConfig, i: number): void {
     const tracker = entity.tracker || {};
     const size = this.host.num(tracker.size, 15);
     const height = this.host.num(tracker.height, 150);
@@ -96,7 +96,7 @@ export class Trackers {
   }
 
   // A tracker moves when one of its entities changes.
-  private _refresh(entity: Floor3dCardConfig, i: number): boolean {
+  private _refresh(entity: EntityConfig, i: number): boolean {
     // Only when an entity of the tracker changed (Home Assistant replaces the state object of an
     // entity that changes), not at every update of any entity.
     const tr = entity.tracker || {};
@@ -112,7 +112,7 @@ export class Trackers {
     return false;
   }
 
-  private _update(item: Floor3dCardConfig, index: number): void {
+  private _update(item: EntityConfig, index: number): void {
     const tv = this._views[index];
     if (!tv) return;
     const tracker = item.tracker || {};

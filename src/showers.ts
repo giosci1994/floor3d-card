@@ -1,7 +1,7 @@
 // type3d: shower: drops of water falling under the objects of the entity while it is on.
 import * as THREE from 'three';
 import { EntityHandler, EntityHost, onNewState } from './entity-types';
-import type { Floor3dCardConfig } from './types';
+import type { EntityConfig } from './types';
 
 export class Showers {
   private _groups: THREE.Group[] = []; // the drops of each shower entity
@@ -25,7 +25,7 @@ export class Showers {
   }
 
   // shower: the drops of water under each object, hidden until the shower is on.
-  private _setup(entity: Floor3dCardConfig, i: number): void {
+  private _setup(entity: EntityConfig, i: number): void {
     const group = new THREE.Group();
     group.name = entity.object_id + '_shower_group';
     this.host.model.add(group);
@@ -63,7 +63,7 @@ export class Showers {
     this._update(entity, i);
   }
 
-  private _update(_item: Floor3dCardConfig, index: number) {
+  private _update(_item: EntityConfig, index: number) {
     if (this._groups[index]) {
       const state = this.host.states[index] ? String(this.host.states[index]).toLowerCase() : '';
       if (['on', 'active', 'true', '1'].includes(state)) {

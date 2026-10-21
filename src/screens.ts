@@ -3,7 +3,7 @@
 import * as THREE from 'three';
 import { EntityHandler, EntityHost } from './entity-types';
 import { Lamps } from './lamps';
-import type { Floor3dCardConfig } from './types';
+import type { EntityConfig } from './types';
 
 const SCREEN_EMISSIVE_SCALE = 0.25; // TV screen glow: image.lumens x this
 
@@ -30,7 +30,7 @@ export class Screens {
   }
 
   // image: a light in front of the screen, tinted by the picture (lighting_lumens).
-  private _setup(entity: Floor3dCardConfig, i: number): void {
+  private _setup(entity: EntityConfig, i: number): void {
     this.host.objectIds[i].objects.forEach((element) => {
       if (entity.image && entity.image.lighting_lumens && Number(entity.image.lighting_lumens) > 0) {
         const _foundobject: any = this.host.scene.getObjectByName(element.object_id);
@@ -89,7 +89,7 @@ export class Screens {
   }
 
   // A new picture, or the screen switched on or off.
-  private _refresh(entity: Floor3dCardConfig, i: number): boolean {
+  private _refresh(entity: EntityConfig, i: number): boolean {
     const stateObj = this.host.hass.states[entity.entity];
     const key = stateObj.attributes['entity_picture'] + '|' + stateObj.state;
     if (key === this._keys[i]) return false;
@@ -98,7 +98,7 @@ export class Screens {
     return true;
   }
 
-  private _update(item: Floor3dCardConfig, index: number): void {
+  private _update(item: EntityConfig, index: number): void {
     let _foundobject: any;
     if (this.host.objectIds[index].objects.length > 0) {
       _foundobject = this.host.scene.getObjectByName(this.host.objectIds[index].objects[0].object_id);
@@ -172,12 +172,7 @@ export class Screens {
   // A picture of a TV screen, once loaded: it replaces the previous one (or the material of the
   // model, the first time), glows with image.lumens and tints the light of the room with its
   // average colour (image.lighting_lumens).
-  private _showPicture(
-    item: Floor3dCardConfig,
-    index: number,
-    object: any,
-    texture: THREE.Texture<HTMLImageElement>,
-  ): void {
+  private _showPicture(item: EntityConfig, index: number, object: any, texture: THREE.Texture<HTMLImageElement>): void {
     if (!(object instanceof THREE.Mesh)) {
       texture.dispose();
       return;

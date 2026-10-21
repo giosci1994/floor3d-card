@@ -4,7 +4,7 @@
 import * as THREE from 'three';
 import type { HassEntity } from 'home-assistant-js-websocket';
 import { EntityHandler, EntityHost } from './entity-types';
-import type { Floor3dCardConfig } from './types';
+import type { EntityConfig } from './types';
 
 // three.js >= 0.155 always uses physical light units, and the model is in centimetres. This factor
 // keeps the brightness close to the three.js 0.130 build at typical room distances (a lamp seen from
@@ -99,7 +99,7 @@ export class Lamps {
   }
 
   // light: the light of each object of the lamp, or one for all of them.
-  private _setup(entity: Floor3dCardConfig, i: number): void {
+  private _setup(entity: EntityConfig, i: number): void {
     // Add Virtual Light Objects
     const parts: THREE.Object3D[] = this.host.objectIds[i].objects
       .map((element) => this.host.scene.getObjectByName(element.object_id))
@@ -132,7 +132,7 @@ export class Lamps {
   }
 
   // A light switched, or a new colour or brightness.
-  private _refresh(entity: Floor3dCardConfig, i: number, state: string): boolean {
+  private _refresh(entity: EntityConfig, i: number, state: string): boolean {
     let toupdate = false;
     if (this.host.states[i] !== state) {
       this.host.states[i] = state;
@@ -159,7 +159,7 @@ export class Lamps {
 
   // The light of a lamp in the middle of box (at its top or bottom with vertical_alignment): a spot
   // with light_target or light_direction, otherwise a point light. Off until _updatelight.
-  private _addLight(entity: Floor3dCardConfig, i: number, box: THREE.Box3, level: number, name: string): void {
+  private _addLight(entity: EntityConfig, i: number, box: THREE.Box3, level: number, name: string): void {
     const x = (box.max.x - box.min.x) / 2 + box.min.x;
     const z = (box.max.z - box.min.z) / 2 + box.min.z;
     let y = (box.max.y - box.min.y) / 2 + box.min.y;
@@ -205,7 +205,7 @@ export class Lamps {
     light.name = name;
   }
 
-  public update(entity: Floor3dCardConfig, i: number): void {
+  public update(entity: EntityConfig, i: number): void {
     // Illuminate the light object when, for the bound device, one of its attribute gets modified in HA. See set hass property
 
     this.host.objectIds[i].objects.forEach((element) => {

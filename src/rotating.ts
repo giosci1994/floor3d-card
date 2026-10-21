@@ -4,7 +4,7 @@
 import * as THREE from 'three';
 import { EntityHandler, EntityHost, pivotObject } from './entity-types';
 import { rotationAngle, sensorNumber, turnToward } from './rotate';
-import type { Floor3dCardConfig } from './types';
+import type { EntityConfig } from './types';
 
 const ROTATE_RAMP = 1.5; // seconds for a fan to reach full speed or to stop, when rotate.ramp is missing
 
@@ -84,7 +84,7 @@ export class Rotating {
   }
 
   // rotate: the speed of each rotating entity, and the objects turned around the middle of the hinge.
-  private _setup(entity: Floor3dCardConfig, i: number): void {
+  private _setup(entity: EntityConfig, i: number): void {
     // Empty (only a sensor sets the speed): 1, as NaN made the object vanish.
     this._round_per_seconds.push(this.host.num(entity.rotate.round_per_second, 1));
     this._axis_to_rotate.push(entity.rotate.axis);
@@ -118,13 +118,13 @@ export class Rotating {
   }
 
   // The speed or the angle of a rotating object.
-  private _refresh(entity: Floor3dCardConfig, i: number, state: string): boolean {
+  private _refresh(entity: EntityConfig, i: number, state: string): boolean {
     this.host.states[i] = state;
     this._calc(entity, i);
     return false;
   }
 
-  private _calc(entity: Floor3dCardConfig, i: number) {
+  private _calc(entity: EntityConfig, i: number) {
     let j = this._rotation_index.indexOf(i);
 
     // angle_entity: turns to the angle of the sensor, and stays there while it has none.

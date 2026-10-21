@@ -1,4 +1,4 @@
-import { Floor3dCardConfig } from './types';
+import type { EntityObjects } from './types';
 
 /**
  * Performs a deep merge of objects and returns new object. Does not modify
@@ -51,7 +51,7 @@ export const getLovelace = () => {
 // the entity. An entity without object_id, or whose <group> doesn't exist, gets no objects and a
 // warning. Until 2.12.1 it got no entry at all, and the entities after it took the objects of the
 // next one; a <group> without object_groups stopped the card.
-export function createObjectGroupConfigArray(config): Floor3dCardConfig[] {
+export function createObjectGroupConfigArray(config): EntityObjects[] {
   const groups = Array.isArray(config.object_groups) ? config.object_groups : [];
   return (Array.isArray(config.entities) ? config.entities : []).map((entityConfig) => {
     const id = entityConfig.object_id;
