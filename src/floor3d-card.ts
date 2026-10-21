@@ -2235,15 +2235,20 @@ export class Floor3dCard extends LitElement {
   // stairs of a basement that reach the ground floor don't make it a level above.
   private _levelsUpTo(levels: number[]): void {
     if (!this._displaylevels || !this._levels || this._levels.length < 2 || !levels.length) return;
+    const middles = this._middles();
+    const top = Math.max(...levels.map((level) => middles[level] ?? -Infinity));
+    this._applyLevels((i) => levels.includes(i) || middles[i] <= top);
+  }
+
+  // The middle of the height of each level (-Infinity for an empty one), computed once per model.
+  private _middles(): number[] {
     if (!this._levelMiddles) {
       this._levelMiddles = this._levels.map((level) => {
         const box = level ? new THREE.Box3().setFromObject(level) : null;
         return box && !box.isEmpty() ? (box.min.y + box.max.y) / 2 : -Infinity;
       });
     }
-    const middles = this._levelMiddles;
-    const top = Math.max(...levels.map((level) => middles[level] ?? -Infinity));
-    this._applyLevels((i) => levels.includes(i) || middles[i] <= top);
+    return this._levelMiddles;
   }
 
   private _updateRaycasting() {
@@ -3431,10 +3436,11 @@ export class Floor3dCard extends LitElement {
     });
   }
 
-  // What follows the levels shown: the boxes of the info type, and the ground, which hides when only
-  // levels under it are shown (a basement under ground_floor_level), so that they can be seen. A level
-  // is under the ground when the middle of its height is: in 2.11.3 its top had to be, and the stairs
-  // or the walls of a basement that reach a little above the ground kept the ground over it.
+  // What follows the levels shown: the boxes of the info type, and the ground, which opens over the
+  // levels under it when only those are shown (a basement under ground_floor_level), so that they can
+  // be seen with the ground around the house (until 2.12.1 all of it hid). A level is under the
+  // ground when the middle of its height is: in 2.11.3 its top had to be, and the stairs or the walls
+  // of a basement that reach a little above the ground kept the ground over it.
   private _showWithLevels(): void {
     (this._sprites || []).forEach((name, i) => {
       const sprite =
@@ -3445,9 +3451,57 @@ export class Floor3dCard extends LitElement {
     });
     if (this._ground) {
       const middles: number[] = this._ground.userData.levelMiddles || [];
-      this._ground.visible =
-        !middles.length || middles.some((middle, level) => middle > this._ground.position.y && this._levelShown(level));
+      const y = this._ground.position.y;
+      const above = !middles.length || middles.some((middle, level) => middle > y && this._levelShown(level));
+      const under = above
+        ? []
+        : this._levels.filter((level, i) => level && middles[i] > -Infinity && middles[i] <= y && this._levelShown(i));
+      this._ground.visible = above || under.length > 0;
+      this._setGroundHole(under);
     }
+  }
+
+  // A rectangular hole in the ground over levels (the basement, its walls included): four vertical
+  // planes, and what is inside all four of them (clipIntersection) isn't drawn. Its sides are earth,
+  // down to the bottom of the levels: the walls of a basement end under the ground (by the thickness
+  // of the floor above them, in Sweet Home 3D), and the background showed between them and the
+  // ground. No levels: no hole.
+  private _setGroundHole(levels: THREE.Object3D[]): void {
+    const material = this._ground.material as THREE.MeshLambertMaterial;
+    const box = new THREE.Box3();
+    levels.forEach((level) => box.union(new THREE.Box3().setFromObject(level)));
+    const planes = box.isEmpty()
+      ? null
+      : [
+          new THREE.Plane(new THREE.Vector3(-1, 0, 0), box.min.x),
+          new THREE.Plane(new THREE.Vector3(1, 0, 0), -box.max.x),
+          new THREE.Plane(new THREE.Vector3(0, 0, -1), box.min.z),
+          new THREE.Plane(new THREE.Vector3(0, 0, 1), -box.max.z),
+        ];
+    // The number of planes is part of the shader: it is built again only when it changes.
+    if (!!planes !== !!material.clippingPlanes) material.needsUpdate = true;
+    material.clippingPlanes = planes;
+    material.clipIntersection = true;
+    this._ground.userData.hole = planes ? [box.min.x, box.max.x, box.min.z, box.max.z] : null;
+    let earth = this._ground.getObjectByName('f3d_ground_earth') as THREE.Mesh | undefined;
+    if (!planes) {
+      if (earth) earth.visible = false;
+      return;
+    }
+    if (!earth) {
+      // The inside of a box, without the top that faces the camera (BackSide).
+      earth = new THREE.Mesh(
+        new THREE.BoxGeometry(1, 1, 1),
+        new THREE.MeshLambertMaterial({ color: 0x3b2a1d, side: THREE.BackSide }),
+      );
+      earth.name = 'f3d_ground_earth';
+      this._ground.add(earth);
+    }
+    const ground = this._ground.position;
+    const depth = Math.max(ground.y - box.min.y + 1, 1);
+    earth.scale.set(box.max.x - box.min.x, depth, box.max.z - box.min.z);
+    earth.position.set((box.min.x + box.max.x) / 2 - ground.x, -depth / 2, (box.min.z + box.max.z) / 2 - ground.z);
+    earth.visible = true;
   }
 
   private _updateshowerstate(_item: Floor3dCardConfig, index: number) {
@@ -4623,10 +4677,7 @@ export class Floor3dCard extends LitElement {
       bottom - 0.5 + this._num(this._config.ground_floor_level, 0),
       this._modelCenter.z,
     );
-    ground.userData.levelMiddles = this._levels.map((level) => {
-      const box = level ? new THREE.Box3().setFromObject(level) : null;
-      return box && !box.isEmpty() ? (box.min.y + box.max.y) / 2 : -Infinity;
-    });
+    ground.userData.levelMiddles = this._middles();
     ground.receiveShadow = this._config.shadow == 'yes';
     ground.castShadow = false;
     ground.renderOrder = -1; // before the glass of the windows, which shows it through

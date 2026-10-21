@@ -1953,35 +1953,42 @@ test(
 // --- 2.11.3: issue #25 ---------------------------------------------------------------------------
 
 test(
-  'ground_floor_level: the ground at the floor of the ground floor, hidden when only the levels under it are shown',
+  'ground_floor_level: the ground at the floor of the ground floor, open over the levels under it when only those are shown',
   { timeout: TIMEOUT },
   async () => {
+    // Where it is, whether it shows, and whether it has a hole (over the basement, since 2.12.2).
     const ground = (page) =>
       page.evaluate(() => {
         const g = window.__card._scene.getObjectByName('f3d_ground');
-        return { y: Math.round(g.position.y * 10) / 10, visible: g.visible };
+        return { y: Math.round(g.position.y * 10) / 10, visible: g.visible, hole: !!g.material.clippingPlanes };
       });
     // basement.obj: the basement on level 0, 270 deep, its stairs up through the ground floor (290);
     // the house on level 1.
     let { page, errors } = await open(house({ objfile: 'basement.obj', ground: 'grass', ground_floor_level: '270' }));
-    assert.deepEqual(await ground(page), { y: 269.5, visible: true }, 'the value of the option, not its name');
+    assert.deepEqual(
+      await ground(page),
+      { y: 269.5, visible: true, hole: false },
+      'the value of the option, not its name',
+    );
     await page.evaluate(() => window.__card._setVisibleLevel(0));
-    assert.equal(
-      (await ground(page)).visible,
-      false,
+    assert.deepEqual(
+      await ground(page),
+      { y: 269.5, visible: true, hole: true },
       'only the basement: no ground over it, though its stairs reach above it',
     );
     await page.evaluate(() => window.__card._setVisibleLevel(1));
-    assert.equal((await ground(page)).visible, true);
+    assert.equal((await ground(page)).hole, false);
     await page.evaluate(() => window.__card._toggleVisibleLevel(1));
-    assert.equal((await ground(page)).visible, false, 'the buttons of the levels too');
+    assert.deepEqual(await ground(page), { y: 269.5, visible: false, hole: false }, 'no level shown: no ground');
+    await page.evaluate(() => window.__card._toggleVisibleLevel(0));
+    assert.deepEqual(await ground(page), { y: 269.5, visible: true, hole: true }, 'the buttons of the levels too');
     await page.evaluate(() => window.__card._setVisibleLevel(-1));
-    assert.equal((await ground(page)).visible, true);
+    assert.deepEqual(await ground(page), { y: 269.5, visible: true, hole: false });
     assert.deepEqual(errors, []);
     await page.close();
 
     ({ page, errors } = await open(house({ ground: 'grass' })));
-    assert.deepEqual(await ground(page), { y: -0.5, visible: true }, 'without it: just under the model');
+    assert.deepEqual(await ground(page), { y: -0.5, visible: true, hole: false }, 'without it: just under the model');
     assert.deepEqual(errors, []);
     await page.close();
   },
@@ -3024,6 +3031,56 @@ test(
     await page.evaluate(() => window.__card._toggleVisibleLevel(0));
     await tap('mdi:door-open');
     assert.deepEqual(await levels(), [false, false], 'the choice made by hand stays');
+    assert.deepEqual(errors, []);
+    await page.close();
+  },
+);
+
+test(
+  'a hole in the ground over the basement when only the levels under it are shown, the ground around the house stays; it closes with the ground floor',
+  { timeout: TIMEOUT },
+  async () => {
+    // A magenta ground, easy to tell from the model. basement.obj: the basement on level 0, under the
+    // walls of the house (300-1100 x 400-1000), the house on level 1.
+    const { page, errors } = await open(
+      house({ objfile: 'basement.obj', ground: '#ff00ff', ground_floor_level: '270' }),
+    );
+    const magenta = ([r, g, b]) => r > 2 * g + 30 && b > 2 * g + 30;
+    // The colour at a point of the model (x, y, z in cm), and where it is on the canvas.
+    const colourAt = async (p) => {
+      const [x, y] = await projected(page, p);
+      const box = await page.evaluate(() => window.__card._renderer.domElement.getBoundingClientRect().toJSON());
+      const fx = (x - box.left) / box.width;
+      const fy = (y - box.top) / box.height;
+      assert.ok(fx > 0 && fx < 1 && fy > 0 && fy < 1, 'on the canvas: ' + p.join(', '));
+      return pixelAt(page, fx, fy);
+    };
+    const inside = [700, 270, 700]; // over the middle of the basement
+    const outside = [150, 270, 700]; // the garden, west of the house
+    await page.evaluate(() => window.__card._setVisibleLevel(0));
+    assert.ok(!magenta(await colourAt(inside)), 'the basement through the hole: ' + (await colourAt(inside)));
+    assert.ok(magenta(await colourAt(outside)), 'the ground around the house: ' + (await colourAt(outside)));
+    // The rectangle: as wide and deep as the walls of the basement (800 x 600).
+    const [x0, x1, z0, z1] = await page.evaluate(() =>
+      window.__card._scene.getObjectByName('f3d_ground').userData.hole.map((v) => Math.round(v)),
+    );
+    assert.deepEqual([x1 - x0, z1 - z0], [800, 600]);
+    // Its sides are earth, down to the floor of the basement: not the background between the top
+    // of the walls of the basement and the ground.
+    const earth = await page.evaluate(() => {
+      const e = window.__card._scene.getObjectByName('f3d_ground_earth');
+      return { visible: e.visible, size: e.scale.toArray().map(Math.round) };
+    });
+    assert.deepEqual(earth, { visible: true, size: [800, 271, 600] });
+    // The ground floor again (its own lawn covers the ground of the card there): no hole.
+    await page.evaluate(() => window.__card._setVisibleLevel(-1));
+    assert.deepEqual(
+      await page.evaluate(() => {
+        const g = window.__card._scene.getObjectByName('f3d_ground');
+        return [g.visible, g.userData.hole, g.material.clippingPlanes, g.getObjectByName('f3d_ground_earth').visible];
+      }),
+      [true, null, null, false],
+    );
     assert.deepEqual(errors, []);
     await page.close();
   },
