@@ -214,14 +214,6 @@ console.info(
   'color: white; font-weight: bold; background: dimgray',
 );
 
-// This puts your card into the UI card picker dialog
-(window as any).customCards = (window as any).customCards || [];
-(window as any).customCards.push({
-  type: 'floor3d-card',
-  name: 'Floor3d Card',
-  preview: true,
-  description: 'A custom card to visualize and activate entities in a live 3D model',
-});
 class ModelSource {
   public static OBJ = 0;
   public static GLB = 1;
@@ -7130,9 +7122,18 @@ export class Floor3dCard extends LitElement {
 }
 
 // The original card (adizanni/floor3d-card) defines the same elements: when both are loaded, the first
-// one stays and the other one leaves it alone instead of failing.
+// one stays and the other one leaves it alone instead of failing. The card picker of Home Assistant
+// lists this card under its name in HACS, and only when it is the one defined: until 2.12.1 it also
+// listed it when the original was, with the same name as the original.
 if (!customElements.get('floor3d-card')) {
   customElements.define('floor3d-card', Floor3dCard);
+  (window as any).customCards = (window as any).customCards || [];
+  (window as any).customCards.push({
+    type: 'floor3d-card',
+    name: 'floor3d-card mod',
+    preview: true,
+    description: 'A custom card to visualize and activate entities in a live 3D model',
+  });
 } else {
   console.warn(
     'floor3d-card mod: custom:floor3d-card is already defined by another resource, probably the original card',

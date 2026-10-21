@@ -2267,7 +2267,7 @@ test(
 );
 
 test(
-  'card editor: while an object group is open nothing goes to Home Assistant (picked, chosen in the menu, a tap on the editor); it goes when it is closed, or with a tap elsewhere',
+  'card editor: while an object group is open nothing goes to Home Assistant (picked, chosen in the menu, a tap on the editor); it goes when it is closed, or with a tap on a button elsewhere',
   { timeout: TIMEOUT },
   async () => {
     const config = house({ object_groups: [{ object_group: 'furniture', objects: [] }] });
@@ -2330,14 +2330,16 @@ test(
     let sent = await page.evaluate(() => window.__sent);
     assert.equal(sent.length, 1);
     assert.deepEqual(sent[0].object_groups, [{ object_group: 'furniture', objects: ['table', 'bed', 'sofa'] }]);
-    // Open again: a tap outside the editor and the preview (the Save button of the dialog) sends it.
+    // Open again: a tap on a button outside the editor and the preview (the Save button of the
+    // dialog) sends it.
     await page.evaluate(async () => {
       const ed = window.__ed;
       ed._edit('object_groups', 0);
       await ed.updateComplete;
       const group = ed._config.object_groups[0];
       ed._setItem('object_groups', 0, { ...group, objects: group.objects.slice(0, 1) });
-      document.body.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, composed: true }));
+      const save = document.body.appendChild(document.createElement('ha-button'));
+      save.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, composed: true }));
     });
     sent = await page.evaluate(() => window.__sent);
     assert.equal(sent.length, 2);
@@ -2864,5 +2866,105 @@ test(
     assert.deepEqual(result.expanded, ['model'], 'the editor opens on the 3D model');
     assert.deepEqual(errors, [], 'no error, no file asked for');
     await page.close();
+  },
+);
+
+test(
+  'card editor: with an object group open, a tap on the background of the dialog, its scroll bar or a swipe sends nothing; a button outside the editor sends it, tapped or focused',
+  { timeout: TIMEOUT },
+  async () => {
+    const { page, errors } = await open(house({ object_groups: [{ object_group: 'furniture', objects: [] }] }));
+    await page.evaluate(async () => {
+      const card = window.__card;
+      card.preview = true;
+      const ed = await card.constructor.getConfigElement();
+      ed.hass = window.__hass();
+      ed.setConfig(JSON.parse(JSON.stringify(card._config)));
+      window.__sent = [];
+      ed.addEventListener('config-changed', (ev) => window.__sent.push(ev.detail.config));
+      // The dialog of Home Assistant around the editor, as far as the taps are concerned.
+      const dialog = document.body.appendChild(document.createElement('div'));
+      dialog.innerHTML =
+        '<div class="content" style="overflow: auto; height: 60px"><div style="height: 300px"></div></div>' +
+        '<ha-button>Save</ha-button><ha-icon-button></ha-icon-button><button>Show code editor</button>';
+      dialog.querySelector('.content').append(ed);
+      window.__dialog = dialog;
+      await new Promise((r) => setTimeout(r, 300));
+      ed._mode = 'ready';
+      ed._edit('object_groups', 0);
+      await ed.updateComplete;
+      window.__ed = ed;
+    });
+    // A change in the group, then a tap or the focus on target.
+    const change = (objects, target, event) =>
+      page.evaluate(
+        ({ objects, target, event }) => {
+          const ed = window.__ed;
+          ed._setItem('object_groups', 0, { ...ed._config.object_groups[0], objects });
+          const el = target ? window.__dialog.querySelector(target) : window.__dialog;
+          el.dispatchEvent(
+            event === 'focusin'
+              ? new FocusEvent('focusin', { bubbles: true, composed: true })
+              : new PointerEvent('pointerdown', { bubbles: true, composed: true, pointerType: event }),
+          );
+        },
+        { objects, target, event },
+      );
+    const sent = () =>
+      page.evaluate(() => window.__sent.map((c) => c.object_groups[0].objects.map((o) => o.object_id || o)));
+    await change([{ object_id: 'table' }], null, 'mouse'); // the background of the dialog
+    await change([{ object_id: 'table' }, { object_id: 'bed' }], '.content', 'mouse'); // its scroll bar
+    await change([{ object_id: 'bed' }], '.content', 'touch'); // a swipe on a phone
+    await page.waitForTimeout(1300); // longer than the delay of the editor
+    assert.deepEqual(await sent(), [], 'nothing sent while the group is open');
+    await change([{ object_id: 'sofa' }], 'ha-button', 'mouse'); // Save
+    await change([{ object_id: 'table' }], 'ha-icon-button', 'touch'); // the X, on a phone
+    await change([{ object_id: 'wardrobe' }], 'button', 'focusin'); // a button from the keyboard
+    assert.deepEqual(await sent(), [['sofa'], ['table'], ['wardrobe']]);
+    // Without a group open, the focus alone sends nothing (leaving a field and taps do, as before).
+    await page.evaluate(async () => {
+      window.__ed._back();
+      await window.__ed.updateComplete;
+      window.__sent = [];
+      window.__ed._update({ ...window.__ed._config, name: 'Home' });
+      window.__dialog
+        .querySelector('button')
+        .dispatchEvent(new FocusEvent('focusin', { bubbles: true, composed: true }));
+    });
+    assert.deepEqual(await page.evaluate(() => window.__sent.length), 0);
+    assert.deepEqual(errors, []);
+    await page.close();
+  },
+);
+
+test(
+  'the card picker lists the card as floor3d-card mod, and not when another card defined floor3d-card first',
+  { timeout: TIMEOUT },
+  async () => {
+    const { page, errors } = await open(house());
+    const entries = await page.evaluate(() => (window.customCards || []).filter((c) => c.type === 'floor3d-card'));
+    assert.deepEqual(
+      entries.map((c) => [c.name, c.preview]),
+      [['floor3d-card mod', true]],
+    );
+    assert.deepEqual(errors, []);
+    await page.close();
+    // The original card, loaded first by another resource, with its own entry.
+    const other = await browser.newPage();
+    await other.addInitScript(() => {
+      customElements.define(
+        'floor3d-card',
+        class extends HTMLElement {
+          setConfig() {}
+        },
+      );
+      window.customCards = [{ type: 'floor3d-card', name: 'Floor3d Card' }];
+    });
+    server.put('picker.json', house());
+    server.put('picker-states.json', states());
+    await other.goto(`${server.url}/test/index.html?cfg=picker.json&st=picker-states.json`);
+    await until(other, () => window.__card, null, 'the test page creates the card');
+    assert.deepEqual(await other.evaluate(() => window.customCards.map((c) => c.name)), ['Floor3d Card']);
+    await other.close();
   },
 );
