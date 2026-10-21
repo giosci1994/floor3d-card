@@ -21,10 +21,9 @@ import { Lamps, rgbToHex } from './lamps';
 import { Screens } from './screens';
 import { Openings, isOpen } from './openings';
 import { Rotating } from './rotating';
+import { Texts } from './texts';
 import { CLIMATE_COLORS, activeAlarms, climateAction } from './maps';
 import { localize, pickLanguage } from './localize/localize';
-import { fitText, textLayout } from './textmap';
-import { point } from './cameras';
 import { STATUS_COLORS, StatusKind } from './boxes';
 //import three.js libraries for 3D rendering
 import * as TWEEN from '@tweenjs/tween.js';
@@ -138,25 +137,6 @@ class ModelSource {
   public static GLB = 1;
 }
 
-// The pictures of several texts in one, one under the other, each in the middle of the line.
-function stackCanvases(canvases: HTMLCanvasElement[], background?: string): HTMLCanvasElement {
-  const canvas = document.createElement('canvas');
-  canvas.width = Math.max(1, ...canvases.map((c) => c.width));
-  canvas.height = Math.max(
-    1,
-    canvases.reduce((h, c) => h + c.height, 0),
-  );
-  const ctx = canvas.getContext('2d');
-  ctx.fillStyle = background || 'transparent';
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-  let y = 0;
-  canvases.forEach((c) => {
-    if (c.width > 0 && c.height > 0) ctx.drawImage(c, (canvas.width - c.width) / 2, y);
-    y += c.height;
-  });
-  return canvas;
-}
-
 export class Floor3dCard extends LitElement {
   private _scene?: THREE.Scene;
   private _camera?: THREE.PerspectiveCamera;
@@ -179,12 +159,6 @@ export class Floor3dCard extends LitElement {
   private _initialobjectmaterials: { [key: string]: THREE.Material };
   private _selectedobjects: string[];
   private _selectionModeEnabled: boolean;
-  private _rooms?: string[];
-  private _sprites?: string[];
-  private _canvas?: HTMLCanvasElement[];
-  private _unit_of_measurement?: string[];
-  private _text?: string[];
-  private _spritetext?: string[];
   // Boxes in the corners (corner-boxes.ts), and the kind of the status box whose objects are outlined
   // in the model, with the timer that ends it.
   private _boxes = new CornerBoxes(this._boxesHost());
@@ -206,6 +180,7 @@ export class Floor3dCard extends LitElement {
   private _screens = new Screens(this._entityHost(), this._lamps);
   private _openings = new Openings(this._entityHost());
   private _rotating = new Rotating(this._entityHost());
+  private _texts = new Texts(this._entityHost());
   // The cameras on screen (camera-overlay.ts): their icons over the model, the picture that pops up.
   private _cameras = new CameraOverlay(this._camerasHost(), this._boxes);
   private _lastFrameTime?: number | null; // timestamp of the previous animation frame
@@ -270,7 +245,6 @@ export class Floor3dCard extends LitElement {
   private _highlightHelpers: THREE.Object3D[] = [];
   private _editorListener = (ev: Event): void => this._onEditor((ev as CustomEvent).detail);
   private _intersectionObserver?: IntersectionObserver;
-  private _info?: string[];
   private _zoommenu?: HTMLElement;
   private _renderPending?: boolean;
   private _missingLogged?: { [entity: string]: boolean };
@@ -1172,105 +1146,28 @@ export class Floor3dCard extends LitElement {
     }
   }
 
-  // The text of an info box: the state (with entity_template), or info.text, a template [[[ ]]] as
-  // entity_template or a text where $entity is the state.
-  private _infoText(entity: Floor3dCardConfig): string {
-    const own = entity.info && entity.info.text ? String(entity.info.text).trim() : '';
-    if (!own) return this._statewithtemplate(entity);
-    if (own.startsWith('[[[') && own.endsWith(']]]'))
-      return this._statewithtemplate({ ...entity, entity_template: own });
-    const stateObj = this._hass.states[entity.entity];
-    return own.replace(/\$entity/g, stateObj ? stateObj.state : '');
-  }
-
   public set hass(hass: HomeAssistant) {
     try {
       //called by Home Assistant Lovelace when a change of state is detected in entities
       this._hass = hass;
       if (this._config.entities) {
         if (!this._states) {
-          //prepares to save the state
+          // The first states, or the states after a reload: the modules of the entity types read
+          // theirs too.
           this._states = [];
-          this._unit_of_measurement = [];
-          this._rooms = [];
-          this._sprites = [];
-          this._canvas = [];
-          this._text = [];
-          this._spritetext = [];
-          this._info = [];
           this._showers.reset();
           this._screens.reset();
           this._lamps.prepare();
           this._openings.prepare();
+          this._texts.prepare();
 
           this._config.entities.forEach((entity) => {
             if (hass.states[entity.entity]) {
               this._states.push(this._statewithtemplate(entity));
-              this._canvas.push(null);
-              if (hass.states[entity.entity].attributes['unit_of_measurement']) {
-                this._unit_of_measurement.push(hass.states[entity.entity].attributes['unit_of_measurement']);
-              } else {
-                this._unit_of_measurement.push('');
-              }
-              if (entity.type3d == 'text') {
-                if (entity.text.attribute) {
-                  if (hass.states[entity.entity].attributes[entity.text.attribute]) {
-                    this._text.push(hass.states[entity.entity].attributes[entity.text.attribute]);
-                  } else {
-                    this._text.push(this._statewithtemplate(entity));
-                  }
-                } else {
-                  this._text.push(this._statewithtemplate(entity));
-                }
-              } else {
-                this._text.push('');
-              }
-              if (entity.type3d == 'room') {
-                this._rooms.push(entity.object_id + '_room');
-                this._sprites.push(entity.object_id + '_sprites');
-                if (entity.room.attribute) {
-                  if (hass.states[entity.entity].attributes[entity.room.attribute]) {
-                    this._spritetext.push(hass.states[entity.entity].attributes[entity.room.attribute]);
-                  } else {
-                    this._spritetext.push(this._statewithtemplate(entity));
-                  }
-                } else {
-                  if (entity.room.label_text) {
-                    if (entity.room.label_text == 'template') {
-                      this._spritetext.push(this._statewithtemplate(entity));
-                      this._unit_of_measurement.pop();
-                      this._unit_of_measurement.push('');
-                    } else {
-                      this._spritetext.push(this._hass.states[entity.entity].state);
-                    }
-                  } else {
-                    this._spritetext.push('');
-                  }
-                }
-              } else {
-                this._spritetext.push('');
-                this._rooms.push('');
-                this._sprites.push('');
-              }
-              if (entity.type3d == 'info') {
-                this._info.push(this._infoText(entity));
-                // A text of its own (info.text) has its unit in it, if it wants one.
-                if (entity.info && entity.info.text)
-                  this._unit_of_measurement[this._unit_of_measurement.length - 1] = '';
-              } else {
-                this._info.push('');
-              }
             } else {
               console.warn('floor3d-card: entity <' + entity.entity + '> not found');
-              // Every array is read by the position of the entity in the config: keep them aligned.
+              // The states are read by the position of the entity in the config: keep them aligned.
               this._states.push('');
-              this._canvas.push(null);
-              this._unit_of_measurement.push('');
-              this._text.push('');
-              this._spritetext.push('');
-              this._rooms.push('');
-              this._sprites.push('');
-              this._info.push('');
             }
           });
         }
@@ -1623,7 +1520,7 @@ export class Floor3dCard extends LitElement {
       this._addInputListeners();
 
       this._setCamera();
-      this._placeInfoSprites();
+      this._texts.placeInfoSprites();
 
       this._controls = new OrbitControls(this._camera, this._renderer.domElement);
 
@@ -2301,27 +2198,10 @@ export class Floor3dCard extends LitElement {
     },
     door: this._openings.door,
     cover: this._openings.cover,
-    text: {
-      setup: (_, i) => this._setupText(i),
-      show: (entity, i) => {
-        this._canvas[i] = this._createTextCanvas(entity.text, this._text[i], this._unit_of_measurement[i]);
-        this._updatetext(entity, this._text[i], this._canvas[i], this._unit_of_measurement[i]);
-      },
-      refresh: (entity, i) => this._refreshText(entity, i),
-    },
+    text: this._texts.text,
     rotate: this._rotating.handler,
-    room: {
-      show: (entity, i) => {
-        this._createroom(entity, i);
-        this._updateroom(entity, this._spritetext[i], this._unit_of_measurement[i], i);
-      },
-      refresh: this._onNewState((entity, i) => this._refreshRoom(entity, i)),
-    },
-    info: {
-      setup: (entity, i) => this._setupInfo(entity, i),
-      show: (entity, i) => this._updateinfo(entity, this._info[i], this._unit_of_measurement[i], i),
-      refresh: (entity, i, state) => this._refreshInfo(entity, i, state),
-    },
+    room: this._texts.room,
+    info: this._texts.info,
     shower: this._showers.handler,
     tracker: this._trackers.handler,
     image: this._screens.handler,
@@ -2367,6 +2247,8 @@ export class Floor3dCard extends LitElement {
       manageLightShadows: (light) => card._manage_light_shadows(light),
       invalidateShadows: () => card._invalidateShadows(),
       objectNamesFor: (ids) => card._objectNamesFor(ids),
+      stateWithTemplate: (entity) => card._statewithtemplate(entity),
+      levelShown: (level) => card._levelShown(level),
     };
   }
 
@@ -2419,122 +2301,6 @@ export class Floor3dCard extends LitElement {
       }
       j = j + 1;
     });
-  }
-
-  // text: a copy of each object, to write on.
-  private _setupText(i: number): void {
-    // Clone object to print the text
-    this._object_ids[i].objects.forEach((element) => {
-      let _foundobject: any = this._scene.getObjectByName(element.object_id);
-
-      let box: THREE.Box3 = new THREE.Box3();
-      box.setFromObject(_foundobject);
-
-      let _newobject = _foundobject.clone();
-
-      //(_newobject as Mesh).scale.set(1.005, 1.005, 1.005);
-      _newobject.name = 'f3dobj_' + _foundobject.name;
-      this._levels[_foundobject.userData.level].add(_newobject);
-    });
-  }
-
-  // info: the sprite with the text of the box, over its object or at its own position.
-  private _setupInfo(entity: Floor3dCardConfig, i: number): void {
-    const sprite = new THREE.Sprite();
-    sprite.name = entity.object_id + '_info';
-    this._sprites[i] = sprite.name;
-    // The font and the colours are in the info block, as in _updateinfo.
-    const info = entity.info || {};
-    this._canvas[i] = this._createTextCanvas(info, this._info[i], this._unit_of_measurement[i]);
-    const size = info.size ? info.size : 100;
-    const aspect = this._canvas[i].width / this._canvas[i].height;
-    sprite.scale.set(size * aspect, size, 1);
-    // The box hides with the level of its object, also when it has a position of its own.
-    const object = entity.object_id ? this._scene.getObjectByName(entity.object_id) : undefined;
-    if (object && object.userData.level !== undefined) sprite.userData.level = object.userData.level;
-    const position = point(info.position);
-    if (position) {
-      // A point of the scene, as the camera_position.
-      sprite.position.set(...position);
-    } else if (object) {
-      // Over its object once the model is centred (_placeInfoSprites): the model isn't yet.
-      sprite.userData.above = object.name;
-    }
-    this._scene.add(sprite);
-  }
-
-  // A new text, from the state (with entity_template) or from an attribute.
-  private _refreshText(entity: Floor3dCardConfig, i: number): boolean {
-    let toupdate = false;
-    if (entity.text.attribute) {
-      if (this._hass.states[entity.entity].attributes[entity.text.attribute]) {
-        if (this._text[i] != this._hass.states[entity.entity].attributes[entity.text.attribute]) {
-          this._text[i] = this._hass.states[entity.entity].attributes[entity.text.attribute];
-          toupdate = true;
-        }
-      } else if (this._text[i] !== '') {
-        // Only once: Home Assistant calls this at every change of any entity.
-        this._text[i] = '';
-        toupdate = true;
-      }
-    } else {
-      if (this._text[i] != this._statewithtemplate(entity)) {
-        this._text[i] = this._statewithtemplate(entity);
-        toupdate = true;
-      }
-    }
-    if (!this._canvas[i] || !toupdate) return false;
-    this._updatetext(entity, this._text[i], this._canvas[i], this._unit_of_measurement[i]);
-    return true;
-  }
-
-  // A new text or unit of an info box.
-  private _refreshInfo(entity: Floor3dCardConfig, i: number, state: string): boolean {
-    // The box follows the state (before 2.11.4 it kept the one of the opening of the card).
-    this._states[i] = state;
-    const text = this._infoText(entity);
-    const own = entity.info && entity.info.text;
-    const uom = own ? '' : String(this._hass.states[entity.entity].attributes['unit_of_measurement'] || '');
-    if (text === this._info[i] && uom === this._unit_of_measurement[i]) return false;
-    this._info[i] = text;
-    this._unit_of_measurement[i] = uom;
-    this._updateinfo(entity, text, uom, i);
-    return true;
-  }
-
-  // A new label of a room (type3d: room), from the state or an attribute.
-  private _refreshRoom(entity: Floor3dCardConfig, i: number): boolean {
-    let toupdate = false;
-    if (entity.room.attribute) {
-      if (this._hass.states[entity.entity].attributes[entity.room.attribute]) {
-        if (this._spritetext[i] != this._hass.states[entity.entity].attributes[entity.room.attribute]) {
-          this._spritetext[i] = this._hass.states[entity.entity].attributes[entity.room.attribute];
-          toupdate = true;
-        }
-      } else {
-        this._spritetext[i] = '';
-        toupdate = true;
-      }
-    } else {
-      if (entity.room.label_text) {
-        if (entity.room.label_text == 'template') {
-          if (this._spritetext[i] != this._statewithtemplate(entity)) {
-            this._spritetext[i] = this._statewithtemplate(entity);
-            toupdate = true;
-          }
-        } else {
-          if (this._spritetext[i] != this._states[i]) {
-            this._spritetext[i] = this._states[i];
-            toupdate = true;
-          }
-        }
-      }
-    }
-
-    if (!this._canvas[i] || !toupdate) return false;
-    this._updateroom(entity, this._spritetext[i], this._unit_of_measurement[i], i);
-    this._updateroomcolor(entity, i);
-    return true;
   }
 
   // manage all entity types
@@ -2614,155 +2380,9 @@ export class Floor3dCard extends LitElement {
     }
   }
 
-  private _createroom(entity: Floor3dCardConfig, i: number): void {
-    // createroom
-
-    const elevation: number = entity.room.elevation ? entity.room.elevation : 250;
-    const transparency: number = entity.room.transparency ? entity.room.transparency : 50;
-    const color: string = entity.room.color ? entity.room.color : '#ffffff';
-
-    const _foundroom: THREE.Object3D = this._scene.getObjectByName(entity.object_id);
-
-    if (_foundroom) {
-      if (_foundroom.name.includes('room') && _foundroom instanceof THREE.Mesh) {
-        const _roomMesh: THREE.Mesh = _foundroom as THREE.Mesh;
-
-        if (_roomMesh.geometry instanceof THREE.BufferGeometry) {
-          let oldRoomBox = new THREE.Box3().setFromObject(_roomMesh);
-          this._centerobjecttopivot(_roomMesh, oldRoomBox.min);
-          _roomMesh.geometry.applyMatrix4(
-            new THREE.Matrix4().makeTranslation(-oldRoomBox.min.x, -oldRoomBox.min.y, -oldRoomBox.min.z),
-          );
-
-          let newRoomBox: THREE.Box3 = new THREE.Box3().setFromObject(_roomMesh);
-
-          const expansion: THREE.Vector3 = new THREE.Vector3(0, elevation / 2, 0);
-          newRoomBox.expandByVector(expansion);
-
-          const dimensions = new THREE.Vector3().subVectors(newRoomBox.max, newRoomBox.min);
-          const newRoomGeometry: THREE.BoxGeometry = new THREE.BoxGeometry(
-            dimensions.x - 4,
-            dimensions.y - 4,
-            dimensions.z - 4,
-          );
-
-          const meshPosition = oldRoomBox.min.clone();
-          // move new mesh center so it's aligned with the original object
-          meshPosition.y += 2;
-          meshPosition.x += 2;
-          meshPosition.z += 2;
-
-          const newRoomMaterial: THREE.MeshPhongMaterial = new THREE.MeshPhongMaterial({
-            color: 0xff0000,
-            opacity: 0,
-            transparent: true,
-          });
-
-          newRoomMaterial.depthWrite = false;
-          newRoomMaterial.color.set(new THREE.Color(color));
-          newRoomMaterial.emissive.set(new THREE.Color(color));
-          newRoomMaterial.opacity = (100 - transparency) / 100;
-
-          newRoomMaterial.needsUpdate = true;
-
-          const newRoomMesh: THREE.Mesh = new THREE.Mesh(newRoomGeometry, newRoomMaterial);
-
-          newRoomMesh.name = this._rooms[i];
-
-          const newSprite: THREE.Sprite = new THREE.Sprite();
-
-          newSprite.name = this._sprites[i];
-
-          this._canvas[i] = this._createTextCanvas(entity.room, this._spritetext[i], this._unit_of_measurement[i]);
-
-          const sprite_width: number = entity.room.width ? entity.room.width : 150;
-          const sprite_height: number = entity.room.height ? entity.room.height : 75;
-          newSprite.scale.set(sprite_width, sprite_height, 5);
-
-          const spritePosition = new THREE.Vector3(
-            meshPosition.x + dimensions.x / 2,
-            newRoomBox.max.y + elevation / 2 + sprite_height / 2,
-            meshPosition.z + dimensions.z / 2,
-          );
-          newSprite.visible = false;
-
-          if (entity.room.label) {
-            if (entity.room.label == 'yes') {
-              newSprite.visible = true;
-            }
-          }
-
-          this._levels[_roomMesh.userData.level].add(newSprite);
-          this._levels[_roomMesh.userData.level].add(newRoomMesh);
-
-          newRoomBox = new THREE.Box3().setFromObject(newRoomMesh);
-          this._centerobjecttopivot(newRoomMesh, newRoomBox.min);
-          newRoomMesh.geometry.applyMatrix4(
-            new THREE.Matrix4().makeTranslation(-newRoomBox.min.x, -newRoomBox.min.y, -newRoomBox.min.z),
-          );
-
-          newRoomMesh.position.set(meshPosition.x, meshPosition.y, meshPosition.z);
-          newSprite.position.set(spritePosition.x, spritePosition.y, spritePosition.z);
-
-          this._updateroomcolor(entity, i);
-        }
-      }
-    }
-
-    return;
-  }
-
-  private _updateroom(entity: Floor3dCardConfig, text: string, uom: string, i: number): void {
-    //update sprite text and other change conditions
-
-    const _roomMesh: THREE.Object3D = this._scene.getObjectByName(this._rooms[i]);
-    const _roomSprite: THREE.Object3D = this._scene.getObjectByName(this._sprites[i]);
-    const _roomCanvas: HTMLCanvasElement = this._canvas[i];
-
-    if (_roomMesh && entity) {
-      let roomsprite: THREE.Sprite = _roomSprite as THREE.Sprite;
-
-      this._updateTextCanvas(entity.room, _roomCanvas, text + uom);
-
-      this._applyTextCanvasSprite(_roomCanvas, roomsprite);
-    }
-  }
-
-  private _updateinfo(item: Floor3dCardConfig, text: string, uom: string, index: number): void {
-    const sprite: any = this._scene.getObjectByName(this._sprites[index]);
-    const canvas = this._canvas[index];
-    if (sprite && canvas) {
-      const info = item.info || {};
-      this._updateTextCanvas(info, canvas, text + uom);
-      this._applyTextCanvasSprite(canvas, sprite);
-      const size = item.info && item.info.size ? item.info.size : 100;
-      const aspect = canvas.width / canvas.height;
-      sprite.scale.set(size * aspect, size, 1);
-      sprite.visible = this._levelShown(sprite.userData.level);
-    }
-  }
-
   // A level shown now (undefined: no level, always shown).
   private _levelShown(level: number | undefined): boolean {
     return level === undefined || !this._displaylevels || this._displaylevels[level] !== false;
-  }
-
-  // The boxes of the info type without a position of their own: over the middle of their object, now
-  // that the model is centred (_setCamera), at size / 2 + 10 above its top.
-  private _placeInfoSprites(): void {
-    this._bboxmodel.updateMatrixWorld(true);
-    (this._sprites || []).forEach((name, i) => {
-      const sprite =
-        name && this._config.entities[i] && this._config.entities[i].type3d == 'info'
-          ? this._scene.getObjectByName(name)
-          : undefined;
-      const object = sprite && sprite.userData.above ? this._scene.getObjectByName(sprite.userData.above) : undefined;
-      if (!object) return;
-      const box = new THREE.Box3().setFromObject(object);
-      if (box.isEmpty()) return;
-      box.getCenter(sprite.position);
-      sprite.position.y = box.max.y + sprite.scale.y / 2 + 10;
-    });
   }
 
   // What follows the levels shown: the boxes of the info type, and the ground, which opens over the
@@ -2771,193 +2391,8 @@ export class Floor3dCard extends LitElement {
   // ground when the middle of its height is: in 2.11.3 its top had to be, and the stairs or the walls
   // of a basement that reach a little above the ground kept the ground over it.
   private _showWithLevels(): void {
-    (this._sprites || []).forEach((name, i) => {
-      const sprite =
-        name && this._config.entities[i] && this._config.entities[i].type3d == 'info'
-          ? this._scene.getObjectByName(name)
-          : undefined;
-      if (sprite) sprite.visible = this._levelShown(sprite.userData.level);
-    });
+    this._texts.showLevels();
     this._env.followLevels(this._levels, (level) => this._levelShown(level));
-  }
-
-  private _createTextCanvas(entity: Floor3dCardConfig, text: string, uom: string): HTMLCanvasElement {
-    const canvas = document.createElement('canvas');
-
-    this._updateTextCanvas(entity, canvas, text + uom);
-
-    return canvas;
-  }
-
-  private _updateTextCanvas(entity: Floor3dCardConfig, canvas: HTMLCanvasElement, text: string): void {
-    //Manages the update of the text entities according to their configuration and the new text of the entity state
-
-    const ctx = canvas.getContext('2d');
-
-    // Prepare the font to be able to measure
-    let fontSize = 56;
-    ctx.font = `${fontSize}px ${entity.font ? entity.font : 'monospace'}`;
-
-    const textMetrics = ctx.measureText(text);
-
-    let width = textMetrics.width;
-    let height = fontSize;
-
-    let perct = 1.0;
-    if (entity.span) {
-      perct = parseFloat(entity.span) / 100.0;
-    }
-    // Resize canvas to match text size
-
-    width = width / perct;
-    height = height / perct;
-    canvas.width = width;
-    canvas.height = height;
-    canvas.style.width = width + 'px';
-    canvas.style.height = height + 'px';
-
-    // Re-apply font since canvas is resized.
-    ctx.font = `${fontSize}px ${entity.font ? entity.font : 'monospace'}`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-
-    ctx.fillStyle = entity.textbgcolor ? entity.textbgcolor : 'transparent';
-    ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
-
-    ctx.fillStyle = entity.textfgcolor ? entity.textfgcolor : 'white';
-
-    ctx.fillText(text, width / 2, height / 2);
-  }
-
-  // The text on its object. mapping: flat (the default) lays it on the largest face of the object and
-  // on the one opposite, readable from both sides, in the middle of the face with its proportions,
-  // also on an object of several meshes; the rest of the object in the colour of the background (see
-  // textmap.ts). mapping: model uses the mapping (UV) of the model, as before 2.11.3: often mirrored,
-  // stretched, or nowhere.
-  private _applyTextCanvas(canvas: HTMLCanvasElement, object: THREE.Object3D, style: any = {}) {
-    if (style.mapping == 'model') {
-      if (object instanceof THREE.Mesh) {
-        const texture = new THREE.CanvasTexture(canvas);
-        if (this._config.objfile.split('?')[0].split('.').pop() == 'glb') texture.flipY = false;
-        this._setTextTexture(object, texture);
-      }
-      return;
-    }
-    const meshes: THREE.Mesh[] = [];
-    object.traverse((o) => {
-      if (o instanceof THREE.Mesh) meshes.push(o);
-    });
-    if (!meshes.length) return;
-    if (object.userData.f3dTextAspect === undefined) {
-      // Once: the mapping of the text, from the triangles of all its meshes in the scene.
-      object.updateWorldMatrix(true, true);
-      const v = new THREE.Vector3();
-      const parts = meshes.map((mesh) => {
-        const geometry = mesh.geometry.index ? mesh.geometry.toNonIndexed() : mesh.geometry.clone();
-        const position = geometry.getAttribute('position');
-        const world = new Float32Array(position.count * 3);
-        for (let k = 0; k < position.count; k++) {
-          v.fromBufferAttribute(position, k).applyMatrix4(mesh.matrixWorld);
-          world.set([v.x, v.y, v.z], k * 3);
-        }
-        return { mesh, geometry, world };
-      });
-      const all = new Float32Array(parts.reduce((n, p) => n + p.world.length, 0));
-      let at = 0;
-      parts.forEach((p) => {
-        all.set(p.world, at);
-        at += p.world.length;
-      });
-      const layout = textLayout(all);
-      object.userData.f3dTextAspect = layout ? layout.width / layout.height : null;
-      if (layout) {
-        at = 0;
-        parts.forEach(({ mesh, geometry, world }) => {
-          // A copy of the geometry: another object may share it.
-          geometry.setAttribute(
-            'uv',
-            new THREE.BufferAttribute(layout.uv.slice((at / 3) * 2, ((at + world.length) / 3) * 2), 2),
-          );
-          at += world.length;
-          mesh.geometry = geometry;
-        });
-      }
-    }
-    const aspect = object.userData.f3dTextAspect;
-    const fit = fitText(canvas.width, canvas.height, aspect || canvas.width / Math.max(canvas.height, 1));
-    const picture = document.createElement('canvas');
-    picture.width = fit.width;
-    picture.height = fit.height;
-    const ctx = picture.getContext('2d');
-    ctx.fillStyle = style.textbgcolor ? style.textbgcolor : 'transparent';
-    ctx.fillRect(0, 0, fit.width, fit.height);
-    if (canvas.width > 0 && canvas.height > 0)
-      ctx.drawImage(canvas, fit.x, fit.y, canvas.width * fit.scale, canvas.height * fit.scale);
-    const texture = new THREE.CanvasTexture(picture);
-    meshes.forEach((mesh) => this._setTextTexture(mesh, texture));
-  }
-
-  // The picture of a text as the material of a mesh: a material of the card (f3dmat), made once.
-  private _setTextTexture(mesh: THREE.Mesh, texture: THREE.Texture): void {
-    texture.colorSpace = THREE.SRGBColorSpace; // canvas colours are sRGB
-    const material = mesh.material as THREE.MeshBasicMaterial;
-    if (!Array.isArray(material) && material.name.startsWith('f3dmat')) {
-      // The texture of the previous text stays on the GPU until it is disposed: one per update.
-      if (material.map && material.map !== texture) material.map.dispose();
-      material.map = texture;
-    } else {
-      const own = new THREE.MeshBasicMaterial({ map: texture, transparent: true });
-      own.name = 'f3dmat' + mesh.name;
-      mesh.material = own;
-    }
-  }
-
-  private _applyTextCanvasSprite(canvas: HTMLCanvasElement, object: THREE.Sprite) {
-    // put the canvas texture with the text on top of the Sprite object: consider merge with the applyTextCanvas
-
-    const texture = new THREE.CanvasTexture(canvas);
-    texture.colorSpace = THREE.SRGBColorSpace; // canvas colours are sRGB
-    texture.repeat.set(1, 1);
-
-    if (object.material.name.startsWith('f3dmat')) {
-      const material = object.material as THREE.SpriteMaterial;
-      if (material.map) material.map.dispose(); // see _applyTextCanvas
-      material.map = texture;
-    } else {
-      const material = new THREE.SpriteMaterial({
-        map: texture,
-        transparent: true,
-      });
-      material.name = 'f3dmat' + object.name;
-
-      object.material = material;
-    }
-  }
-
-  private _updatetext(entity: Floor3dCardConfig, state: string, canvas: HTMLCanvasElement, uom: string): void {
-    const _foundobject: any = this._scene.getObjectByName(entity.object_id);
-
-    if (_foundobject) {
-      this._updateTextCanvas(entity.text, canvas, state + uom);
-      // Several text entities on one object: their texts one under the other, in the order of the
-      // configuration, laid as the first of them says (before, only the last one updated showed).
-      const same = this._config.entities
-        .map((e, k) => (e.type3d == 'text' && e.object_id == entity.object_id && this._canvas[k] ? k : -1))
-        .filter((k) => k >= 0);
-      if (same.length > 1) {
-        const first = this._config.entities[same[0]].text || {};
-        this._applyTextCanvas(
-          stackCanvases(
-            same.map((k) => this._canvas[k]),
-            first.textbgcolor,
-          ),
-          _foundobject,
-          first,
-        );
-      } else {
-        this._applyTextCanvas(canvas, _foundobject, entity.text);
-      }
-    }
   }
 
   private _num(value: any, fallback: number): number {
@@ -3578,42 +3013,6 @@ export class Floor3dCard extends LitElement {
         });
       });
     });
-  }
-
-  private _centerobjecttopivot(object: THREE.Mesh, pivot: THREE.Vector3) {
-    //Center a Mesh  along is defined pivot point
-
-    object.applyMatrix4(new THREE.Matrix4().makeTranslation(-pivot.x, -pivot.y, -pivot.z));
-    object.position.copy(pivot);
-  }
-
-  private _updateroomcolor(item: any, index: number): void {
-    // Change the color of the room when, for the bound entity, when the state matches the condition
-
-    let _room: any = this._scene.getObjectByName(this._rooms[index]);
-
-    const color: string = item.room.color ? item.room.color : '#ffffff';
-
-    if (_room && _room instanceof THREE.Mesh) {
-      let i: any;
-      let defaultcolor = true;
-
-      const _object: any = _room;
-
-      for (i in item.colorcondition) {
-        if (this._states[index] == item.colorcondition[i].state) {
-          const colorcond: THREE.Color = new THREE.Color(item.colorcondition[i].color);
-          _object.material.color.set(colorcond);
-          _object.material.emissive.set(colorcond);
-          defaultcolor = false;
-          break;
-        }
-      }
-      if (defaultcolor) {
-        _object.material.color.set(color);
-        _object.material.emissive.set(color);
-      }
-    }
   }
 
   private _updatecolor(item: any, index: number): void {

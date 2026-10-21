@@ -34,6 +34,8 @@ export interface EntityHost {
   manageLightShadows(light: THREE.Light): void; // extralightmode: only the lights that are on cast shadows
   invalidateShadows(): void; // something moved: the shadows are drawn again
   objectNamesFor(ids: string[]): string[]; // the objects of the model that ids name (names with *, <groups>)
+  stateWithTemplate(entity: Floor3dCardConfig): string; // the state of the entity, through entity_template
+  levelShown(level: number | undefined): boolean;
 }
 
 // An object that turns or slides (rotate, door, cover) turns around pivot, a point of the scene: its

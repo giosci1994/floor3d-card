@@ -2077,7 +2077,7 @@ test(
     const sprites = () =>
       page.evaluate(() => {
         const card = window.__card;
-        return card._sprites.map((name) => {
+        return card._texts._sprites.map((name) => {
           const s = card._scene.getObjectByName(name);
           const canvas = s.material.map.image;
           const corner = Array.from(canvas.getContext('2d').getImageData(0, 0, 1, 1).data);
@@ -2378,8 +2378,8 @@ test(
     const boxes = () =>
       page.evaluate(() => {
         const card = window.__card;
-        return card._sprites.map((name, i) => ({
-          text: card._info[i] + card._unit_of_measurement[i],
+        return card._texts._sprites.map((name, i) => ({
+          text: card._texts._info[i] + card._texts._unit_of_measurement[i],
           picture: card._scene.getObjectByName(name).material.map.image.toDataURL(),
         }));
       });
