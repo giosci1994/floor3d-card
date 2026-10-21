@@ -437,7 +437,7 @@ test('reload (refresh button of the editor): the model comes back, without error
 const roomState = (page) =>
   page.evaluate(() =>
     Object.fromEntries(
-      window.__card._roomViews.map((r) => [
+      window.__card._roomMaps.views.map((r) => [
         r.name,
         {
           visible: r.overlays[0].visible,
@@ -573,7 +573,7 @@ test(
     await flown(page, 'the camera flies to the room');
     const target = await page.evaluate(() => {
       const t = window.__card._controls.target;
-      const c = window.__card._roomViews[0].box.getCenter(t.clone());
+      const c = window.__card._roomMaps.views[0].box.getCenter(t.clone());
       return t.distanceTo(c);
     });
     assert.ok(target < 1, 'the camera looks at the room: ' + target);
@@ -1381,7 +1381,7 @@ test(
     ]);
     assert.equal(boxes.energy.text, '1.2 kW 3.4 kW 500 W 80% Washer1.9 kW Heater800 W');
     const living = await page.evaluate(() =>
-      window.__card._roomViews
+      window.__card._roomMaps.views
         .find((r) => r.name === 'Living room')
         .box.getCenter(window.__card._controls.target.clone())
         .toArray()
@@ -1400,7 +1400,7 @@ test(
     );
     assert.equal(await page.evaluate(() => window.__card.shadowRoot.querySelectorAll('.f3d-people .away').length), 2);
     const bedroom = await page.evaluate(() =>
-      window.__card._roomViews
+      window.__card._roomMaps.views
         .find((r) => r.name === 'Bedroom')
         .box.getCenter(window.__card._controls.target.clone())
         .toArray()

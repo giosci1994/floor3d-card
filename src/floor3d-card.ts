@@ -4,7 +4,7 @@ import { HomeAssistant, LovelaceCardEditor, fireEvent, forwardHaptic } from './h
 // The editor is loaded on demand by getConfigElement(): devices that only show the card never download it.
 import { HassEntity } from 'home-assistant-js-websocket';
 import { createObjectGroupConfigArray, getLovelace } from './helpers';
-import { matchObjects, normalizeConfig, objectPattern, switchOn } from './config';
+import { matchObjects, normalizeConfig, objectPattern } from './config';
 import type { Floor3dCardConfig } from './types';
 import { CARD_VERSION, EDITOR_EVENT, PREVIEW_EVENT } from './const';
 import DRACO_DECODER from 'virtual:draco-decoder';
@@ -13,20 +13,8 @@ import { cardStyles } from './styles';
 import { BoxesHost, CornerBoxes } from './corner-boxes';
 import { CameraOverlay, CamerasHost } from './camera-overlay';
 import { Environment, EnvironmentHost } from './environment';
-import {
-  CLIMATE_COLORS,
-  MapScale,
-  PRESET_MAPS,
-  Stops,
-  activeAlarms,
-  climateAction,
-  climateTarget,
-  colorAt,
-  legendGradient,
-  mapScales,
-  roomReading,
-  roomSensors,
-} from './maps';
+import { RoomMaps, RoomsHost, RoomView } from './rooms';
+import { CLIMATE_COLORS, activeAlarms, climateAction } from './maps';
 import { localize, pickLanguage } from './localize/localize';
 import { findSlats, slatAngle, Slat, tiltSlats } from './slats';
 import { fitText, textLayout } from './textmap';
@@ -127,10 +115,6 @@ const TONE_MAPPINGS: { [name: string]: THREE.ToneMapping } = {
 
 type ShadowLight = THREE.PointLight | THREE.SpotLight | THREE.DirectionalLight;
 
-// What the rooms can be coloured by (room_colors and the Map menu), besides none.
-// The maps of the rooms that are always in the Map menu; the sensor maps (see maps.ts) are there once a
-// room has a sensor for them, or the configuration defines them.
-const MAP_MODES = ['temperature', 'presence', 'illuminance'];
 // Elements of a dashboard: Home Assistant sets preview on its cards while it is in edit mode.
 const DASHBOARD_TAGS = [
   'HUI-VIEW',
@@ -140,7 +124,6 @@ const DASHBOARD_TAGS = [
   'HUI-PANEL-VIEW',
   'HUI-SIDEBAR-VIEW',
 ];
-const LABEL_BACKGROUND = 'rgba(0, 0, 0, 0.55)'; // behind the text of a room label, without alarm or thermostat
 
 // A mesh with slats (cover.slats): its own geometry, its slats, and its positions and normals as
 // in the model.
@@ -149,25 +132,6 @@ interface SlatSet {
   slats: Slat[];
   positions: Float32Array;
   normals?: Float32Array;
-}
-
-interface RoomView {
-  name: string;
-  material: THREE.MeshBasicMaterial; // translucent copy of the floor, above it
-  overlays: THREE.Mesh[];
-  center: THREE.Vector3; // for the label of the map (world coordinates)
-  box: THREE.Box3; // of its floor, for the camera going to an alarm
-  level?: number; // of its floor
-  temperature?: string;
-  illuminance?: string;
-  presence: string[];
-  sensors: { [map: string]: string[] }; // sensors of the sensor maps, by key
-  alarms: string[]; // smoke, gas, water... sensors: the room blinks while one is on
-  climate?: string; // thermostat: target on the temperature map, its temperature without a sensor
-  alarm?: boolean; // an alarm is on
-  label?: THREE.Sprite;
-  labelText?: string;
-  labelBackground?: string;
 }
 
 interface TrackerView {
@@ -271,6 +235,8 @@ export class Floor3dCard extends LitElement {
   private _levelMiddles?: number[]; // the middle of the height of each level (see _levelsUpTo)
   // Torch, sky light, sun, sky behind the canvas and ground (environment.ts).
   private _env = new Environment(this._environmentHost());
+  // The rooms coloured by a map, their labels, the Map menu and its legend (rooms.ts).
+  private _roomMaps = new RoomMaps(this._roomsHost());
   // The cameras on screen (camera-overlay.ts): their icons over the model, the picture that pops up.
   private _cameras = new CameraOverlay(this._camerasHost(), this._boxes);
   private _pivot: THREE.Vector3[];
@@ -334,13 +300,9 @@ export class Floor3dCard extends LitElement {
   private _modelCenter?: THREE.Vector3;
   private _modelRadius?: number;
   private _trackers: TrackerView[] = [];
-  private _roomViews: RoomView[] = [];
-  private _mapMode = 'none'; // rooms coloured by: none, temperature, presence, illuminance
   private _colorDeps?: HassEntity[];
   private _alarmPulse = false; // alarm triggered with something open: the openings blink
   private _roomAlarms = false; // a room or an object of type alarm blinks: an alarm is on
-  private _mapScales: MapScale[] = [];
-  private _legend?: { gradient: string; min: string; max: string };
   private _card?: HTMLElement;
   private _content?: HTMLElement;
   private _modeltype?: ModelSource;
@@ -1909,7 +1871,7 @@ export class Floor3dCard extends LitElement {
 
       this._applyShadowBudget();
 
-      this._initRooms();
+      this._roomMaps.init();
 
       this._getOverlay();
 
@@ -4483,7 +4445,7 @@ export class Floor3dCard extends LitElement {
         return card._selectionbar;
       },
       get rooms() {
-        return card._roomViews;
+        return card._roomMaps.views;
       },
       get shownStatus() {
         return card._shownStatus;
@@ -4497,12 +4459,6 @@ export class Floor3dCard extends LitElement {
       renderBoxes: (force) => card._renderBoxes(force),
       beforePlace: () => card._cameras.sizePopup(),
     };
-  }
-
-  // A switch of the config: on, or at its default when missing (the *_show of the boxes are on by
-  // default, status_show off).
-  private _shown(key: string, fallback: boolean): boolean {
-    return switchOn(this._config, key, fallback);
   }
 
   private _toggleStatus(kind: StatusKind, indices: number[]): void {
@@ -4561,7 +4517,7 @@ export class Floor3dCard extends LitElement {
 
   // The room of the card with this name: its floor, to go to it.
   private _roomView(name: string): RoomView | undefined {
-    return this._roomViews.find((room) => room.name === name);
+    return this._roomMaps.find(name);
   }
 
   private _showRoom(room: RoomView | undefined, ids: string[]): void {
@@ -4606,6 +4562,30 @@ export class Floor3dCard extends LitElement {
       scheduleRender: () => card._scheduleRender(),
       enableShadow: (light, bias) => card._enableShadow(light, bias),
       refreshLightShadow: (light) => card._refreshLightShadow(light),
+    };
+  }
+
+  // --- Rooms (rooms.ts) ----------------------------------------------------------------------------
+
+  // What the rooms read of the card.
+  private _roomsHost(): RoomsHost {
+    // eslint-disable-next-line @typescript-eslint/no-this-alias
+    const card = this;
+    return {
+      get config() {
+        return card._config;
+      },
+      get hass() {
+        return card._hass;
+      },
+      get scene() {
+        return card._scene;
+      },
+      t: (key, vars) => card._t(key, vars),
+      language: () => card._language(),
+      num: (value, fallback) => card._num(value, fallback),
+      renderMenus: () => card._renderMenus(),
+      setMapMode: (mode) => card._setMapMode(mode),
     };
   }
 
@@ -4655,138 +4635,16 @@ export class Floor3dCard extends LitElement {
   private _renderMenus(): void {
     if (this._zoommenu)
       render(
-        html`${this._getZoomMenu()}${this._getMapMenu()}${this._cameras.button(() => this._renderMenus())}`,
+        html`${this._getZoomMenu()}${this._roomMaps.menu()}${this._cameras.button(() => this._renderMenus())}`,
         this._zoommenu,
       );
     this._boxes.place();
   }
 
-  // The maps of the Map menu: temperature, presence and illuminance, then the sensor maps that a
-  // room has sensors for or that the configuration defines.
-  private _mapModes(): string[] {
-    const configured = (Array.isArray(this._config.maps) ? this._config.maps : []).map((m: any) => m && m.key);
-    const sensorMaps = this._mapScales
-      .filter((scale) => configured.includes(scale.key) || this._roomViews.some((room) => room.sensors[scale.key]))
-      .map((scale) => scale.key);
-    return [...MAP_MODES, ...sensorMaps];
-  }
-
-  // The name a map of the configuration gives, else the text of a ready map, else its key.
-  private _mapName(key: string): string {
-    const scale = this._mapScales.find((s) => s.key === key);
-    if (scale && scale.name) return scale.name;
-    return MAP_MODES.includes(key) || PRESET_MAPS.some((p) => p.key === key) ? this._t('map_' + key) : key;
-  }
-
-  // hideMapMenu: yes hides the menu and its legend; the map of room_colors stays.
-  private _getMapMenu(): TemplateResult {
-    if (this._roomViews.length == 0 || this._shown('hideMapMenu', false)) return html``;
-    const option = (value: string, text: string) =>
-      html`<option value=${value} ?selected=${this._mapMode == value}>${text}</option>`;
-    const legend = this._mapMode !== 'none' && this._mapMode !== 'presence' ? this._legend : undefined;
-    return html`
-      <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 4px;">
-        <select
-          aria-label=${this._t('map')}
-          @change=${(ev: Event) => this._setMapMode((ev.target as HTMLSelectElement).value)}
-          style="font: inherit; font-size: 14px; padding: 6px 10px; border-radius: 8px; color-scheme: dark;
-            background: rgba(0, 0, 0, 0.55); color: white; border: 1px solid rgba(255, 255, 255, 0.6); cursor: pointer;"
-        >
-          ${option('none', this._t('map_none'))} ${this._mapModes().map((mode) => option(mode, this._mapName(mode)))}
-        </select>
-        ${
-          legend
-            ? html`<div
-                class="f3d-legend"
-                style="padding: 5px 8px 3px; border-radius: 8px; background: rgba(0, 0, 0, 0.55); color: white;
-                font-size: 11px; line-height: 14px; width: 140px;"
-              >
-                <div style="height: 8px; border-radius: 4px; background: ${legend.gradient};"></div>
-                <div style="display: flex; justify-content: space-between;">
-                  <span>${legend.min}</span><span>${legend.max}</span>
-                </div>
-              </div>`
-            : ''
-        }
-      </div>
-    `;
-  }
-
   private _setMapMode(mode: string): void {
-    this._mapMode = this._mapModes().includes(mode) ? mode : 'none';
+    this._roomMaps.setMode(mode);
     this._updateStateColors(true);
     this._renderMenus();
-  }
-
-  // rooms: [{ name, object_id (floor object or <group>), temperature, illuminance, presence, the
-  // sensors of the sensor maps (humidity, co2, power...), alarms, climate }]: a translucent copy of
-  // each floor, coloured by the map chosen, with the value written on it; it blinks while an alarm
-  // of the room is on.
-  private _initRooms(): void {
-    this._roomViews = [];
-    this._mapScales = mapScales(this._config);
-    const rooms = Array.isArray(this._config.rooms) ? this._config.rooms : [];
-    rooms.forEach((room: any) => {
-      const ids: string[] = [];
-      const id = String(room.object_id || '');
-      if (id.startsWith('<') && id.endsWith('>')) {
-        const group = (this._config.object_groups || []).find((g: any) => '<' + g.object_group + '>' == id);
-        if (group) group.objects.forEach((o: any) => ids.push(o.object_id));
-      } else if (id) {
-        ids.push(id);
-      }
-      const material = new THREE.MeshBasicMaterial({
-        transparent: true,
-        opacity: 0,
-        depthWrite: false,
-        polygonOffset: true,
-        polygonOffsetFactor: -2,
-        polygonOffsetUnits: -2,
-      });
-      const overlays: THREE.Mesh[] = [];
-      const box = new THREE.Box3();
-      let level: number | undefined;
-      ids.forEach((objectId) => {
-        const floor = this._scene.getObjectByName(objectId) as THREE.Mesh;
-        if (!floor || !floor.geometry) return;
-        const overlay = new THREE.Mesh(floor.geometry, material);
-        overlay.name = objectId + '_room_color';
-        overlay.position.y = 0.6;
-        overlay.renderOrder = 5;
-        overlay.visible = false;
-        floor.add(overlay);
-        overlays.push(overlay);
-        box.expandByObject(floor);
-        if (level === undefined && floor.userData.level !== undefined) level = floor.userData.level;
-      });
-      if (overlays.length == 0) {
-        console.warn('floor3d-card: room ' + room.name + ': floor object not found (' + id + ')');
-        return;
-      }
-      const presence = room.presence ? (Array.isArray(room.presence) ? room.presence : [room.presence]) : [];
-      const sensors: { [map: string]: string[] } = {};
-      this._mapScales.forEach((scale) => {
-        const found = roomSensors(room, scale.key);
-        if (found.length) sensors[scale.key] = found;
-      });
-      this._roomViews.push({
-        name: room.name || id,
-        material,
-        overlays,
-        // Level with the top of the walls: seen from above it sits inside the outline of the room.
-        center: box.getCenter(new THREE.Vector3()).setY(box.max.y + 250),
-        box,
-        level,
-        temperature: room.temperature,
-        illuminance: room.illuminance,
-        presence,
-        sensors,
-        alarms: roomSensors(room, 'alarms'),
-        climate: typeof room.climate === 'string' && room.climate ? room.climate : undefined,
-      });
-    });
-    const initial = this._config.room_colors;
-    this._mapMode = this._mapModes().includes(initial) ? initial : 'none';
   }
 
   // current_position of a cover, null when the cover doesn't report it.
@@ -4808,15 +4666,12 @@ export class Floor3dCard extends LitElement {
     if (!this._hass || !this._scene || !this._modelready) return;
     const doors = this._config.state_colors == 'yes' ? this._config.entities.filter((e) => e.type3d == 'door') : [];
     const marked = this._config.entities.filter((e) => e.type3d == 'alarm' || e.type3d == 'climate');
-    const ids: string[] = [this._config.alarm_entity, ...doors.map((e) => e.entity), ...marked.map((e) => e.entity)];
-    const mode = this._mapMode;
-    this._roomViews.forEach((r) => {
-      ids.push(...r.alarms);
-      if (mode == 'temperature') ids.push(r.temperature, r.climate);
-      else if (mode == 'illuminance') ids.push(r.illuminance);
-      else if (mode == 'presence') ids.push(...r.presence);
-      else if (r.sensors[mode]) ids.push(...r.sensors[mode]);
-    });
+    const ids = [
+      this._config.alarm_entity,
+      ...doors.map((e) => e.entity),
+      ...marked.map((e) => e.entity),
+      ...this._roomMaps.watched(),
+    ];
     const deps = ids.map((id) => (id ? this._hass.states[id] : undefined));
     if (
       !force &&
@@ -4867,77 +4722,8 @@ export class Floor3dCard extends LitElement {
     });
 
     // Rooms
-    const fmt = (n: number, digits: number): string =>
-      n.toLocaleString(this._language(), { maximumFractionDigits: digits });
-    const scale = this._mapScales.find((s) => s.key == mode);
-    let legend: { stops: Stops; unit: string } | undefined;
-    const alarmed: RoomView[] = [];
-    this._roomViews.forEach((room) => {
-      let color: THREE.Color | null = null;
-      let opacity = 0.35;
-      let label = '';
-      let background = LABEL_BACKGROUND;
-      if (mode == 'temperature' && (room.temperature || room.climate)) {
-        const s = room.temperature ? this._hass.states[room.temperature] : undefined;
-        const thermostat = room.climate ? this._hass.states[room.climate] : undefined;
-        let t = s ? parseFloat(s.state) : NaN;
-        let unit = (s && s.attributes && s.attributes.unit_of_measurement) || '°';
-        // Without a sensor, the temperature the thermostat measures.
-        if (isNaN(t) && thermostat && thermostat.attributes) {
-          t = parseFloat(thermostat.attributes.current_temperature);
-          unit =
-            (this._hass.config && this._hass.config.unit_system && this._hass.config.unit_system.temperature) || '°';
-        }
-        if (!isNaN(t)) {
-          color = this._temperatureColor(t);
-          label = fmt(t, 1) + ' ' + unit;
-          const target = climateTarget(thermostat, (n) => fmt(n, 1));
-          if (target) label += ' → ' + target + ' ' + unit;
-          const action = climateAction(thermostat);
-          if (action) background = this._labelColor(CLIMATE_COLORS[action]);
-        }
-      } else if (mode == 'illuminance' && room.illuminance) {
-        const s = this._hass.states[room.illuminance];
-        const lux = s ? parseFloat(s.state) : NaN;
-        if (!isNaN(lux)) {
-          color = this._illuminanceColor(lux);
-          const unit = (s.attributes && s.attributes.unit_of_measurement) || 'lx';
-          label = fmt(lux, 0) + ' ' + unit;
-        }
-      } else if (mode == 'presence') {
-        const present = room.presence.some((id) => this._hass.states[id] && this._hass.states[id].state == 'on');
-        if (present) {
-          color = new THREE.Color(this._config.presence_color || '#34d399');
-          opacity = 0.32;
-        }
-      } else if (scale && room.sensors[mode]) {
-        const reading = roomReading(
-          scale,
-          room.sensors[mode].map((id) => this._hass.states[id]),
-        );
-        if (reading) {
-          color = new THREE.Color(colorAt(reading.stops, reading.value));
-          label = fmt(reading.value, scale.decimals) + (reading.unit ? ' ' + reading.unit : '');
-          if (!legend) legend = { stops: reading.stops, unit: reading.unit };
-        }
-      }
-      // An alarm of the room shows over any map, blinking (see _pulseAlarms).
-      const alarms = activeAlarms(room.alarms.map((id) => this._hass.states[id]));
-      const wasAlarmed = !!room.alarm;
-      room.alarm = alarms.length > 0;
-      if (room.alarm) {
-        color = new THREE.Color(alarms[0].color);
-        opacity = 0.6;
-        label = Array.from(new Set(alarms.map((a) => this._t('alarm_' + a.key)))).join(', ');
-        background = this._labelColor(alarms[0].color);
-        if (!wasAlarmed) alarmed.push(room);
-      }
-      if (color) room.material.color.copy(color);
-      room.material.opacity = opacity;
-      room.overlays.forEach((o) => (o.visible = !!color));
-      this._setRoomLabel(room, label, background);
-    });
-    const blinking = alarmObjects || this._roomViews.some((r) => r.alarm);
+    const alarmed = this._roomMaps.color();
+    const blinking = alarmObjects || this._roomMaps.alarm;
     if (blinking != this._roomAlarms) {
       this._roomAlarms = blinking;
       this._startOrStopAnimationLoop();
@@ -4945,56 +4731,7 @@ export class Floor3dCard extends LitElement {
     // alarm_view: the camera goes to the first room whose alarm goes on.
     if (alarmed.length && this._config.alarm_view == 'yes' && this._camera && this._controls)
       this._flyToRoom(alarmed[0]);
-    this._setLegend(mode, scale, legend);
     this._scheduleRender();
-  }
-
-  // The colour of an alarm or of a thermostat behind the text of a room label.
-  private _labelColor(hex: string): string {
-    const [r, g, b] = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
-    return `rgba(${r}, ${g}, ${b}, 0.85)`;
-  }
-
-  // The legend under the Map menu: the colours of the map on show, from its lowest to its highest
-  // value. A sensor map shows the scale of the readings (a VOC index has its own).
-  private _setLegend(mode: string, scale: MapScale | undefined, reading?: { stops: Stops; unit: string }): void {
-    const fmt = (n: number, digits = 0): string =>
-      n.toLocaleString(this._language(), { maximumFractionDigits: digits });
-    const sample = (colorOf: (k: number) => THREE.Color): string =>
-      'linear-gradient(to right, ' +
-      Array.from({ length: 9 }, (_, i) => '#' + colorOf(i / 8).getHexString() + ' ' + (i * 12.5).toString() + '%').join(
-        ', ',
-      ) +
-      ')';
-    let legend: { gradient: string; min: string; max: string } | undefined;
-    if (mode == 'temperature') {
-      const min = this._num(this._config.temperature_min, 17);
-      const max = this._num(this._config.temperature_max, 27);
-      legend = {
-        gradient: sample((k) => this._temperatureColor(min + k * (max - min))),
-        min: fmt(min) + '°',
-        max: fmt(max) + '°',
-      };
-    } else if (mode == 'illuminance') {
-      const min = Math.max(this._num(this._config.illuminance_min, 5), 0.1);
-      const max = Math.max(this._num(this._config.illuminance_max, 1000), min * 1.01);
-      legend = {
-        gradient: sample((k) => this._illuminanceColor(min * Math.pow(max / min, k))),
-        min: fmt(min),
-        max: fmt(max) + ' lx',
-      };
-    } else if (scale) {
-      const stops = reading ? reading.stops : scale.stops;
-      const unit = reading ? reading.unit : scale.unit;
-      legend = {
-        gradient: legendGradient(stops),
-        min: fmt(stops[0][0], scale.decimals),
-        max: fmt(stops[stops.length - 1][0], scale.decimals) + (unit ? ' ' + unit : ''),
-      };
-    }
-    if (JSON.stringify(legend) === JSON.stringify(this._legend)) return;
-    this._legend = legend;
-    this._renderMenus();
   }
 
   // The camera goes to a room (an alarm went on there), seen from the same side as before, from
@@ -5029,9 +4766,7 @@ export class Floor3dCard extends LitElement {
   // about once per second.
   private _pulseAlarms(now: number): void {
     const k = 0.5 + 0.5 * Math.sin((now / 1000) * Math.PI * 2);
-    this._roomViews.forEach((room) => {
-      if (room.alarm) room.material.opacity = 0.15 + 0.6 * k;
-    });
+    this._roomMaps.pulse(k);
     this._config.entities.forEach((entity, i) => {
       if (entity.type3d != 'alarm' || !this._object_ids[i]) return;
       this._object_ids[i].objects.forEach((o) => {
@@ -5043,67 +4778,6 @@ export class Floor3dCard extends LitElement {
         });
       });
     });
-  }
-
-  // Blue (temperature_min, 17 by default) to red (temperature_max, 27), green in the middle.
-  private _temperatureColor(t: number): THREE.Color {
-    const min = this._num(this._config.temperature_min, 17);
-    const max = this._num(this._config.temperature_max, 27);
-    const k = THREE.MathUtils.clamp((t - min) / (max - min || 1), 0, 1);
-    return new THREE.Color().setHSL(((1 - k) * 220) / 360, 0.85, 0.55, THREE.SRGBColorSpace);
-  }
-
-  // Dark blue (illuminance_min lux, 5 by default) to yellow (illuminance_max, 1000), through purple
-  // and orange. The scale is logarithmic, as the eye sees light: a few lux at night, hundreds in a
-  // lit room, thousands next to a sunny window.
-  private _illuminanceColor(lux: number): THREE.Color {
-    const min = Math.max(this._num(this._config.illuminance_min, 5), 0.1);
-    const max = Math.max(this._num(this._config.illuminance_max, 1000), min * 1.01);
-    const k = THREE.MathUtils.clamp(Math.log(Math.max(lux, 0.01) / min) / Math.log(max / min), 0, 1);
-    return new THREE.Color().setHSL(((230 + k * 180) % 360) / 360, 0.85, 0.3 + 0.3 * k, THREE.SRGBColorSpace);
-  }
-
-  // background: the colour behind the text (an alarm, a thermostat heating or cooling).
-  private _setRoomLabel(room: RoomView, text: string, background = LABEL_BACKGROUND): void {
-    if (text === (room.labelText || '') && (!text || background === room.labelBackground)) return;
-    room.labelText = text;
-    room.labelBackground = background;
-    if (!text) {
-      if (room.label) room.label.visible = false;
-      return;
-    }
-    if (!room.label) {
-      room.label = new THREE.Sprite(
-        new THREE.SpriteMaterial({ transparent: true, depthTest: false, sizeAttenuation: false }),
-      );
-      room.label.renderOrder = 20;
-      room.label.position.copy(room.center);
-      this._scene.add(room.label);
-    }
-    const canvas = document.createElement('canvas');
-    const ctx = canvas.getContext('2d');
-    const font = '600 40px Roboto, Arial, sans-serif';
-    ctx.font = font;
-    const width = Math.ceil(ctx.measureText(text).width) + 32;
-    canvas.width = width;
-    canvas.height = 60;
-    ctx.font = font;
-    ctx.fillStyle = background;
-    ctx.beginPath();
-    ctx.roundRect(0, 0, width, 60, 14);
-    ctx.fill();
-    ctx.fillStyle = 'white';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(text, 16, 32);
-    const texture = new THREE.CanvasTexture(canvas);
-    texture.colorSpace = THREE.SRGBColorSpace;
-    const material = room.label.material as THREE.SpriteMaterial;
-    if (material.map) material.map.dispose();
-    material.map = texture;
-    material.needsUpdate = true;
-    const h = 0.04;
-    room.label.scale.set((h * width) / 60, h, 1);
-    room.label.visible = true;
   }
 
   // Glow on the objects of an entity (null: back to their own materials). The tinted materials are
