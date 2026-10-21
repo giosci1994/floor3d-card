@@ -1791,7 +1791,7 @@ test(
         const card = window.__card;
         const g = card._scene.getObjectByName('f3d_ground');
         return {
-          sunBox: Math.round((card._sun.shadow.camera.right / card._modelRadius) * 10) / 10,
+          sunBox: Math.round((card._env.sun.shadow.camera.right / card._modelRadius) * 10) / 10,
           units: card._textureUnits.units,
           ...(g && {
             receiveShadow: g.receiveShadow,
