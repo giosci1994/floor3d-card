@@ -2968,3 +2968,63 @@ test(
     await other.close();
   },
 );
+
+test(
+  '#28: a tap on the status box hides the levels above its objects, the camera comes from 65° above, and the levels come back at its end',
+  { timeout: TIMEOUT },
+  async () => {
+    // basement.obj: the basement on level 0 (its stairs reach the ground floor), the house on level 1.
+    const entities = [
+      ...lamps(1), // lamp_1, under the ceiling of the ground floor: level 1
+      {
+        entity: 'binary_sensor.cellar',
+        type3d: 'color',
+        object_id: 'basement_stairs', // level 0
+        colorcondition: [{ state: 'on', color: '#ff0000' }],
+      },
+    ];
+    const { page, errors } = await open(
+      house({ objfile: 'basement.obj', status_show: 'yes', entities }),
+      states({ 'binary_sensor.cellar': { state: 'on', attributes: { device_class: 'door' } } }),
+    );
+    const levels = () => page.evaluate(() => window.__card._displaylevels.slice());
+    const tap = (kind) =>
+      page.evaluate((icon) => {
+        const chips = [...window.__card.shadowRoot.querySelectorAll('.f3d-status .chip')];
+        chips.find((c) => c.querySelector('ha-icon').getAttribute('icon') === icon).click();
+      }, kind);
+    // How many degrees above its target the camera is.
+    const elevation = () =>
+      page.evaluate(() => {
+        const card = window.__card;
+        const d = card._camera.position.clone().sub(card._controls.target);
+        return Math.round((Math.asin(d.y / d.length()) * 180) / Math.PI);
+      });
+    assert.deepEqual(await levels(), [true, true]);
+    // The open door of the basement: the house above it hides, the camera looks from high up.
+    await tap('mdi:door-open');
+    await flown(page);
+    assert.deepEqual(await levels(), [true, false], 'only the basement');
+    assert.ok((await elevation()) >= 64, 'from 65° above at least: ' + (await elevation()));
+    // A second tap ends it: the levels as before.
+    await tap('mdi:door-open');
+    assert.deepEqual(await levels(), [true, true], 'the house again');
+    // The basement, then the lamp of the ground floor: its level shows again, with the one under it.
+    await tap('mdi:door-open');
+    await flown(page);
+    assert.deepEqual(await levels(), [true, false]);
+    await tap('mdi:lightbulb-on');
+    await flown(page);
+    assert.deepEqual(await levels(), [true, true], 'a lamp of a level above: that level again');
+    await tap('mdi:lightbulb-on');
+    assert.deepEqual(await levels(), [true, true]);
+    // Levels changed by hand meanwhile stay as they were set.
+    await tap('mdi:door-open');
+    await flown(page);
+    await page.evaluate(() => window.__card._toggleVisibleLevel(0));
+    await tap('mdi:door-open');
+    assert.deepEqual(await levels(), [false, false], 'the choice made by hand stays');
+    assert.deepEqual(errors, []);
+    await page.close();
+  },
+);

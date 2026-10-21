@@ -214,6 +214,10 @@ console.info(
   'color: white; font-weight: bold; background: dimgray',
 );
 
+// The camera going to objects or a room (boxes in the corners, alarm_view) comes from at least this
+// many degrees above them.
+const MIN_FLIGHT_ELEVATION = 65;
+
 class ModelSource {
   public static OBJ = 0;
   public static GLB = 1;
@@ -296,6 +300,11 @@ export class Floor3dCard extends LitElement {
   private _boxDeps = new Map<string, unknown[]>();
   private _shownStatus?: StatusKind;
   private _shownTimer?: number;
+  // The levels before the first tap on the status box, and those the taps left: at its end the
+  // levels go back, unless they were changed meanwhile (see _toggleStatus).
+  private _levelsBefore?: boolean[];
+  private _levelsShown?: boolean[];
+  private _levelMiddles?: number[]; // the middle of the height of each level (see _levelsUpTo)
   private _cornerObserver?: ResizeObserver; // the card changes width (a phone turned): placed again
   private _boxesChanged = false; // a box was drawn, added or removed: the corners are placed again
   private _collapsed?: Set<string>; // the boxes folded on this device (weather, people), read once
@@ -2068,6 +2077,7 @@ export class Floor3dCard extends LitElement {
   private _initobjects(object: THREE.Object3D) {
     let level = 0;
     this._levels = [];
+    this._levelMiddles = undefined;
     this._raycasting = [];
     this._raycastinglevels = [];
     //TODO: explore solution with layers
@@ -2200,6 +2210,40 @@ export class Floor3dCard extends LitElement {
     });
     this._updateRaycasting();
     this._showWithLevels();
+  }
+
+  // Shows the levels for which shown(level) is true and hides the others; false when nothing changed.
+  private _applyLevels(shown: (level: number) => boolean): boolean {
+    let changed = false;
+    this._levels.forEach((element, i) => {
+      const visible = shown(i);
+      if (this._displaylevels[i] !== visible) changed = true;
+      this._displaylevels[i] = visible;
+      element.visible = visible;
+    });
+    if (!changed) return false;
+    this._updateRaycasting();
+    this._showWithLevels();
+    if (this._levelbar) render(this._getLevelBar(), this._levelbar);
+    this._scheduleRender();
+    return true;
+  }
+
+  // The levels of some objects and those under them shown, the levels above hidden, so that the
+  // objects can be seen (#28). A level is above when the middle of its height is higher than the
+  // middle of the highest of their levels: the rule of the ground (see _showWithLevels), so that the
+  // stairs of a basement that reach the ground floor don't make it a level above.
+  private _levelsUpTo(levels: number[]): void {
+    if (!this._displaylevels || !this._levels || this._levels.length < 2 || !levels.length) return;
+    if (!this._levelMiddles) {
+      this._levelMiddles = this._levels.map((level) => {
+        const box = level ? new THREE.Box3().setFromObject(level) : null;
+        return box && !box.isEmpty() ? (box.min.y + box.max.y) / 2 : -Infinity;
+      });
+    }
+    const middles = this._levelMiddles;
+    const top = Math.max(...levels.map((level) => middles[level] ?? -Infinity));
+    this._applyLevels((i) => levels.includes(i) || middles[i] <= top);
   }
 
   private _updateRaycasting() {
@@ -4927,7 +4971,10 @@ export class Floor3dCard extends LitElement {
     const ids = indices.flatMap((i) =>
       ((this._object_ids && this._object_ids[i] && this._object_ids[i].objects) || []).map((o) => o.object_id),
     );
+    // The levels as they were before the first tap: they come back at the end (decided with #28).
+    if (!this._shownStatus && this._displaylevels) this._levelsBefore = this._displaylevels.slice();
     this._showObjects(ids, STATUS_COLORS[kind]);
+    if (this._displaylevels) this._levelsShown = this._displaylevels.slice();
     this._shownStatus = kind;
     this._renderStatus(true);
   }
@@ -4945,11 +4992,17 @@ export class Floor3dCard extends LitElement {
     window.clearTimeout(this._shownTimer);
     this._shownTimer = undefined;
     this._setHighlight([]);
-    this._render();
     if (this._shownStatus) {
+      // The end of the status box: the levels go back as they were, unless they were changed
+      // meanwhile (the buttons of the levels, a view, a tap on the energy or people box).
+      const before = this._levelsBefore;
+      const unchanged = JSON.stringify(this._displaylevels) === JSON.stringify(this._levelsShown);
+      if (before && unchanged) this._applyLevels((i) => before[i] !== false);
+      this._levelsBefore = this._levelsShown = undefined;
       this._shownStatus = undefined;
       this._renderStatus(true);
     }
+    this._render();
   }
 
   private _flyToObjects(ids: string[]): void {
@@ -6015,21 +6068,25 @@ export class Floor3dCard extends LitElement {
     this._flyToBox(room.box, room.level !== undefined ? [room.level] : []);
   }
 
-  // The camera above a box, from the side it was looking from, high enough to see all of it; the
-  // levels of the box are shown if they were hidden.
+  // The camera above a box, from the side it was looking from, high enough to see all of it, and
+  // from at least 65° above it, so that the walls of the room don't hide what is inside (37° until
+  // 2.12.1). The levels of the box and those under it are shown, the levels above hidden (#28).
   private _flyToBox(box: THREE.Box3, levels: number[]): void {
     const target = box.getCenter(new THREE.Vector3());
     const size = box.getSize(new THREE.Vector3());
     const direction = this._camera.position.clone().sub(this._controls.target);
     if (direction.lengthSq() < 1e-6) direction.set(0, 1, 1);
     direction.normalize();
-    if (direction.y < 0.6) {
-      direction.y = 0.6;
-      direction.normalize();
+    const lowest = THREE.MathUtils.degToRad(MIN_FLIGHT_ELEVATION);
+    if (direction.y < Math.sin(lowest)) {
+      // The same side, higher up.
+      const side = new THREE.Vector2(direction.x, direction.z);
+      if (side.lengthSq() < 1e-6) side.set(0, 1);
+      side.normalize().multiplyScalar(Math.cos(lowest));
+      direction.set(side.x, Math.sin(lowest), side.y);
     }
     const position = target.clone().add(direction.multiplyScalar(Math.max(size.x, size.z, 300) * 1.8));
-    if (this._displaylevels && levels.some((level) => this._displaylevels[level] === false))
-      this._setVisibleLevel(levels.length === 1 ? levels[0] : -1);
+    this._levelsUpTo(levels);
     this._flyTo(position, target);
   }
 
