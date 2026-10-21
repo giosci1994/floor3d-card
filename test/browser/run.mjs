@@ -1006,7 +1006,7 @@ test(
       page.evaluate(() => {
         const card = window.__card;
         const i = card._config.entities.findIndex((e) => e.entity === 'cover.blind');
-        const set = card._slatSets.get(i)[0];
+        const set = card._openings._slatSets.get(i)[0];
         const lowest = set.slats.reduce((a, b) => (a.center[1] < b.center[1] ? a : b));
         const position = set.geometry.getAttribute('position');
         const ys = lowest.vertices.map((v) => position.getY(v));
@@ -1069,7 +1069,7 @@ test(
     const { page, errors } = await open(house({ objfile: 'covers.obj', entities }), coverStates);
     assert.equal(await keeps(page, 'shade'), true);
     assert.equal(await keeps(page, 'blind'), true);
-    const angle = () => page.evaluate(() => Math.round(window.__card._slatAngles.get(1)));
+    const angle = () => page.evaluate(() => Math.round(window.__card._openings._slatAngles.get(1)));
     assert.equal(await angle(), -60, 'tilt 0: tilt_closed');
     await page.evaluate(() => {
       window.__setState('cover.shade', 'open', { current_position: 100 });

@@ -14,14 +14,14 @@ import { BoxesHost, CornerBoxes } from './corner-boxes';
 import { CameraOverlay, CamerasHost } from './camera-overlay';
 import { Environment, EnvironmentHost } from './environment';
 import { RoomMaps, RoomsHost, RoomView } from './rooms';
-import { EntityHandler, EntityHost, onNewState } from './entity-types';
+import { EntityHandler, EntityHost, onNewState, pivotObject } from './entity-types';
 import { Trackers } from './trackers';
 import { Showers } from './showers';
 import { Lamps, rgbToHex } from './lamps';
 import { Screens } from './screens';
+import { Openings, isOpen } from './openings';
 import { CLIMATE_COLORS, activeAlarms, climateAction } from './maps';
 import { localize, pickLanguage } from './localize/localize';
-import { findSlats, slatAngle, Slat, tiltSlats } from './slats';
 import { fitText, textLayout } from './textmap';
 import { rotationAngle, sensorNumber, turnToward } from './rotate';
 import { point } from './cameras';
@@ -123,15 +123,6 @@ const DASHBOARD_TAGS = [
   'HUI-SIDEBAR-VIEW',
 ];
 
-// A mesh with slats (cover.slats): its own geometry, its slats, and its positions and normals as
-// in the model.
-interface SlatSet {
-  geometry: THREE.BufferGeometry;
-  slats: Slat[];
-  positions: Float32Array;
-  normals?: Float32Array;
-}
-
 /* eslint no-console: 0 */
 console.info(
   `%c  FLOOR3D-CARD \n%c  ${localize('common.version')} ${CARD_VERSION}    `,
@@ -195,18 +186,6 @@ export class Floor3dCard extends LitElement {
   private _unit_of_measurement?: string[];
   private _text?: string[];
   private _spritetext?: string[];
-  private _objposition: number[][];
-  private _slidingdoorposition: THREE.Vector3[][];
-  // Covers: the size of each pane before it moves (motion: shrink), the meshes with slats
-  // (cover.slats), the angle they show, their tilt and their running tween, by entity.
-  private _paneSizes = new Map<number, THREE.Vector3>();
-  private _slatSets = new Map<number, SlatSet[]>();
-  private _slatAngles = new Map<number, number>();
-  private _slatTweens = new Map<number, TWEEN.Tween<{ angle: number }>>();
-  private _tilts = new Map<number, number | null>();
-  // Clipping planes of the sliding covers: in the space of the model, and in the space of the scene
-  // for the materials, placed again when the model moves.
-  private _coverPlanes: { local: THREE.Plane; world: THREE.Plane }[] = [];
   // Boxes in the corners (corner-boxes.ts), and the kind of the status box whose objects are outlined
   // in the model, with the timer that ends it.
   private _boxes = new CornerBoxes(this._boxesHost());
@@ -226,11 +205,9 @@ export class Floor3dCard extends LitElement {
   private _showers = new Showers(this._entityHost());
   private _lamps = new Lamps(this._entityHost());
   private _screens = new Screens(this._entityHost(), this._lamps);
+  private _openings = new Openings(this._entityHost());
   // The cameras on screen (camera-overlay.ts): their icons over the model, the picture that pops up.
   private _cameras = new CameraOverlay(this._camerasHost(), this._boxes);
-  private _pivot: THREE.Vector3[];
-  private _degrees: number[];
-  private _axis_for_door: THREE.Vector3[];
   private _axis_to_rotate: string[];
   private _round_per_seconds: number[];
   private _rotation_state: number[]; // target speed: 1 full, a fraction with percentage, negative in reverse
@@ -248,7 +225,6 @@ export class Floor3dCard extends LitElement {
   private _lastFrameTime?: number | null; // timestamp of the previous animation frame
   private _lastRenderTime = 0;
   private _lastShadowTime = 0;
-  private _slidingdoor: THREE.Group[];
   private _overlay_entity: string;
   private _overlay_state: string;
 
@@ -314,7 +290,6 @@ export class Floor3dCard extends LitElement {
   private _missingLogged?: { [entity: string]: boolean };
   private _overlay: HTMLDivElement;
   private _hass?: HomeAssistant;
-  private _position: number[];
   private _card_id: string;
   _helper: THREE.DirectionalLightHelper;
   private _modelready: boolean;
@@ -1236,11 +1211,11 @@ export class Floor3dCard extends LitElement {
           this._canvas = [];
           this._text = [];
           this._spritetext = [];
-          this._position = [];
           this._info = [];
           this._showers.reset();
           this._screens.reset();
           this._lamps.prepare();
+          this._openings.prepare();
 
           this._config.entities.forEach((entity) => {
             if (hass.states[entity.entity]) {
@@ -1299,7 +1274,6 @@ export class Floor3dCard extends LitElement {
               } else {
                 this._info.push('');
               }
-              this._position.push(entity.type3d == 'cover' ? this._coverPosition(hass.states[entity.entity]) : null);
             } else {
               console.warn('floor3d-card: entity <' + entity.entity + '> not found');
               // Every array is read by the position of the entity in the config: keep them aligned.
@@ -1311,7 +1285,6 @@ export class Floor3dCard extends LitElement {
               this._rooms.push('');
               this._sprites.push('');
               this._info.push('');
-              this._position.push(null);
             }
           });
         }
@@ -2270,7 +2243,7 @@ export class Floor3dCard extends LitElement {
     this._bboxmodel.position.x = -(box.max.x - box.min.x) / 2;
     this._bboxmodel.position.y = -box.min.y;
     this._bboxmodel.position.z = -(box.max.z - box.min.z) / 2;
-    this._placeCoverPlanes();
+    this._openings.placeCoverPlanes();
 
     if (this._config.camera_position) {
       this._camera.position.set(
@@ -2340,15 +2313,8 @@ export class Floor3dCard extends LitElement {
       show: (entity, i) => this._updateshow(entity, i),
       refresh: this._onNewState((entity, i) => this._updateshow(entity, i)),
     },
-    door: {
-      setup: (entity, i) => this._setupDoor(entity, i),
-      show: (entity, i) => this._updatedoor(entity, i),
-      refresh: this._onNewState((entity, i) => this._updatedoor(entity, i)),
-    },
-    cover: {
-      setup: (entity, i) => this._setupCover(entity, i),
-      refresh: (entity, i, state) => this._refreshCover(entity, i, state),
-    },
+    door: this._openings.door,
+    cover: this._openings.cover,
     text: {
       setup: (_, i) => this._setupText(i),
       show: (entity, i) => {
@@ -2417,6 +2383,8 @@ export class Floor3dCard extends LitElement {
       enableShadow: (light, bias) => card._enableShadow(light, bias),
       refreshLightShadow: (light) => card._refreshLightShadow(light as ShadowLight),
       manageLightShadows: (light) => card._manage_light_shadows(light),
+      invalidateShadows: () => card._invalidateShadows(),
+      objectNamesFor: (ids) => card._objectNamesFor(ids),
     };
   }
 
@@ -2434,30 +2402,12 @@ export class Floor3dCard extends LitElement {
         this._rotation_turned = [];
         this._rotation_wrap = [];
         this._rotation_objects = [];
-        this._pivot = [];
-        this._axis_for_door = [];
-        this._degrees = [];
-        this._slidingdoor = [];
-        this._objposition = [];
-        this._slidingdoorposition = [];
-        this._coverPlanes = [];
-        this._slatTweens.forEach((tween) => tween.stop());
-        this._slatTweens.clear();
-        this._slatSets.clear();
-        this._slatAngles.clear();
-        this._tilts.clear();
-        this._paneSizes.clear();
+        this._openings.reset();
         this._to_animate = false;
         this._zoom = [];
 
         this._config.entities.forEach((entity, i) => {
           try {
-            this._objposition.push([0, 0, 0]);
-            this._pivot.push(null);
-            this._axis_for_door.push(null);
-            this._degrees.push(0);
-            this._slidingdoor.push(null);
-            this._slidingdoorposition.push([]);
             if (this._hass.states[entity.entity] && this._hasObjects(entity, i)) {
               const handler = this._entityTypes[entity.type3d];
               if (handler && handler.setup) handler.setup(entity, i);
@@ -2505,188 +2455,17 @@ export class Floor3dCard extends LitElement {
       hinge = this._scene.getObjectByName(this._object_ids[i].objects[0].object_id);
     }
     bbox = new THREE.Box3().setFromObject(hinge);
-    this._pivot[i] = new THREE.Vector3();
-    this._pivot[i].subVectors(bbox.max, bbox.min).multiplyScalar(0.5);
-    this._pivot[i].add(bbox.min);
+    const pivot = new THREE.Vector3();
+    pivot.subVectors(bbox.max, bbox.min).multiplyScalar(0.5);
+    pivot.add(bbox.min);
 
     this._object_ids[i].objects.forEach((element) => {
       const _obj: any = this._scene.getObjectByName(element.object_id);
       if (!_obj) return;
-      this._pivotObject(_obj, this._pivot[i]);
+      pivotObject(_obj, pivot);
       _obj.userData.f3dRotationBase = _obj.rotation[entity.rotate.axis] || 0; // the angle 0 of angle_entity
       this._rotation_objects[this._rotation_objects.length - 1].push(_obj);
     });
-  }
-
-  // door: the hinge of a swing door, the axis and the angle it opens by; a sliding door slides from the
-  // corner of its box.
-  private _setupDoor(entity: Floor3dCardConfig, i: number): void {
-    if (entity.door.doortype != 'swing' && entity.door.doortype != 'slide') {
-      throw new Error('Invalid door type: ' + entity.door.doortype + '. Valid types are: swing, slide');
-    }
-
-    if (entity.door.doortype == 'swing') {
-      let position = new THREE.Vector3();
-      if (entity.door.hinge) {
-        let hinge: THREE.Mesh = this._scene.getObjectByName(entity.door.hinge) as THREE.Mesh;
-        hinge.geometry.computeBoundingBox();
-        let boundingBox = hinge.geometry.boundingBox;
-        position.subVectors(boundingBox.max, boundingBox.min);
-        switch (Math.max(position.x, position.y, position.z)) {
-          case position.x:
-            this._axis_for_door[i] = new THREE.Vector3(1, 0, 0);
-            break;
-          case position.z:
-            this._axis_for_door[i] = new THREE.Vector3(0, 0, 1);
-            break;
-          case position.y:
-          default:
-            this._axis_for_door[i] = new THREE.Vector3(0, 1, 0);
-        }
-        position.multiplyScalar(0.5);
-        position.add(boundingBox.min);
-        position.applyMatrix4(hinge.matrixWorld);
-      } else {
-        let pane: THREE.Mesh;
-
-        if (entity.door.pane) {
-          pane = this._scene.getObjectByName(entity.door.pane) as THREE.Mesh;
-        } else {
-          pane = this._scene.getObjectByName(this._object_ids[i].objects[0].object_id) as THREE.Mesh;
-        }
-
-        pane.geometry.computeBoundingBox();
-        let boundingBox = pane.geometry.boundingBox;
-        position.subVectors(boundingBox.max, boundingBox.min);
-        const side = entity.door.swing_side || entity.door.side;
-
-        if (side) {
-          switch (side) {
-            case 'up':
-              position.x = position.x / 2;
-              position.z = position.z / 2;
-              position.y = position.y;
-              if (position.x > position.z) {
-                this._axis_for_door[i] = new THREE.Vector3(1, 0, 0);
-              } else {
-                this._axis_for_door[i] = new THREE.Vector3(0, 0, 1);
-              }
-              break;
-            case 'down':
-              position.x = position.x / 2;
-              position.z = position.z / 2;
-              position.y = 0;
-              if (position.x > position.z) {
-                this._axis_for_door[i] = new THREE.Vector3(1, 0, 0);
-              } else {
-                this._axis_for_door[i] = new THREE.Vector3(0, 0, 1);
-              }
-              break;
-            case 'left':
-              if (position.x > position.z) {
-                position.x = 0;
-                position.z = position.z / 2;
-              } else {
-                position.z = 0;
-                position.x = position.x / 2;
-              }
-              this._axis_for_door[i] = new THREE.Vector3(0, 1, 0);
-              position.y = 0;
-              break;
-            case 'right':
-              if (position.x > position.z) {
-                position.z = position.z / 2;
-              } else {
-                position.x = position.x / 2;
-              }
-              this._axis_for_door[i] = new THREE.Vector3(0, 1, 0);
-              position.y = 0;
-              break;
-            default:
-              throw new Error('Invalid side: ' + side + '. Valid sides are: up, down, left, right');
-          }
-        }
-        position.add(boundingBox.min);
-        position.applyMatrix4(pane.matrixWorld);
-      }
-
-      this._pivot[i] = position;
-      if (typeof entity.door.swing_degrees !== 'undefined') {
-        this._degrees[i] = entity.door.swing_degrees;
-      } else if (typeof entity.door.degrees !== 'undefined') {
-        this._degrees[i] = entity.door.degrees;
-      } else {
-        this._degrees[i] = 90;
-      }
-
-      // Around the hinge, in the frame of each object (see _pivotObject).
-      this._object_ids[i].objects.forEach((element) => {
-        const _obj = this._scene.getObjectByName(element.object_id);
-        if (_obj) this._pivotObject(_obj, this._pivot[i]);
-      });
-    }
-    if (entity.door.doortype == 'slide') {
-      this._object_ids[i].objects.forEach((element) => {
-        const _obj = this._scene.getObjectByName(element.object_id);
-        if (!_obj) return;
-        // From the corner of its box, where it is when closed (see _pivotObject).
-        this._pivotObject(_obj, new THREE.Box3().setFromObject(_obj).min);
-        this._slidingdoorposition[i].push(_obj.position.clone());
-      });
-    }
-  }
-
-  // cover: the panes slide or shrink from the corner of their box, cut by a plane at the edge they go to;
-  // then the slats, and the position of the cover now.
-  private _setupCover(entity: Floor3dCardConfig, i: number): void {
-    // Without pane the first object is the pane, as in _updatecover. Before, such a cover
-    // was not set up and its first update stopped every other update of the card.
-    const pane: THREE.Mesh = (this._scene.getObjectByName(entity.cover.pane) ||
-      this._scene.getObjectByName(this._object_ids[i].objects[0]?.object_id)) as THREE.Mesh;
-
-    if (pane) {
-      this._object_ids[i].objects.forEach((element) => {
-        const _obj = this._scene.getObjectByName(element.object_id);
-        if (!_obj) return;
-        // From the corner of its box: a roller shade shortens toward it (see _pivotObject).
-        this._pivotObject(_obj, new THREE.Box3().setFromObject(_obj).min);
-        this._slidingdoorposition[i].push(_obj.position.clone());
-      });
-
-      const boxpane: THREE.Box3 = new THREE.Box3().setFromObject(pane);
-      this._paneSizes.set(i, boxpane.getSize(new THREE.Vector3()));
-
-      // motion: slide (the pane slides into its box, hidden past the edge of the side it
-      // goes to), shrink (it gets shorter toward that side) or none (only the slats turn).
-      if ((entity.cover.motion || 'slide') == 'slide') {
-        // The plane is kept in the space of the model too: the model is centred after
-        // this, and the plane moves with it (_placeCoverPlanes).
-        const coverplane = this._coverPlane(boxpane, entity.cover.side);
-        const clipPlanes = coverplane ? [coverplane] : [];
-        if (coverplane) {
-          this._bboxmodel.updateMatrixWorld(true);
-          const local = coverplane.clone().applyMatrix4(this._bboxmodel.matrixWorld.clone().invert());
-          this._coverPlanes.push({ local, world: coverplane });
-        }
-        // The materials of a cover are its own: a GLB model can share them with other
-        // objects, which the plane would cut too. The shadows are cut the same way.
-        this._object_ids[i].objects.forEach((element) => {
-          const _obj = this._scene.getObjectByName(element.object_id) as THREE.Mesh;
-          if (!_obj || !_obj.material) return;
-          const own = (m: THREE.Material) => {
-            const copy = m.clone();
-            copy.clippingPlanes = clipPlanes;
-            copy.clipShadows = this._config.shadow == 'yes';
-            return copy;
-          };
-          _obj.material = Array.isArray(_obj.material) ? _obj.material.map(own) : own(_obj.material);
-        });
-      }
-
-      this._initSlats(entity, i);
-      this._updatecover(entity, this._states[i], i);
-      this._updateSlats(entity, i, false);
-    }
   }
 
   // color: the materials of the objects, kept to go back to them, and copies to colour.
@@ -2743,24 +2522,6 @@ export class Floor3dCard extends LitElement {
       sprite.userData.above = object.name;
     }
     this._scene.add(sprite);
-  }
-
-  // A new state or position of a cover, a new tilt of its slats.
-  private _refreshCover(entity: Floor3dCardConfig, i: number, state: string): boolean {
-    let changed = false;
-    // Both can change: the position while the cover moves, the state when it starts or stops.
-    const position = this._coverPosition(this._hass.states[entity.entity]);
-    if (state != this._states[i] || position !== this._position[i]) {
-      this._states[i] = state;
-      this._position[i] = position;
-      this._updatecover(entity, state, i);
-      changed = true;
-    }
-    if (this._slatSets.has(i) && this._coverTilt(this._hass.states[entity.entity]) !== this._tilts.get(i)) {
-      this._updateSlats(entity, i);
-      changed = true;
-    }
-    return changed;
   }
 
   // A new text, from the state (with entity_template) or from an attribute.
@@ -3086,194 +2847,6 @@ export class Floor3dCard extends LitElement {
       if (sprite) sprite.visible = this._levelShown(sprite.userData.level);
     });
     this._env.followLevels(this._levels, (level) => this._levelShown(level));
-  }
-
-  private _updatecover(item: Floor3dCardConfig, state: string, i: number): void {
-    let pane = this._scene.getObjectByName(item.cover.pane);
-
-    if (!pane) {
-      pane = this._scene.getObjectByName(this._object_ids[i].objects[0].object_id);
-    }
-    // A cover that reports current_position is drawn there, also while it is opening or closing
-    // (0 is closed); the others are fully open or fully closed.
-    const percentage = this._position[i] != null ? this._position[i] : this._isOpen(state) ? 100 : 0;
-    const motion = item.cover.motion || 'slide';
-    if (motion == 'none') return;
-    if (motion == 'shrink') this._shrinkcover(pane, percentage, item.cover.side, i);
-    else this._translatedoor(pane, percentage, item.cover.side, i, percentage > 0 ? 'open' : 'closed');
-    // Shadows follow the tween in the animation loop.
-  }
-
-  // The model moved (it is centred once loaded): the planes of the sliding covers go with it.
-  // Before, they stayed where the model was before, which cut the covers in the wrong place.
-  private _placeCoverPlanes(): void {
-    if (!this._bboxmodel || !this._coverPlanes.length) return;
-    this._bboxmodel.updateMatrixWorld(true);
-    this._coverPlanes.forEach(({ local, world }) => world.copy(local).applyMatrix4(this._bboxmodel.matrixWorld));
-  }
-
-  // The plane that hides a sliding cover past the edge of its side: what is beyond is cut.
-  private _coverPlane(box: THREE.Box3, side: string): THREE.Plane | null {
-    const alongX = box.max.x - box.min.x > box.max.z - box.min.z;
-    switch (side) {
-      case 'up':
-        return new THREE.Plane(new THREE.Vector3(0, -1, 0), box.max.y);
-      case 'down':
-        return new THREE.Plane(new THREE.Vector3(0, 1, 0), -box.min.y);
-      case 'left':
-        return alongX
-          ? new THREE.Plane(new THREE.Vector3(1, 0, 0), -box.min.x)
-          : new THREE.Plane(new THREE.Vector3(0, 0, 1), -box.min.z);
-      case 'right':
-        return alongX
-          ? new THREE.Plane(new THREE.Vector3(-1, 0, 0), box.max.x)
-          : new THREE.Plane(new THREE.Vector3(0, 0, -1), box.max.z);
-    }
-    return null;
-  }
-
-  // motion: shrink. The pane gets shorter toward its side (a roller shade toward its roller, a
-  // curtain toward its side), without sliding: no plane cuts it. The other objects of the cover
-  // (a bottom bar, for example) follow its edge.
-  private _shrinkcover(pane: THREE.Object3D, percentage: number, side: string, index: number): void {
-    const size = this._paneSizes.get(index);
-    const objects = this._object_ids[index].objects;
-    const paneIndex = objects.findIndex((o) => o.object_id === pane.name);
-    if (!size || paneIndex < 0) {
-      this._translatedoor(pane, percentage, side, index, percentage > 0 ? 'open' : 'closed');
-      return;
-    }
-    const share = Math.min(100, Math.max(0, percentage)) / 100;
-    const scale = Math.max(1 - share, 0.001);
-    const axis: 'x' | 'y' | 'z' = side == 'up' || side == 'down' ? 'y' : size.x > size.z ? 'x' : 'z';
-    const sign = side == 'up' || side == 'right' ? 1 : -1;
-    const shift = sign * size[axis] * share; // where the free edge goes
-    objects.forEach((element, k) => {
-      const object = this._scene.getObjectByName(element.object_id);
-      const original = this._slidingdoorposition[index][k];
-      if (!object || !original) return;
-      const position = original.clone();
-      if (k === paneIndex) {
-        // Scaled from the edge on its side: the far one for up and right, its origin otherwise.
-        if (sign > 0) position[axis] += size[axis] * (1 - scale);
-        const targetScale = { x: 1, y: 1, z: 1 };
-        targetScale[axis] = scale;
-        new TWEEN.Tween(object.scale)
-          .to(targetScale, 1200)
-          .easing(TWEEN.Easing.Cubic.InOut)
-          .onComplete(() => this._startOrStopAnimationLoop())
-          .start();
-      } else position[axis] += shift;
-      if (position.equals(object.position)) return;
-      new TWEEN.Tween(object.position)
-        .to({ x: position.x, y: position.y, z: position.z }, 1200)
-        .easing(TWEEN.Easing.Cubic.InOut)
-        .onComplete(() => this._startOrStopAnimationLoop())
-        .start();
-    });
-    this._startOrStopAnimationLoop();
-  }
-
-  // cover.slats: the slats of the objects named there (a blind exported as one object included,
-  // see slats.ts), each mesh with a geometry of its own and its first positions.
-  private _initSlats(item: Floor3dCardConfig, i: number): void {
-    const ids = item.cover && item.cover.slats;
-    if (!ids) return;
-    const sets: SlatSet[] = [];
-    this._objectNamesFor(Array.isArray(ids) ? ids : [ids]).forEach((name) => {
-      const object = this._scene.getObjectByName(name);
-      if (!object) return;
-      object.traverse((child) => {
-        const mesh = child as THREE.Mesh;
-        if (!mesh.isMesh) return;
-        const source = mesh.geometry as THREE.BufferGeometry;
-        const position = source.getAttribute('position');
-        if (!position || position.count > 500000) return;
-        // Plain float copies (a GLB can interleave or quantize them, and share them with other objects).
-        const plain = (attribute: THREE.BufferAttribute | THREE.InterleavedBufferAttribute): Float32Array => {
-          const array = new Float32Array(attribute.count * 3);
-          for (let v = 0; v < attribute.count; v++) {
-            array[3 * v] = attribute.getX(v);
-            array[3 * v + 1] = attribute.getY(v);
-            array[3 * v + 2] = attribute.getZ(v);
-          }
-          return array;
-        };
-        const positions = plain(position);
-        const slats = findSlats(positions, source.index ? source.index.array : null);
-        if (!slats.length) return;
-        const geometry = source.clone();
-        geometry.setAttribute('position', new THREE.BufferAttribute(positions.slice(), 3));
-        const normal = source.getAttribute('normal');
-        const normals = normal ? plain(normal) : undefined;
-        if (normals) geometry.setAttribute('normal', new THREE.BufferAttribute(normals.slice(), 3));
-        mesh.geometry = geometry;
-        sets.push({ geometry, slats, positions, normals });
-      });
-    });
-    if (sets.length) this._slatSets.set(i, sets);
-    else
-      console.warn(
-        'floor3d-card: no slats found in <' + ids + '> (' + item.entity + '): each slat must be a separate piece',
-      );
-  }
-
-  // The slats turn with current_tilt_position: tilt_closed degrees at 0, tilt_open at 100 (from
-  // the model, 80 and 0 by default). Without the attribute they stay as in the model.
-  private _updateSlats(item: Floor3dCardConfig, i: number, animate = true): void {
-    const sets = this._slatSets.get(i);
-    const stateObj = this._hass && this._hass.states[item.entity];
-    if (!sets || !stateObj) return;
-    const tilt = this._coverTilt(stateObj);
-    this._tilts.set(i, tilt);
-    if (tilt === null) return;
-    const target = slatAngle(tilt, this._num(item.cover.tilt_closed, 80), this._num(item.cover.tilt_open, 0));
-    const from = this._slatAngles.get(i) || 0;
-    const running = this._slatTweens.get(i);
-    if (running) running.stop();
-    this._slatTweens.delete(i);
-    if (target === from) return;
-    const apply = (degrees: number) => {
-      this._slatAngles.set(i, degrees);
-      const angle = THREE.MathUtils.degToRad(degrees);
-      sets.forEach(({ geometry, slats, positions, normals }) => {
-        const position = geometry.getAttribute('position') as THREE.BufferAttribute;
-        tiltSlats(slats, angle, positions, position.array as Float32Array);
-        position.needsUpdate = true;
-        const normal = geometry.getAttribute('normal') as THREE.BufferAttribute;
-        if (normals && normal) {
-          tiltSlats(slats, angle, normals, normal.array as Float32Array, true);
-          normal.needsUpdate = true;
-        }
-        geometry.computeBoundingSphere();
-        geometry.boundingBox = null;
-      });
-    };
-    if (!animate) {
-      apply(target);
-      this._invalidateShadows();
-      return;
-    }
-    const value = { angle: from };
-    const tween = new TWEEN.Tween(value)
-      .to({ angle: target }, 1200)
-      .easing(TWEEN.Easing.Cubic.InOut)
-      .onUpdate(() => apply(value.angle))
-      .onComplete(() => {
-        this._slatTweens.delete(i);
-        this._startOrStopAnimationLoop();
-      })
-      .start();
-    this._slatTweens.set(i, tween);
-    this._startOrStopAnimationLoop();
-  }
-
-  // current_tilt_position of a cover, null when the cover doesn't report it.
-  private _coverTilt(stateObj: HassEntity): number | null {
-    const tilt = stateObj.attributes['current_tilt_position'];
-    if (tilt === undefined || tilt === null || tilt === '') return null;
-    const n = Number(tilt);
-    return isNaN(n) ? null : n;
   }
 
   private _createTextCanvas(entity: Floor3dCardConfig, text: string, uom: string): HTMLCanvasElement {
@@ -3630,48 +3203,6 @@ export class Floor3dCard extends LitElement {
     }
   }
 
-  private _updatedoor(entity: Floor3dCardConfig, i: number): void {
-    // perform action on door objects
-
-    const _obj: any = this._scene.getObjectByName(this._object_ids[i].objects[0].object_id);
-
-    let door: THREE.Mesh;
-
-    door = _obj;
-
-    if (door) {
-      if (entity.door.doortype) {
-        if (entity.door.doortype != 'swing' && entity.door.doortype != 'slide') {
-          throw new Error('Invalid door type: ' + entity.door.doortype + '. Valid types are: swing, slide');
-        }
-
-        if (entity.door.doortype == 'swing') {
-          this._rotatedoorpivot(entity, i);
-        }
-        if (entity.door.doortype == 'slide') {
-          let pane = this._scene.getObjectByName(entity.door.pane);
-          if (!pane) {
-            pane = this._scene.getObjectByName(this._object_ids[i].objects[0].object_id);
-          }
-          let percentage: number;
-          if (typeof entity.door.slide_percentage !== 'undefined') {
-            percentage = entity.door.slide_percentage;
-          } else {
-            percentage = entity.door.percentage;
-          }
-          this._translatedoor(
-            pane,
-            percentage != null ? percentage : 100,
-            entity.door.slide_side || entity.door.side,
-            i,
-            this._states[i],
-          );
-        }
-      }
-    }
-    // The door moves with a tween: the animation loop redraws the shadows while it moves.
-  }
-
   // One render per frame even when many updates arrive together. None while the animation loop
   // runs: it renders anyway.
   private _scheduleRender(): void {
@@ -3950,18 +3481,6 @@ export class Floor3dCard extends LitElement {
     this._renderMenus();
   }
 
-  // current_position of a cover, null when the cover doesn't report it.
-  private _coverPosition(stateObj: HassEntity): number | null {
-    const position = stateObj.attributes['current_position'];
-    if (position === undefined || position === null || position === '') return null;
-    const n = Number(position);
-    return isNaN(n) ? null : n;
-  }
-
-  private _isOpen(state: string): boolean {
-    return state == 'on' || state == 'open' || state == 'opening';
-  }
-
   // Doors and windows (state_colors: yes), alarm and climate objects, and room colours: recomputed
   // when one of their entities, or the alarm, changes. Only the sensors of the map on show count,
   // so that plugs reporting their power every second don't redraw the card while it shows another map.
@@ -3995,7 +3514,7 @@ export class Floor3dCard extends LitElement {
     let anyOpen = false;
     this._config.entities.forEach((entity, i) => {
       if (!doors.includes(entity)) return;
-      const open = this._isOpen(this._states[i]);
+      const open = isOpen(this._states[i]);
       anyOpen = anyOpen || open;
       this._tintObjects(i, open ? openColor : null, armed ? 0.9 : 0.6);
     });
@@ -4117,7 +3636,7 @@ export class Floor3dCard extends LitElement {
   private _pulseOpenings(now: number): void {
     const k = 0.25 + 0.75 * (0.5 + 0.5 * Math.sin((now / 1000) * Math.PI * 2));
     this._config.entities.forEach((entity, i) => {
-      if (entity.type3d != 'door' || !this._isOpen(this._states[i]) || !this._object_ids[i]) return;
+      if (entity.type3d != 'door' || !isOpen(this._states[i]) || !this._object_ids[i]) return;
       this._object_ids[i].objects.forEach((o) => {
         const obj: any = this._scene.getObjectByName(o.object_id);
         const tint = obj && obj.userData.tintMaterial;
@@ -4129,149 +3648,11 @@ export class Floor3dCard extends LitElement {
     });
   }
 
-  // An object that turns or slides (rotate, door, cover) turns around pivot, a point of the scene: its
-  // geometry moves so that the pivot is its origin, and the object moves to the pivot, so that it stays
-  // where it is. In the frame
-  // of the object: a mesh of a GLB has a position (and a rotation) of its own, and the pivot is worked
-  // out on the object as it is in the scene; before, the object jumped away and turned around a corner.
-  // A copy of the geometry: identical objects may share it, and they moved with it. An object of
-  // several meshes (a group) moves its children. Once per object: a second entity on it turns it around
-  // the same pivot (before, it jumped again). Doors and covers since 2.12.0, rotate since 2.11.4.
-  private _pivotObject(object: THREE.Object3D, pivot: THREE.Vector3): void {
-    if (object.userData.f3dPivoted) return;
-    object.userData.f3dPivoted = true;
-    object.updateWorldMatrix(true, false);
-    const local = object.worldToLocal(pivot.clone());
-    const mesh = object as THREE.Mesh;
-    if (mesh.geometry) {
-      mesh.geometry = mesh.geometry.clone();
-      mesh.geometry.translate(-local.x, -local.y, -local.z);
-    } else {
-      object.children.forEach((child) => child.position.sub(local));
-    }
-    object.position.copy(local.applyMatrix4(object.matrix));
-  }
-
   private _centerobjecttopivot(object: THREE.Mesh, pivot: THREE.Vector3) {
     //Center a Mesh  along is defined pivot point
 
     object.applyMatrix4(new THREE.Matrix4().makeTranslation(-pivot.x, -pivot.y, -pivot.z));
     object.position.copy(pivot);
-  }
-
-  private _rotatedoorpivot(entity: Floor3dCardConfig, index: number) {
-    //For a swing door, rotate the objects along the configured axis and the degrees of opening
-    this._object_ids[index].objects.forEach((element) => {
-      let _obj: any = this._scene.getObjectByName(element.object_id);
-
-      const targetRotation: THREE.Vector3 = new THREE.Vector3(0, 0, 0);
-      const direction = entity.door.swing_direction || entity.door.direction;
-
-      if (this._states[index] == 'on') {
-        if (direction == 'inner') {
-          if (this._axis_for_door[index].y == 1) {
-            targetRotation.y = (-Math.PI * this._degrees[index]) / 180;
-          } else if (this._axis_for_door[index].x == 1) {
-            targetRotation.x = (-Math.PI * this._degrees[index]) / 180;
-          } else if (this._axis_for_door[index].z == 1) {
-            targetRotation.z = (-Math.PI * this._degrees[index]) / 180;
-          }
-        } else if (direction == 'outer') {
-          if (this._axis_for_door[index].y == 1) {
-            targetRotation.y = (Math.PI * this._degrees[index]) / 180;
-          } else if (this._axis_for_door[index].x == 1) {
-            targetRotation.x = (Math.PI * this._degrees[index]) / 180;
-          } else if (this._axis_for_door[index].z == 1) {
-            targetRotation.z = (Math.PI * this._degrees[index]) / 180;
-          }
-        } else {
-          throw new Error('Invalid swing direction: ' + direction + '. Valid directions are: inner, outer');
-        }
-      }
-
-      if (targetRotation.equals(_obj.rotation)) return;
-
-      new TWEEN.Tween(_obj.rotation)
-        .to(targetRotation, 1200)
-        .easing(TWEEN.Easing.Cubic.InOut)
-        .onComplete(() => {
-          // Stop animation loop if all tweens finished
-          this._startOrStopAnimationLoop();
-        })
-        .start();
-      this._startOrStopAnimationLoop();
-    });
-  }
-
-  private _translatedoor(pane: THREE.Object3D, percentage: number, side: string, index: number, doorstate: string) {
-    //For a slide door, translate the objects according to the configured directions and percentage of opening
-
-    let translate: THREE.Vector3 = new THREE.Vector3(0, 0, 0);
-
-    let size: THREE.Vector3 = new THREE.Vector3();
-
-    let bbox = new THREE.Box3().setFromObject(pane);
-
-    size.subVectors(bbox.max, bbox.min);
-
-    if (doorstate == 'on' || doorstate == 'open') {
-      if (side == 'left') {
-        if (size.x > size.z) {
-          translate.z += 0;
-          translate.x += (-size.x * percentage) / 100;
-          translate.y = 0;
-        } else {
-          translate.z += (-size.z * percentage) / 100;
-          translate.x += 0;
-          translate.y += 0;
-        }
-      } else if (side == 'right') {
-        if (size.x > size.z) {
-          translate.z += 0;
-          translate.x += (+size.x * percentage) / 100;
-          translate.y += 0;
-        } else {
-          translate.z += (+size.z * percentage) / 100;
-          translate.x += 0;
-          translate.y += 0;
-        }
-      } else if (side == 'down') {
-        translate.y += (-size.y * percentage) / 100;
-        translate.x += 0;
-        translate.z += 0;
-      } else if (side == 'up') {
-        translate.y += (+size.y * percentage) / 100;
-        translate.x += 0;
-        translate.z += 0;
-      } else {
-        throw new Error('Invalid side: ' + side + '. Valid sides are: up, down, left, right');
-      }
-    }
-
-    this._object_ids[index].objects.forEach((element, i) => {
-      let _obj: any = this._scene.getObjectByName(element.object_id);
-      const originalPosition = this._slidingdoorposition[index][i];
-      if (!_obj || !originalPosition) return; // an object missing from the model
-
-      let targetPosition: THREE.Vector3 = new THREE.Vector3(
-        originalPosition.x + translate.x,
-        originalPosition.y + translate.y,
-        originalPosition.z + translate.z,
-      );
-
-      if (targetPosition.equals(_obj.position)) return;
-
-      new TWEEN.Tween(_obj.position)
-        .to(targetPosition, 1200)
-        .easing(TWEEN.Easing.Cubic.InOut)
-        .onComplete(() => {
-          // Stop animation loop if all tweens finished
-          this._startOrStopAnimationLoop();
-        })
-        .start();
-    });
-
-    this._startOrStopAnimationLoop();
   }
 
   private _updateroomcolor(item: any, index: number): void {

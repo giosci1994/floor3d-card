@@ -32,6 +32,31 @@ export interface EntityHost {
   enableShadow(light: THREE.PointLight | THREE.SpotLight, bias: number): void;
   refreshLightShadow(light: THREE.Light): void; // its shadow map is redrawn if it is out of date
   manageLightShadows(light: THREE.Light): void; // extralightmode: only the lights that are on cast shadows
+  invalidateShadows(): void; // something moved: the shadows are drawn again
+  objectNamesFor(ids: string[]): string[]; // the objects of the model that ids name (names with *, <groups>)
+}
+
+// An object that turns or slides (rotate, door, cover) turns around pivot, a point of the scene: its
+// geometry moves so that the pivot is its origin, and the object moves to the pivot, so that it stays
+// where it is. In the frame
+// of the object: a mesh of a GLB has a position (and a rotation) of its own, and the pivot is worked
+// out on the object as it is in the scene; before, the object jumped away and turned around a corner.
+// A copy of the geometry: identical objects may share it, and they moved with it. An object of
+// several meshes (a group) moves its children. Once per object: a second entity on it turns it around
+// the same pivot (before, it jumped again). Doors and covers since 2.12.0, rotate since 2.11.4.
+export function pivotObject(object: THREE.Object3D, pivot: THREE.Vector3): void {
+  if (object.userData.f3dPivoted) return;
+  object.userData.f3dPivoted = true;
+  object.updateWorldMatrix(true, false);
+  const local = object.worldToLocal(pivot.clone());
+  const mesh = object as THREE.Mesh;
+  if (mesh.geometry) {
+    mesh.geometry = mesh.geometry.clone();
+    mesh.geometry.translate(-local.x, -local.y, -local.z);
+  } else {
+    object.children.forEach((child) => child.position.sub(local));
+  }
+  object.position.copy(local.applyMatrix4(object.matrix));
 }
 
 // The refresh of a type whose objects follow only the state: apply when the state changes.
