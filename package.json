@@ -15,7 +15,7 @@
   "author": "Andrea Di Zanni <adizanni@msn.com>",
   "license": "MIT",
   "dependencies": {
-    "@tweenjs/tween.js": "^18.6.4",
+    "@tweenjs/tween.js": "^25.0.0",
     "lit": "^3.3.3",
     "three": "^0.186.1"
   },

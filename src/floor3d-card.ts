@@ -26,7 +26,7 @@ import { CLIMATE_COLORS, activeAlarms, climateAction } from './maps';
 import { localize, pickLanguage } from './localize/localize';
 import { STATUS_COLORS, StatusKind } from './boxes';
 //import three.js libraries for 3D rendering
-import * as TWEEN from '@tweenjs/tween.js';
+import { Easing, playing, tween, updateTweens } from './tweens';
 import { mdiAlertCircleOutline, mdiCubeOutline } from '@mdi/js';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
@@ -1916,10 +1916,10 @@ export class Floor3dCard extends LitElement {
       this._startOrStopAnimationLoop();
     };
     this._cameraTweens = [
-      new TWEEN.Tween(this._camera.position).to({ x: position.x, y: position.y, z: position.z }, 700),
-      new TWEEN.Tween(this._controls.target).to({ x: target.x, y: target.y, z: target.z }, 700),
+      tween(this._camera.position).to({ x: position.x, y: position.y, z: position.z }, 700),
+      tween(this._controls.target).to({ x: target.x, y: target.y, z: target.z }, 700),
     ];
-    this._cameraTweens.forEach((t) => t.easing(TWEEN.Easing.Cubic.InOut).onUpdate(update).onComplete(done).start());
+    this._cameraTweens.forEach((t) => t.easing(Easing.Cubic.InOut).onUpdate(update).onComplete(done).start());
     this._startOrStopAnimationLoop();
   }
 
@@ -3118,7 +3118,7 @@ export class Floor3dCard extends LitElement {
     return (
       this._showers.running ||
       this._rotating.moving ||
-      TWEEN.getAll().length > 0 ||
+      playing().length > 0 ||
       this._trackers.needAnimation() ||
       this._alarmPulse ||
       this._roomAlarms
@@ -3152,10 +3152,10 @@ export class Floor3dCard extends LitElement {
     const clockDelta = this._lastFrameTime != null ? Math.min((now - this._lastFrameTime) / 1000, 0.1) : 1 / 60;
     this._lastFrameTime = now;
 
-    // What moves in this frame, read before TWEEN.update() removes the tweens that end now.
+    // What moves in this frame, read before updateTweens() lets the tweens that end now go.
     const rotating = this._rotating.moving;
-    const tweening = TWEEN.getAll().length > 0;
-    const objectTweens = tweening && TWEEN.getAll().some((t) => !this._cameraTweens.includes(t));
+    const tweening = playing().length > 0;
+    const objectTweens = tweening && playing().some((t) => !this._cameraTweens.includes(t));
     const showering = this._showers.running;
 
     this._rotating.turn(clockDelta);
@@ -3163,7 +3163,7 @@ export class Floor3dCard extends LitElement {
     // Step proportional to elapsed time (60 fps = 1 step), capped after long pauses.
     this._showers.animate(clockDelta * 60);
 
-    TWEEN.update();
+    updateTweens();
 
     this._trackers.animate(clockDelta);
     if (this._alarmPulse) this._pulseOpenings(now);
@@ -3172,7 +3172,7 @@ export class Floor3dCard extends LitElement {
     // Only moving objects change the shadows (not the shower, the trackers or the camera). Redrawing
     // every shadow map at every frame of a door is dozens of passes over the whole model per frame:
     // they follow the door a few times per second and take its final position when it stops.
-    const objectsStopped = objectTweens && !TWEEN.getAll().some((t) => !this._cameraTweens.includes(t));
+    const objectsStopped = objectTweens && !playing().some((t) => !this._cameraTweens.includes(t));
     if ((rotating || objectTweens) && (objectsStopped || now - this._lastShadowTime >= MOVING_SHADOW_MS)) {
       this._lastShadowTime = now;
       this._invalidateShadows();

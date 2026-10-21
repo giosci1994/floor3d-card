@@ -2,7 +2,7 @@
 // shutter, a blind) slides into its box, shrinks toward its side or only turns its slats, following
 // the state, the position and the tilt of the entity.
 import * as THREE from 'three';
-import * as TWEEN from '@tweenjs/tween.js';
+import { Easing, Tween, tween } from './tweens';
 import type { HassEntity } from 'home-assistant-js-websocket';
 import { EntityHandler, EntityHost, onNewState, pivotObject } from './entity-types';
 import { findSlats, slatAngle, Slat, tiltSlats } from './slats';
@@ -43,7 +43,7 @@ export class Openings {
   private _paneSizes = new Map<number, THREE.Vector3>();
   private _slatSets = new Map<number, SlatSet[]>();
   private _slatAngles = new Map<number, number>();
-  private _slatTweens = new Map<number, TWEEN.Tween<{ angle: number }>>();
+  private _slatTweens = new Map<number, Tween<{ angle: number }>>();
   private _tilts = new Map<number, number | null>();
   // Clipping planes of the sliding covers: in the space of the model, and in the space of the scene
   // for the materials, placed again when the model moves.
@@ -354,9 +354,9 @@ export class Openings {
 
       if (targetRotation.equals(_obj.rotation)) return;
 
-      new TWEEN.Tween(_obj.rotation)
+      tween(_obj.rotation)
         .to(targetRotation, 1200)
-        .easing(TWEEN.Easing.Cubic.InOut)
+        .easing(Easing.Cubic.InOut)
         .onComplete(() => {
           // Stop animation loop if all tweens finished
           this.host.animate();
@@ -424,9 +424,9 @@ export class Openings {
 
       if (targetPosition.equals(_obj.position)) return;
 
-      new TWEEN.Tween(_obj.position)
+      tween(_obj.position)
         .to(targetPosition, 1200)
-        .easing(TWEEN.Easing.Cubic.InOut)
+        .easing(Easing.Cubic.InOut)
         .onComplete(() => {
           // Stop animation loop if all tweens finished
           this.host.animate();
@@ -479,16 +479,16 @@ export class Openings {
         if (sign > 0) position[axis] += size[axis] * (1 - scale);
         const targetScale = { x: 1, y: 1, z: 1 };
         targetScale[axis] = scale;
-        new TWEEN.Tween(object.scale)
+        tween(object.scale)
           .to(targetScale, 1200)
-          .easing(TWEEN.Easing.Cubic.InOut)
+          .easing(Easing.Cubic.InOut)
           .onComplete(() => this.host.animate())
           .start();
       } else position[axis] += shift;
       if (position.equals(object.position)) return;
-      new TWEEN.Tween(object.position)
+      tween(object.position)
         .to({ x: position.x, y: position.y, z: position.z }, 1200)
-        .easing(TWEEN.Easing.Cubic.InOut)
+        .easing(Easing.Cubic.InOut)
         .onComplete(() => this.host.animate())
         .start();
     });
@@ -604,16 +604,16 @@ export class Openings {
       return;
     }
     const value = { angle: from };
-    const tween = new TWEEN.Tween(value)
+    const slats = tween(value)
       .to({ angle: target }, 1200)
-      .easing(TWEEN.Easing.Cubic.InOut)
+      .easing(Easing.Cubic.InOut)
       .onUpdate(() => apply(value.angle))
       .onComplete(() => {
         this._slatTweens.delete(i);
         this.host.animate();
       })
       .start();
-    this._slatTweens.set(i, tween);
+    this._slatTweens.set(i, slats);
     this.host.animate();
   }
 
