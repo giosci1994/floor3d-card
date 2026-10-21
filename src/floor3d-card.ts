@@ -1,4 +1,4 @@
-import { LitElement, html, nothing, TemplateResult, CSSResultGroup, render } from 'lit';
+import { LitElement, html, TemplateResult, CSSResultGroup, render } from 'lit';
 import { property } from 'lit/decorators.js';
 import { HomeAssistant, LovelaceCardEditor, fireEvent, forwardHaptic } from './ha';
 // The editor is loaded on demand by getConfigElement(): devices that only show the card never download it.
@@ -11,6 +11,7 @@ import DRACO_DECODER from 'virtual:draco-decoder';
 import { previewState } from './preview';
 import { cardStyles } from './styles';
 import { BoxesHost, CornerBoxes } from './corner-boxes';
+import { CameraOverlay, CamerasHost } from './camera-overlay';
 import {
   CLIMATE_COLORS,
   MapScale,
@@ -30,9 +31,9 @@ import { findSlats, slatAngle, Slat, tiltSlats } from './slats';
 import { moonPhase, skyBackground, weatherClouds } from './sky';
 import { fitText, textLayout } from './textmap';
 import { rotationAngle, sensorNumber, turnToward } from './rotate';
-import { CameraItem, cameraList, cameraName, newPopupMemory, point, popupStep, snapshotUrl } from './cameras';
+import { point } from './cameras';
 import { grassTexture, groundAlpha, groundStyle } from './ground';
-import { corner, STATUS_COLORS, StatusKind } from './boxes';
+import { STATUS_COLORS, StatusKind } from './boxes';
 //import three.js libraries for 3D rendering
 import * as TWEEN from '@tweenjs/tween.js';
 import { mdiAlertCircleOutline, mdiCubeOutline } from '@mdi/js';
@@ -282,17 +283,8 @@ export class Floor3dCard extends LitElement {
   private _levelsShown?: boolean[];
   private _levelMiddles?: number[]; // the middle of the height of each level (see _levelsUpTo)
   private _ground?: THREE.Mesh; // ground: the surface under the house
-  // Cameras (cameras.ts): their icons over the model (placed again at every frame), the pictures
-  // that pop up (what the sensors did, the timer of the first picture to go away, the camera shown
-  // and the timer of its next picture).
-  private _pinsEl?: HTMLElement;
-  private _pins: { el: HTMLElement; camera: CameraItem }[] = [];
-  private _pinsKey?: string;
-  private _popupMemory = newPopupMemory();
-  private _popupShowing: { entity: string; trigger?: string }[] = [];
-  private _popupTimer?: number;
-  private _popupEntity?: string;
-  private _popupRefresh?: number;
+  // The cameras on screen (camera-overlay.ts): their icons over the model, the picture that pops up.
+  private _cameras = new CameraOverlay(this._camerasHost(), this._boxes);
   private _pivot: THREE.Vector3[];
   private _degrees: number[];
   private _axis_for_door: THREE.Vector3[];
@@ -477,8 +469,7 @@ export class Floor3dCard extends LitElement {
 
     this._cancelTap();
     this._boxes.disconnect();
-    window.clearTimeout(this._popupTimer);
-    this._stopPopupRefresh();
+    this._cameras.disconnect();
     // The preview going away while the editor is paused (Home Assistant replaces it at every change
     // of the config): the next one shows its last picture, with the camera where it was.
     if (previewState.paused && this._modelready && this._isEditorPreview()) this._snapshot();
@@ -729,7 +720,7 @@ export class Floor3dCard extends LitElement {
     //render the model
     if (this._torch) this._aimTorch();
     this._renderer.render(this._scene, this._camera);
-    this._placePins();
+    this._cameras.placePins();
   }
 
   // The torch lights what the camera looks at: its target is a point in front of the camera.
@@ -1039,7 +1030,7 @@ export class Floor3dCard extends LitElement {
       this._pickMode = !!detail.pick;
       if (this._renderer) this._renderer.domElement.style.cursor = this._pickMode ? 'crosshair' : '';
       // The icons of the cameras let the taps through to the model.
-      if (this._pinsEl) this._pinsEl.classList.toggle('picking', this._pickMode);
+      this._cameras.setPicking(this._pickMode);
     }
     if ('highlight' in detail) this._setHighlight(detail.highlight || []);
     if (detail.request === 'snapshot') {
@@ -1269,7 +1260,7 @@ export class Floor3dCard extends LitElement {
       );
       this._renderer.render(this._scene, this._camera);
     }
-    this._placePins();
+    this._cameras.placePins();
     this._boxes.place();
   }
 
@@ -4755,7 +4746,7 @@ export class Floor3dCard extends LitElement {
   private _renderBoxes(force = false): void {
     if (!this._card || !this._hass || !this._modelready) return;
     this._boxes.renderAll(force);
-    this._renderCameras(force);
+    this._cameras.render(force);
     this._boxes.placeIfChanged(force);
   }
 
@@ -4807,7 +4798,7 @@ export class Floor3dCard extends LitElement {
       showRoom: (room, ids) => card._showRoom(room as RoomView, ids),
       roomView: (name) => card._roomView(name),
       renderBoxes: (force) => card._renderBoxes(force),
-      beforePlace: () => card._sizePopup(),
+      beforePlace: () => card._cameras.sizePopup(),
     };
   }
 
@@ -4884,255 +4875,46 @@ export class Floor3dCard extends LitElement {
     this._shownTimer = window.setTimeout(() => this._endShown(), 10000);
   }
 
-  // --- Cameras (cameras.ts) ------------------------------------------------------------------------
+  // --- Cameras (camera-overlay.ts) -----------------------------------------------------------------
 
-  // Their icons on the map, and the picture that pops up when their sensors go off.
-  private _renderCameras(force: boolean): void {
-    const cameras = cameraList(this._config.cameras);
-    this._stepPopup(cameras);
-    this._renderPins(cameras, force);
-    this._renderCameraPopup(cameras, force);
-  }
-
-  // What the sensors of the cameras did since the last update: the pictures to show, and a timer for
-  // the first of them to go away.
-  private _stepPopup(cameras: CameraItem[]): void {
-    const now = Date.now();
-    const duration = Math.max(1, this._num(this._config.camera_popup_duration, 20)) * 1000;
-    const { showing, next } = popupStep(this._popupMemory, cameras, this._hass.states, now, duration);
-    this._popupShowing = showing;
-    window.clearTimeout(this._popupTimer);
-    this._popupTimer =
-      next !== undefined && this.isConnected
-        ? window.setTimeout(() => this._renderBoxes(), next - now + 50)
-        : undefined;
-  }
-
-  // cameras_show: the icon of each camera with a position, over its point of the model; a tap opens
-  // the camera. It blinks while its picture pops up.
-  private _renderPins(cameras: CameraItem[], force: boolean): void {
-    // Hidden on this device with the button by the menus (cameras_button).
-    const placed =
-      this._shown('cameras_show', true) && !this._boxes.isCollapsed('cameras') ? cameras.filter((c) => c.position) : [];
-    const states = this._hass.states;
-    const alert = new Set(this._popupShowing.map((s) => s.entity));
-    const key = JSON.stringify(
-      placed.map((c) => [
-        c.entity,
-        c.position,
-        c.level,
-        c.icon,
-        cameraName(c, states[c.entity]),
-        states[c.entity] ? states[c.entity].state : '',
-        alert.has(c.entity),
-      ]),
-    );
-    if (!force && key === this._pinsKey) return;
-    this._pinsKey = key;
-    if (!placed.length) {
-      if (this._pinsEl) this._pinsEl.remove();
-      this._pinsEl = undefined;
-      this._pins = [];
-      return;
-    }
-    if (!this._pinsEl) {
-      this._pinsEl = document.createElement('div');
-      this._pinsEl.className = 'f3d-pins';
-      this._pinsEl.classList.toggle('picking', !!this._pickMode);
-      // A tap on an icon is for the icon: not a tap on the model behind it (the box listens to them).
-      ['pointerdown', 'dblclick', 'keydown'].forEach((type) =>
-        this._pinsEl.addEventListener(type, (ev) => ev.stopPropagation()),
-      );
-    }
-    // First in the box of the model: over the model, also when the box is positioned (overlay: yes
-    // makes it so: in the card, before it, the model covered the icons), under the menus and the bars
-    // of the levels and of the views that come after. Again after a reload, which empties the box.
-    const parent = this._content || this._card;
-    if (this._pinsEl.parentNode !== parent) parent.insertBefore(this._pinsEl, parent.firstChild);
-    render(
-      html`${placed.map((c) => {
-        const stateObj = states[c.entity];
-        const name = cameraName(c, stateObj);
-        const off = !stateObj || stateObj.state === 'unavailable';
-        return html`<button
-          class="f3d-pin ${off ? 'off' : ''} ${alert.has(c.entity) ? 'alert' : ''}"
-          title=${name}
-          aria-label=${name}
-          @click=${(ev: Event) => {
-            ev.stopPropagation();
-            this._boxes.moreInfo(c.entity);
-          }}
-        >
-          <ha-icon icon=${c.icon || 'mdi:cctv'}></ha-icon>
-        </button>`;
-      })}`,
-      this._pinsEl,
-    );
-    const elements = Array.from(this._pinsEl.querySelectorAll('.f3d-pin')) as HTMLElement[];
-    this._pins = elements.map((el, i) => ({ el, camera: placed[i] }));
-    this._placePins();
-  }
-
-  // The icons follow the camera of the card: placed again after every frame over their point of the
-  // model; hidden behind the camera, out of the view, or when their level is hidden.
-  private _placePins(): void {
-    if (!this._pins.length || !this._pinsEl || !this._renderer || !this._camera || !this._bboxmodel) return;
-    // The icons are placed from the top left corner of their layer, wherever the canvas is in the card.
-    const canvas = this._renderer.domElement.getBoundingClientRect();
-    const layer = this._pinsEl.getBoundingClientRect();
-    const width = canvas.width;
-    const height = canvas.height;
-    const left = canvas.left - layer.left;
-    const top = canvas.top - layer.top;
-    const point = new THREE.Vector3();
-    const view = new THREE.Vector3();
-    this._pins.forEach(({ el, camera }) => {
-      const p = camera.position;
-      let shown = !!p && width > 0 && height > 0;
-      if (shown && camera.level !== undefined && this._displaylevels && this._displaylevels[camera.level] === false)
-        shown = false;
-      if (shown) {
-        point.set(p[0], p[1], p[2]).applyMatrix4(this._bboxmodel.matrixWorld);
-        view.copy(point).applyMatrix4(this._camera.matrixWorldInverse);
-        point.project(this._camera);
-        shown = view.z < 0 && Math.abs(point.x) <= 1 && Math.abs(point.y) <= 1;
-      }
-      if (shown) {
-        const x = left + ((point.x + 1) / 2) * width;
-        const y = top + ((1 - point.y) / 2) * height;
-        el.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px) translate(-50%, -50%)`;
-      }
-      el.style.visibility = shown ? 'visible' : 'hidden';
-    });
-  }
-
-  // camera_popup_show: the picture of the camera whose sensor went off last, in its corner, a new one
-  // every second; a tap opens the camera (live), the cross closes it until a sensor goes off again.
-  private _renderCameraPopup(cameras: CameraItem[], force: boolean): void {
-    const states = this._hass.states;
-    const shown = this._shown('camera_popup_show', true) ? this._popupShowing.find((s) => states[s.entity]) : undefined;
-    const box = this._boxes.box(
-      'camera_popup',
-      shown ? corner(this._config.camera_popup_position, 'bottom-right') : null,
-    );
-    if (!box || !shown) {
-      this._stopPopupRefresh();
-      return;
-    }
-    const camera = cameras.find((c) => c.entity === shown.entity) as CameraItem;
-    const stateObj = states[shown.entity];
-    const trigger = shown.trigger ? states[shown.trigger] : undefined;
-    const deps = [
-      shown.entity,
-      shown.trigger,
-      camera.name,
-      camera.icon,
-      stateObj.attributes.friendly_name,
-      trigger && trigger.attributes.friendly_name,
-      this._language(),
-    ];
-    this._sizePopup();
-    if (this._boxes.changed('camera_popup', deps, force)) {
-      const name = cameraName(camera, stateObj);
-      const triggerName = trigger ? String(trigger.attributes.friendly_name || shown.trigger) : '';
-      const open = (ev: Event): void => {
-        ev.stopPropagation();
-        this._boxes.moreInfo(shown.entity);
-      };
-      box.setAttribute('aria-label', this._t('camera_popup'));
-      render(
-        html`
-          <div
-            class="picture"
-            role="button"
-            tabindex="0"
-            title=${name}
-            aria-label=${name}
-            @click=${open}
-            @keydown=${(ev: KeyboardEvent) => {
-              if (ev.key === 'Enter' || ev.key === ' ') {
-                ev.preventDefault();
-                open(ev);
-              }
-            }}
-          >
-            <ha-icon class="placeholder" icon=${camera.icon || 'mdi:cctv'}></ha-icon>
-            <img alt="" />
-          </div>
-          <div class="caption">
-            <span class="name">${name}</span>
-            ${triggerName ? html`<span class="trigger">${triggerName}</span>` : nothing}
-          </div>
-          <button
-            class="close"
-            title=${this._t('camera_close')}
-            aria-label=${this._t('camera_close')}
-            @click=${(ev: Event) => {
-              ev.stopPropagation();
-              this._closePopup();
-            }}
-          >
-            <ha-icon icon="mdi:close"></ha-icon>
-          </button>
-        `,
-        box,
-      );
-    }
-    if (this._popupEntity !== shown.entity) {
-      // Another camera: its pictures from now on.
-      this._stopPopupRefresh();
-      box.classList.remove('loaded');
-      this._popupEntity = shown.entity;
-      this._refreshPopup();
-    }
-  }
-
-  // The width of the picture: 45% of the card, between 160 and 320 pixels.
-  private _sizePopup(): void {
-    const box = this._boxes.element('camera_popup');
-    const content = this._content || this._card;
-    if (!box || !content) return;
-    const width = content.getBoundingClientRect().width;
-    box.style.width = Math.round(Math.max(160, Math.min(320, width * 0.45))) + 'px';
-  }
-
-  // The next picture of the camera shown, a second after the last one arrived (or could not). The old
-  // picture stays until the new one is there.
-  private _refreshPopup(): void {
-    window.clearTimeout(this._popupRefresh);
-    this._popupRefresh = undefined;
-    const box = this._boxes.element('camera_popup');
-    const img = box ? box.querySelector('img') : null;
-    const entity = this._popupEntity;
-    if (!box || !img || !entity || !this.isConnected || !this._hass) return;
-    const next = (): void => {
-      if (this._popupEntity !== entity || !img.isConnected) return; // closed, or another camera
-      window.clearTimeout(this._popupRefresh);
-      this._popupRefresh = window.setTimeout(() => this._refreshPopup(), 1000);
+  // What the cameras on screen read of the card.
+  private _camerasHost(): CamerasHost {
+    // eslint-disable-next-line @typescript-eslint/no-this-alias
+    const card = this;
+    return {
+      get config() {
+        return card._config;
+      },
+      get hass() {
+        return card._hass;
+      },
+      get connected() {
+        return card.isConnected;
+      },
+      get card() {
+        return card._card;
+      },
+      get content() {
+        return card._content;
+      },
+      get canvas() {
+        return card._renderer ? card._renderer.domElement : undefined;
+      },
+      get camera() {
+        return card._camera;
+      },
+      get model() {
+        return card._bboxmodel;
+      },
+      get picking() {
+        return !!card._pickMode;
+      },
+      t: (key, vars) => card._t(key, vars),
+      language: () => card._language(),
+      num: (value, fallback) => card._num(value, fallback),
+      levelShown: (level) => card._levelShown(level),
+      renderBoxes: (force) => card._renderBoxes(force),
     };
-    const url = snapshotUrl(this._hass.states[entity], Date.now());
-    if (!url) {
-      next();
-      return;
-    }
-    img.onload = () => {
-      box.classList.add('loaded');
-      next();
-    };
-    img.onerror = next;
-    img.src = url;
-  }
-
-  private _stopPopupRefresh(): void {
-    window.clearTimeout(this._popupRefresh);
-    this._popupRefresh = undefined;
-    this._popupEntity = undefined;
-  }
-
-  // The cross: the pictures showing go away until a sensor goes off again.
-  private _closePopup(): void {
-    this._popupMemory.dismissed = Date.now();
-    this._renderBoxes();
   }
 
   // backgroundColor: sky. The colours of the sky for the elevation of the sun entity (the one of the
@@ -5210,29 +4992,11 @@ export class Floor3dCard extends LitElement {
   // Menus at the top right: views and, with rooms configured, the room colours.
   private _renderMenus(): void {
     if (this._zoommenu)
-      render(html`${this._getZoomMenu()}${this._getMapMenu()}${this._getCamerasButton()}`, this._zoommenu);
+      render(
+        html`${this._getZoomMenu()}${this._getMapMenu()}${this._cameras.button(() => this._renderMenus())}`,
+        this._zoommenu,
+      );
     this._boxes.place();
-  }
-
-  // cameras_button: next to the menus, a button that hides the icons of the cameras and shows them
-  // again, on this device (remembered as the folded boxes are). Only with icons to show.
-  private _getCamerasButton(): TemplateResult {
-    const placed = cameraList(this._config.cameras).some((c) => c.position);
-    if (!placed || !this._shown('cameras_show', true) || !this._shown('cameras_button', true)) return html``;
-    const hidden = this._boxes.isCollapsed('cameras');
-    return html`<button
-      class="f3d-menu-button ${hidden ? 'off' : ''}"
-      aria-label=${this._t('camera_icons')}
-      aria-pressed=${hidden ? 'false' : 'true'}
-      title=${this._t('camera_icons')}
-      @click=${(ev: Event) => {
-        ev.stopPropagation();
-        this._boxes.setCollapsed('cameras', !hidden);
-        this._renderMenus();
-      }}
-    >
-      <ha-icon icon=${hidden ? 'mdi:cctv-off' : 'mdi:cctv'}></ha-icon>
-    </button>`;
   }
 
   // The maps of the Map menu: temperature, presence and illuminance, then the sensor maps that a

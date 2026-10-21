@@ -2022,7 +2022,7 @@ test(
         const card = window.__card;
         const kids = [...card._content.children];
         return {
-          pins: kids.indexOf(card._pinsEl),
+          pins: kids.indexOf(card._cameras._pinsEl),
           canvas: kids.indexOf(card._renderer.domElement),
           levelbar: kids.indexOf(card._levelbar),
         };
@@ -2044,8 +2044,8 @@ test(
         card._renderer &&
         card._renderer !== window.__before &&
         card._modelready &&
-        card._pinsEl &&
-        card._pinsEl.isConnected
+        card._cameras._pinsEl &&
+        card._cameras._pinsEl.isConnected
       );
     };
     await until(page, back, null, 'the icons come back after a reload', 120000);
