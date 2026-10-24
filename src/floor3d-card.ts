@@ -132,6 +132,12 @@ console.info(
 // many degrees above them.
 const MIN_FLIGHT_ELEVATION = 65;
 
+// Where the camera is, or goes: its position and the point it looks at.
+interface CameraPlace {
+  position: THREE.Vector3;
+  target: THREE.Vector3;
+}
+
 class ModelSource {
   public static OBJ = 0;
   public static GLB = 1;
@@ -165,9 +171,17 @@ export class Floor3dCard extends LitElement {
   private _shownStatus?: StatusKind;
   private _shownTimer?: number;
   // The levels before the first tap on the status box, and those the taps left: at its end the
-  // levels go back, unless they were changed meanwhile (see _toggleStatus).
+  // levels go back, unless they were changed meanwhile (see _toggleStatus). The camera too, unless
+  // it was moved: where it was, and where the last tap took it.
   private _levelsBefore?: boolean[];
   private _levelsShown?: boolean[];
+  private _cameraBefore?: CameraPlace;
+  private _cameraShown?: CameraPlace;
+  // The tour of the status box (#28): the entities of the kind on show, and the step (0: all of
+  // them, then one at a time).
+  private _statusIndices: number[] = [];
+  private _statusStep = 0;
+  private _flight?: CameraPlace; // where the last flight of the camera goes (_flyTo)
   private _levelMiddles?: number[]; // the middle of the height of each level (see _levelsUpTo)
   // Torch, sky light, sun, sky behind the canvas and ground (environment.ts).
   private _env = new Environment(this._environmentHost());
@@ -1907,8 +1921,9 @@ export class Floor3dCard extends LitElement {
   }
 
   // Smooth camera move to a view: position and target together.
-  private _flyTo(position: { x: number; y: number; z: number }, target: { x: number; y: number; z: number }): void {
+  private _flyTo(position: THREE.Vector3, target: THREE.Vector3): void {
     this._stopCameraTweens();
+    this._flight = { position, target };
     const update = () => this._controls.update();
     const done = () => {
       this._cameraTweens = this._cameraTweens.filter((t) => t.isPlaying());
@@ -2685,17 +2700,36 @@ export class Floor3dCard extends LitElement {
     };
   }
 
+  // A tap on a kind of the status box (#28): the first shows all its objects, the next ones each
+  // entity in turn when there are several, and the one after the last ends it, as does a second tap
+  // with a single entity. At the end the levels and the camera go back (see _endShown).
   private _toggleStatus(kind: StatusKind, indices: number[]): void {
     if (this._shownStatus === kind) {
-      this._endShown();
+      const step = this._statusStep + 1;
+      if (this._statusIndices.length < 2 || step > this._statusIndices.length) {
+        this._endShown();
+        return;
+      }
+      this._statusStep = step;
+      this._showStatus(kind, [this._statusIndices[step - 1]]);
       return;
     }
+    // The levels and the camera as they were before the first tap: they come back at the end.
+    if (!this._shownStatus) {
+      if (this._displaylevels) this._levelsBefore = this._displaylevels.slice();
+      this._cameraBefore = { position: this._camera.position.clone(), target: this._controls.target.clone() };
+    }
+    this._statusIndices = indices.slice();
+    this._statusStep = 0;
+    this._showStatus(kind, indices);
+  }
+
+  // The objects of some entities of the status box outlined, and the camera on them.
+  private _showStatus(kind: StatusKind, indices: number[]): void {
     const ids = indices.flatMap((i) =>
       ((this._object_ids && this._object_ids[i] && this._object_ids[i].objects) || []).map((o) => o.object_id),
     );
-    // The levels as they were before the first tap: they come back at the end (decided with #28).
-    if (!this._shownStatus && this._displaylevels) this._levelsBefore = this._displaylevels.slice();
-    this._showObjects(ids, STATUS_COLORS[kind]);
+    this._cameraShown = this._showObjects(ids, STATUS_COLORS[kind]);
     if (this._displaylevels) this._levelsShown = this._displaylevels.slice();
     this._shownStatus = kind;
     this._boxes.renderStatus(true);
@@ -2703,11 +2737,12 @@ export class Floor3dCard extends LitElement {
 
   // Outlines objects of the model (drawn over everything) and flies the camera to them, for ten
   // seconds or until the next one.
-  private _showObjects(ids: string[], color: string): void {
+  private _showObjects(ids: string[], color: string): CameraPlace | undefined {
     window.clearTimeout(this._shownTimer);
     this._setHighlight(ids, color);
-    this._flyToObjects(ids);
+    const place = this._flyToObjects(ids);
     this._shownTimer = window.setTimeout(() => this._endShown(), 10000);
+    return place;
   }
 
   private _endShown(): void {
@@ -2720,14 +2755,26 @@ export class Floor3dCard extends LitElement {
       const before = this._levelsBefore;
       const unchanged = JSON.stringify(this._displaylevels) === JSON.stringify(this._levelsShown);
       if (before && unchanged) this._applyLevels((i) => before[i] !== false);
+      // The camera and its zoom too, unless they were moved: the camera is where the last tap took
+      // it, or on its way there.
+      const shown = this._cameraShown;
+      const still =
+        shown &&
+        this._flight === shown &&
+        (this._cameraTweens.some((t) => t.isPlaying()) ||
+          (this._camera.position.distanceTo(shown.position) < 1 && this._controls.target.distanceTo(shown.target) < 1));
+      if (this._cameraBefore && still) this._flyTo(this._cameraBefore.position, this._cameraBefore.target);
       this._levelsBefore = this._levelsShown = undefined;
+      this._cameraBefore = this._cameraShown = undefined;
+      this._statusIndices = [];
+      this._statusStep = 0;
       this._shownStatus = undefined;
       this._boxes.renderStatus(true);
     }
     this._render();
   }
 
-  private _flyToObjects(ids: string[]): void {
+  private _flyToObjects(ids: string[]): CameraPlace | undefined {
     const box = new THREE.Box3();
     const levels = new Set<number>();
     this._objectNamesFor(ids).forEach((name) => {
@@ -2736,7 +2783,7 @@ export class Floor3dCard extends LitElement {
       box.union(new THREE.Box3().setFromObject(object));
       if (object.userData && object.userData.level !== undefined) levels.add(object.userData.level);
     });
-    if (!box.isEmpty()) this._flyToBox(box, Array.from(levels));
+    return box.isEmpty() ? undefined : this._flyToBox(box, Array.from(levels));
   }
 
   // The room of the card with this name: its floor, to go to it.
@@ -2955,7 +3002,7 @@ export class Floor3dCard extends LitElement {
   // The camera above a box, from the side it was looking from, high enough to see all of it, and
   // from at least 65° above it, so that the walls of the room don't hide what is inside (37° until
   // 2.12.1). The levels of the box and those under it are shown, the levels above hidden (#28).
-  private _flyToBox(box: THREE.Box3, levels: number[]): void {
+  private _flyToBox(box: THREE.Box3, levels: number[]): CameraPlace {
     const target = box.getCenter(new THREE.Vector3());
     const size = box.getSize(new THREE.Vector3());
     const direction = this._camera.position.clone().sub(this._controls.target);
@@ -2969,9 +3016,45 @@ export class Floor3dCard extends LitElement {
       side.normalize().multiplyScalar(Math.cos(lowest));
       direction.set(side.x, Math.sin(lowest), side.y);
     }
-    const position = target.clone().add(direction.multiplyScalar(Math.max(size.x, size.z, 300) * 1.8));
+    const distance = Math.max(size.x, size.z, 300) * 1.8;
+    // The levels first: those hidden don't stand in the way.
     this._levelsUpTo(levels);
+    const position = target.clone().add(this._clearSide(box, target, direction, distance).multiplyScalar(distance));
     this._flyTo(position, target);
+    return this._flight;
+  }
+
+  // The side the camera comes from: the side it looked from, unless something of the levels on show
+  // stands between it and the box (#28: the wall in front of a radiator under its window). Then the
+  // sides next to it, every 45° around, and last almost from above.
+  private _clearSide(
+    box: THREE.Box3,
+    target: THREE.Vector3,
+    direction: THREE.Vector3,
+    distance: number,
+  ): THREE.Vector3 {
+    const up = new THREE.Vector3(0, 1, 0);
+    const sides = [0, 1, 7, 2, 6, 3, 5, 4].map((k) => direction.clone().applyAxisAngle(up, (k * Math.PI) / 4));
+    const high = THREE.MathUtils.degToRad(85);
+    const above = new THREE.Vector3(direction.x, 0, direction.z);
+    if (above.lengthSq() < 1e-6) above.set(0, 0, 1);
+    above.normalize().multiplyScalar(Math.cos(high)).setY(Math.sin(high));
+    sides.push(above);
+    return sides.find((side) => this._seen(box, target, target.clone().addScaledVector(side, distance))) || above;
+  }
+
+  // Nothing of the levels on show between a point and the middle of a box. What is inside the box (the
+  // objects themselves) doesn't count, nor a hidden object or one you see through (the glass of a window).
+  private _seen(box: THREE.Box3, target: THREE.Vector3, from: THREE.Vector3): boolean {
+    const raycaster = new THREE.Raycaster(from, target.clone().sub(from).normalize(), 0, from.distanceTo(target));
+    const inside = box.clone().expandByScalar(5);
+    return !raycaster.intersectObjects(this._raycasting || [], false).some((hit) => {
+      if (inside.containsPoint(hit.point)) return false;
+      for (let o: THREE.Object3D = hit.object; o; o = o.parent) if (!o.visible) return false;
+      const material: any = (hit.object as THREE.Mesh).material;
+      const m = Array.isArray(material) ? material[hit.face ? hit.face.materialIndex : 0] : material;
+      return !(m && m.transparent && m.opacity < 0.5);
+    });
   }
 
   // Alarms on: the rooms blink between faint and strong, the objects of type alarm glow in step,

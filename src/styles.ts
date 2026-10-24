@@ -184,11 +184,10 @@ export const cardStyles = css`
     filter: grayscale(1);
     opacity: 0.55;
   }
-  /* The coloured stripe inside the border of the box (a wider left border met the thin one at the
-     rounded corners and looked like two walls); the text stays where it was. */
+  /* The border of the box in the colour of the state: a wider left border (until 2.12.1), and then a
+     coloured stripe inside the thin border (2.12.2), still looked like two walls (#25). */
   .f3d-alarm_panel {
-    box-shadow: inset 4px 0 0 var(--f3d-panel, #9e9e9e);
-    padding-left: 13px;
+    border-color: var(--f3d-panel, #9e9e9e);
     cursor: pointer;
   }
   .f3d-alarm_panel ha-icon {

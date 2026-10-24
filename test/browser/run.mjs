@@ -1256,7 +1256,7 @@ const moreInfo = (page) =>
   });
 
 test(
-  'status box: what is on or open; a tap outlines those objects and frames them, a second tap ends it',
+  'status box: what is on or open; a tap outlines those objects and frames them, the next ones each in turn, then it ends',
   { timeout: TIMEOUT },
   async () => {
     const entities = [
@@ -1296,8 +1296,18 @@ test(
       await page.evaluate(() => window.__card.shadowRoot.querySelectorAll('.f3d-status .chip.active').length),
       1,
     );
-    await page.evaluate(() => window.__card.shadowRoot.querySelector('.f3d-status .chip').click());
-    assert.deepEqual(await helpers(page), [], 'a second tap ends it');
+    // Two lamps: a tap for each of them (2.13.1, #28), then the end.
+    const chip = async () => {
+      await page.evaluate(() => window.__card.shadowRoot.querySelector('.f3d-status .chip').click());
+      await flown(page);
+    };
+    await chip();
+    assert.deepEqual(await helpers(page), ['#ffd54f'], 'the first lamp');
+    await chip();
+    assert.deepEqual(await helpers(page), ['#ffd54f'], 'the second lamp');
+    await chip();
+    assert.deepEqual(await helpers(page), [], 'the tap after the last one ends it');
+    assert.deepEqual(await cameraTarget(page), before, 'the camera back where it was');
     // Everything off and closed.
     await page.evaluate(() => {
       ['light.lamp_1', 'light.lamp_2'].forEach((id) => window.__setState(id, 'off'));
@@ -2798,7 +2808,7 @@ test(
 );
 
 test(
-  'the alarm panel box: its coloured stripe is inside the border, which is the same on the four sides',
+  'the alarm panel box: one thin border in the colour of the state, the same on the four sides, and no stripe inside it',
   { timeout: TIMEOUT },
   async () => {
     const { page, errors } = await open(
@@ -2817,8 +2827,12 @@ test(
       };
     });
     assert.deepEqual(look.widths, ['1px', '1px', '1px', '1px'], 'the same thin border on every side');
-    assert.equal(new Set(look.colors).size, 1, 'one colour of the border: ' + look.colors.join(', '));
-    assert.equal(look.stripe, look.colour + ' 4px 0px 0px 0px inset', 'the stripe, in the colour of the state, inside');
+    assert.deepEqual(
+      look.colors,
+      [0, 1, 2, 3].map(() => look.colour),
+      'the border in the colour of the state',
+    );
+    assert.equal(look.stripe, 'none', 'no stripe inside the border: with it the box looked like two walls (#25)');
     assert.deepEqual(errors, []);
     await page.close();
   },
@@ -3234,6 +3248,98 @@ test(
     assert.equal(back.lamp, true);
     assert.equal(back.sofa, true);
     assert.notEqual(back.table, '#ff0000');
+    assert.deepEqual(errors, []);
+    await page.close();
+  },
+);
+
+// The camera and the point it looks at, in whole centimetres.
+const cameraView = (page) =>
+  page.evaluate(() => {
+    const card = window.__card;
+    return [...card._camera.position.toArray(), ...card._controls.target.toArray()].map(Math.round);
+  });
+const middleOf = async (page, name) => {
+  const [min, max] = await worldBox(page, name);
+  return min.map((v, i) => (v + max[i]) / 2);
+};
+const within = (a, b, cm) => a.every((v, i) => Math.abs(v - b[i]) <= cm);
+
+test(
+  '#28: the camera goes to an object from a side where nothing of the levels on show hides it',
+  { timeout: TIMEOUT },
+  async () => {
+    const { page, errors } = await open(house({ entities: [tv] }));
+    // The TV hangs on the inside of the north wall: looking from the north, the wall hides it.
+    const screen = await middleOf(page, 'tv_screen');
+    await page.evaluate((p) => {
+      const card = window.__card;
+      card._controls.target.set(p[0], p[1], p[2]);
+      card._camera.position.set(p[0], p[1] + 100, p[2] - 800);
+      card._controls.update();
+      card._flyToObjects(['tv_screen']);
+    }, screen);
+    await flown(page);
+    // What a tap on the middle of the screen finds first: the screen, not a wall.
+    const first = await page.evaluate((p) => {
+      const card = window.__card;
+      const v = new card._camera.position.constructor(...p).project(card._camera);
+      const r = card._renderer.domElement.getBoundingClientRect();
+      const hits = card._getintersect(r.left + ((v.x + 1) / 2) * r.width, r.top + ((1 - v.y) / 2) * r.height);
+      return hits.length ? hits[0].object.name : '';
+    }, screen);
+    assert.equal(first, 'tv_screen', 'the screen is seen: ' + first);
+    assert.deepEqual(errors, []);
+    await page.close();
+  },
+);
+
+test(
+  '#28: the status box shows its entities one at a time, then the view before comes back, unless the camera was moved',
+  { timeout: TIMEOUT },
+  async () => {
+    // basement.obj: the basement on level 0, the house on level 1.
+    const entities = [
+      { entity: 'light.lamp_2', type3d: 'light', object_id: 'basement_stairs', light: { lumens: 300 } }, // level 0
+      ...lamps(1), // lamp_1: level 1
+    ];
+    const { page, errors } = await open(house({ objfile: 'basement.obj', status_show: 'yes', entities }));
+    const levels = () => page.evaluate(() => window.__card._displaylevels.slice());
+    const tap = async () => {
+      await page.evaluate(() =>
+        [...window.__card.shadowRoot.querySelectorAll('.f3d-status .chip')]
+          .find((c) => c.querySelector('ha-icon').getAttribute('icon') === 'mdi:lightbulb-on')
+          .click(),
+      );
+      await flown(page);
+    };
+    const target = async () => (await cameraView(page)).slice(3);
+    const before = await cameraView(page);
+    assert.deepEqual(await levels(), [true, true]);
+    await tap(); // both lamps
+    assert.deepEqual(await levels(), [true, true]);
+    await tap(); // the lamp of the basement: the house above it hides
+    assert.deepEqual(await levels(), [true, false]);
+    assert.ok(within(await target(), await middleOf(page, 'basement_stairs'), 2), 'on the lamp of the basement');
+    await tap(); // the lamp of the ground floor: its level again
+    assert.deepEqual(await levels(), [true, true]);
+    assert.ok(within(await target(), await middleOf(page, 'lamp_1'), 2), 'on the lamp of the ground floor');
+    await tap(); // the end: the view before, with its zoom
+    assert.ok(within(await cameraView(page), before, 1), 'the view before: ' + (await cameraView(page)));
+    assert.deepEqual(await levels(), [true, true]);
+    assert.equal(await page.evaluate(() => window.__card._shownStatus), undefined);
+    // Moved by hand during the tour, the camera stays where it was put.
+    await tap();
+    await tap();
+    await tap();
+    await page.evaluate(() => {
+      const card = window.__card;
+      card._camera.position.x += 150;
+      card._controls.update();
+    });
+    const moved = await cameraView(page);
+    await tap(); // the end
+    assert.ok(within(await cameraView(page), moved, 1), 'the camera stays: ' + (await cameraView(page)));
     assert.deepEqual(errors, []);
     await page.close();
   },
