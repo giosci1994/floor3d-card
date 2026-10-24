@@ -58,6 +58,10 @@ export interface Floor3dCardConfig {
   sky_clouds?: string | boolean; // no: the sky ignores the clouds of the weather entity
   ground?: string; // grass or a colour: a surface under the house (ground.ts)
   ground_floor_level?: number | string; // Y offset for ground positioning (useful with basements)
+  walls?: string; // none, fade (the walls in the way of the view fade) or low (cut at walls_height)
+  walls_objects?: string; // the walls: wall_* by default, the walls of Sweet Home 3D
+  walls_opacity?: number | string; // fade: how much of a faded wall shows, 0.15 by default
+  walls_height?: number | string; // low: the height of the cut above the floor, 100 cm by default
   globalLightPower: number | string; // a number or a numeric sensor
   hideLevelsMenu: string;
   initialLevel: number;

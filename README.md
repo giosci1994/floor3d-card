@@ -23,6 +23,7 @@ A cleaner and faster base for what comes next, with nothing to change in your co
 - **[Room maps](FORK.md#sensor-maps):** rooms coloured by temperature, presence, illuminance, humidity, CO₂, PM2.5, VOC, power or any other sensor, with the value and a legend; open doors and windows in [colour](FORK.md#state-colours), red with the alarm armed.
 - **[Alarms](FORK.md#alarms) and [heating](FORK.md#heating-and-cooling):** a room blinks with smoke, gas or a water leak and the camera goes there; radiators glow while they heat; a room shows the target of its thermostat.
 - **[Sky and weather](FORK.md#sky-and-weather):** a sky behind the house that follows the sun, with stars and the moon at night, a lawn under the house that opens over the basement, and the forecast in a corner.
+- **[Walls](FORK.md#walls):** the walls in the way of the view fade as it turns, or every wall is cut low, as a doll's house.
 - **[Boxes](FORK.md#boxes) in the corners:** what is on or open (a tap shows it in the model), energy, people, the alarm panel and any entity as a chip; they fold, and stay out of each other's way on a phone.
 - **[Cameras](FORK.md#cameras):** an icon on the map where each camera is, and its picture popping up when the doorbell rings or it sees motion.
 - **Views:** zoom areas with their own camera and level, [views from the page address](FORK.md#views-from-the-page-address), [taps and long presses](FORK.md#tap-and-long-press) on the objects.
@@ -54,7 +55,7 @@ If the original floor3d-card is installed, remove it from HACS first: both defin
 Copy all the files (`.js` and `.wasm`) of the [latest release](https://github.com/giosci1994/floor3d-card/releases/latest) into a folder of `/config/www` and add `floor3d-card.js` as a resource (details in [FORK.md](FORK.md#installation)). It's **required** to load this card as `module`.
 
 ```yaml
-- url: /local/floor3d-card/floor3d-card.js?v=2.13.1 # the version: change it at every update
+- url: /local/floor3d-card/floor3d-card.js?v=2.13.2 # the version: change it at every update
   type: module
 ```
 

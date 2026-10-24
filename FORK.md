@@ -23,7 +23,7 @@ If the original card is installed, remove it from HACS first: both define `custo
 ### By hand
 
 1. Download all the files of the [latest release](https://github.com/giosci1994/floor3d-card/releases/latest) (`.js` and `.wasm`) into a folder of `config/www`, for example `config/www/floor3d-card/`. There are seven files: the card, its core (libraries and code shared with the editor), the editor, which is loaded only when you edit the card, and the decoders of [compressed models](#compressed-models), loaded only by the models that need them.
-2. Add `/local/floor3d-card/floor3d-card.js?v=2.13.1` as a resource of type **module** (Settings › Dashboards › Resources). If the original card is installed too, remove it first.
+2. Add `/local/floor3d-card/floor3d-card.js?v=2.13.2` as a resource of type **module** (Settings › Dashboards › Resources). If the original card is installed too, remove it first.
 3. Reload the browser or the app.
 
 At every update copy the new files and change the `?v=` of the resource: Home Assistant serves `/local` with a 31-day cache, and so may a proxy in front of it, while a new query is a new address. The core and the editor have the hash of their content in the name, so they are new addresses too; the ones of older versions can be deleted.
@@ -106,6 +106,7 @@ The Validate workflow runs the HACS checks at every push and every night; the Bu
   - A button next to the menus hides the icons of the cameras and shows them again, on each device (`cameras_button: no` takes it away). See [Cameras](#cameras).
   - Several text entities on one object show their texts one under the other (only the last one updated showed). See [Text on objects](#text-on-objects).
   - A rotate entity whose state is a number (a sensor, an `input_number`) turns at that speed, from 0 to 100, without `speed_entity`. See [Fans](#fans).
+- **Walls in the way of the view** (2.13.2, `walls`): the walls between the camera and the rooms fade as the view turns, or every wall is cut low, as a doll's house. See [Walls](#walls).
 - **Languages** (2.6): the card and its editor in English, Italian and German (the card also in Norwegian). Each user sees the language of their Home Assistant profile; the `language` option sets one for the card. See [Languages](#languages).
 - **Shadows in the editor** (2.6): the card editor says how many lights cast a shadow and how many the device can draw, and names the lights left without. See [Shadows](#shadows).
 - **Version label** at the top of the card editor and in the console banner.
@@ -570,6 +571,26 @@ weather_forecast: hourly
 
 ![The lawn of the card under the house, with the shadow of the sun](docs/images/ground.jpg)
 
+### Walls
+
+`walls` (2.13.2): the walls in the way of the view, in the editor next to the ground.
+
+- `fade`: the walls between the camera and the rooms fade as the view turns, in about half a second, and the others stay. A faded wall still casts its shadow, and a tap goes through it to what is behind it (a lamp). Seen straight from above no wall fades. `walls_opacity` (0.15) is how much of a faded wall shows, from 0 to 1.
+- `low`: every wall is cut at `walls_height` (100 cm) above the floor of its level, as a doll's house. The inside of a cut wall shows, so that it looks solid from above, and its shadow stays whole. What is not a wall (a TV on a wall, the lamps under the ceiling) stays where it is.
+- `none` (the default): whole walls.
+
+The walls are the objects of `walls_objects`: `wall_*` by default, the walls of a model of Sweet Home 3D (`wall_9_64`), which names them so whatever the language of the program. A model made otherwise can give another name with `*`, or an object group `<walls>`. With `fade` each wall must be an object of its own: the card finds the side it faces from its shape (long and thin), also for a wall at an angle. A model with all the walls of a level in one object can use `low`.
+
+```yaml
+walls: fade
+walls_objects: wall_* # the default
+walls_opacity: 0.15
+```
+
+| ![Whole walls](docs/images/walls-none.jpg) | ![walls: fade](docs/images/walls-fade.jpg) | ![walls: low](docs/images/walls-low.jpg) |
+| :---: | :---: | :---: |
+| Whole walls | `fade`: the wall in front fades | `low`: cut at 1 m |
+
 ### Boxes
 
 Boxes in the corners of the card, next to the weather of [Sky and weather](#sky-and-weather), in the Boxes section of the editor. Each has its `*_position`: `top-left`, `top-right`, `bottom-left` or `bottom-right`. Each has a switch too: `weather_show`, `energy_show`, `people_show`, `alarm_panel_show` and `chips_show` set to `no` hide their box and keep its settings, and `status_show: yes` shows the status box. In the same corner they stack from the corner, and at the top right under the menus. On a narrow card (a phone), at the top a box on the left that would meet the menus or the boxes on the right goes under them, with the boxes after it, while the ones before it stay beside the menus (2.10.1; before, the whole corner went under them). At the bottom the boxes on the right go above the ones on the left.
@@ -714,6 +735,7 @@ Some of these were found and fixed first in other forks: [Steven-D-Morgan/hass-3
 - the stripe of the alarm panel box is inside its border; a card added from the card picker, or without `path`, says where to set the model, asks for no file and opens the editor on the 3D model; with an object group open, a tap on the background of the dialog, its scroll bar or a swipe sends nothing, and a button outside the editor sends it, tapped or focused; the card picker lists the card as floor3d-card mod, and not when another card defined `floor3d-card` first; a tap on the status box hides the levels above its objects, the camera comes from 65° above, a lamp of the level above shows it again, and at the end the levels come back unless they were changed by hand; with only the basement shown the ground opens over it, with sides of earth, and stays around the house, and closes with the ground floor; an entity without `object_id` or with a group that doesn't exist gets a warning and the entities after it keep their objects (2.12.2). Each of these fails on 2.12.1.
 - show, shower and tracker entities follow their states: the split of the card moved these types, which had no test, and the same checks pass on the code before the split; at a change of state, the objects already found are not searched again in the whole model, which fails on the code before (2.13.0).
 - the border of the alarm panel box is one line in the colour of the state, without a stripe; a tap on the status box frames its objects, then each one in turn, then the view before comes back, camera and zoom included, unless the camera was moved; the camera goes to an object from a side where nothing hides it, a TV on the inside of a wall seen from outside (2.13.1). Each of these fails on 2.13.0.
+- `walls: fade` fades the walls between the camera and the rooms, and only those, and they follow the view; a tap goes through a faded wall; `walls: low` cuts every wall at `walls_height` above the floor of its level, and nothing else (2.13.2).
 
 The tests wait for what they check (an animation that ends, a camera that arrives, a new picture of a camera), not for a fixed time: a busy computer is slower, and a fixed wait long enough on one failed on another. They pass with every core of the computer busy with something else.
 

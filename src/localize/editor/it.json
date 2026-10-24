@@ -198,7 +198,11 @@
     "sky_clouds": "Nuvole del meteo",
     "angle_offset": "Angolo dello 0 del sensore",
     "mapping": "Testo sull'oggetto",
-    "cameras_button": "Pulsante per nasconderle"
+    "cameras_button": "Pulsante per nasconderle",
+    "walls": "Muri davanti alla vista",
+    "walls_objects": "Muri",
+    "walls_opacity": "Opacità dei muri sfumati",
+    "walls_height": "Altezza dei muri bassi"
   },
   "helpers": {
     "path": "Per esempio /local/floor3d/",
@@ -288,7 +292,11 @@
     "sky_clouds": "Spento: il cielo ignora le nuvole dell'entità meteo, e stelle e luna si vedono sempre",
     "angle_offset": "Aggiunto all'angolo del sensore: dov'è il suo 0 sul modello. Predefinito 0",
     "mapping": "Piatto: sulla faccia più grande dell'oggetto, leggibile davanti e dietro. Modello: sulla mappatura del modello, come prima della 2.11.3",
-    "cameras_button": "Un pulsante accanto ai menu nasconde le icone e le mostra di nuovo, su ogni dispositivo"
+    "cameras_button": "Un pulsante accanto ai menu nasconde le icone e le mostra di nuovo, su ogni dispositivo",
+    "walls": "fade: i muri tra la telecamera e le stanze sfumano mentre giri la vista. low: tutti i muri sono tagliati a un'altezza, come una casa delle bambole. none: muri interi",
+    "walls_objects": "Gli oggetti che sono muri: un nome con * o un gruppo di oggetti <nome>. Predefinito wall_*, i muri di Sweet Home 3D",
+    "walls_opacity": "Quanto resta visibile un muro sfumato, da 0 (niente) a 1 (tutto). Predefinito 0,15",
+    "walls_height": "L'altezza del taglio sopra il pavimento di ogni piano. Predefinita 100 cm"
   },
   "options": {
     "language": {
@@ -391,6 +399,11 @@
     "mapping": {
       "flat": "Piatto sulla faccia più grande",
       "model": "Mappatura del modello"
+    },
+    "walls": {
+      "none": "Interi",
+      "fade": "Sfumati davanti alla vista",
+      "low": "Bassi"
     }
   },
   "types": {

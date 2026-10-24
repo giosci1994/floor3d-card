@@ -114,6 +114,9 @@ test('editor: every field, menu entry and heading has its English text', () => {
   const config = { sun: 'yes', overlay: 'yes', shadow: 'yes', sky_power: 1, backgroundColor: 'sky' };
   const contents = [
     ...SECTIONS.map((s) => s.content(config)),
+    // The fields of the walls show with fade or low.
+    ...SECTIONS.map((s) => s.content({ ...config, walls: 'fade' })),
+    ...SECTIONS.map((s) => s.content({ ...config, walls: 'low' })),
     ...TYPES.map(([type]) => typeSchema(type, [], { light: { single: 'yes' } })),
     [
       entitySchema(),

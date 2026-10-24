@@ -3344,3 +3344,73 @@ test(
     await page.close();
   },
 );
+
+// The opacity of the material of an object, and whether it is drawn see-through.
+const wallLook = (page, name) =>
+  page.evaluate((n) => {
+    const m = window.__card._scene.getObjectByName(n).material;
+    return [Math.round(m.opacity * 100) / 100, m.transparent];
+  }, name);
+const unfaded = (page) => until(page, () => !window.__card._walls.fading, null, 'the walls end fading');
+
+test(
+  'walls: fade: the walls between the camera and the rooms fade as the view turns, the others stay, and a tap goes through them',
+  { timeout: TIMEOUT },
+  async () => {
+    // The test house: its walls are wall_north, wall_south_*, wall_west_*, wall_east_*, wall_inner_*,
+    // all with one material; the camera looks from the south.
+    const { page, errors } = await open(house({ walls: 'fade' }));
+    await unfaded(page);
+    assert.deepEqual(await wallLook(page, 'wall_south_end'), [0.15, true], 'the south wall, in the way, fades');
+    assert.deepEqual(await wallLook(page, 'wall_north'), [1, false], 'the north wall stays');
+    assert.deepEqual(await wallLook(page, 'wall_west_end'), [1, false], 'the side walls stay');
+    assert.deepEqual(await wallLook(page, 'wardrobe'), [1, false], 'not a wall');
+    // A tap on the faded wall reaches what is behind it.
+    const first = await page.evaluate(async () => {
+      const card = window.__card;
+      const o = card._scene.getObjectByName('wall_south_end');
+      const p = new card._camera.position.constructor();
+      o.geometry.computeBoundingBox();
+      o.geometry.boundingBox.getCenter(p).applyMatrix4(o.matrixWorld);
+      const v = p.project(card._camera);
+      const r = card._renderer.domElement.getBoundingClientRect();
+      const hits = card._getintersect(r.left + ((v.x + 1) / 2) * r.width, r.top + ((1 - v.y) / 2) * r.height);
+      return hits.length ? hits[0].object.name : '';
+    });
+    assert.ok(!first.startsWith('wall_south'), 'the tap goes through the faded wall: ' + first);
+    // From the north: the north wall fades and the south one comes back.
+    await page.evaluate(() => {
+      const card = window.__card;
+      card._camera.position.set(0, 1000, -850);
+      card._controls.update();
+    });
+    await unfaded(page);
+    assert.deepEqual(await wallLook(page, 'wall_north'), [0.15, true]);
+    assert.deepEqual(await wallLook(page, 'wall_south_end'), [1, false]);
+    assert.deepEqual(errors, []);
+    await page.close();
+  },
+);
+
+test(
+  'walls: low: every wall is cut at walls_height above the floor of its level, the rest stays whole',
+  { timeout: TIMEOUT },
+  async () => {
+    const { page, errors } = await open(house({ walls: 'low', walls_height: 120 }));
+    const cut = (name) =>
+      page.evaluate((n) => {
+        const o = window.__card._scene.getObjectByName(n);
+        const m = o.material;
+        const planes = m.clippingPlanes || [];
+        const floor = new o.position.constructor();
+        o.geometry.computeBoundingBox();
+        floor.copy(o.geometry.boundingBox.min).applyMatrix4(o.matrixWorld);
+        return [planes.length, planes.length ? Math.round(planes[0].constant - floor.y) : null, m.side];
+      }, name);
+    assert.deepEqual(await cut('wall_north'), [1, 120, 2], 'cut 120 cm above the floor, its inside drawn');
+    assert.deepEqual(await cut('wall_south_end'), [1, 120, 2]);
+    assert.deepEqual(await cut('wardrobe'), [0, null, 0], 'not a wall: whole');
+    assert.deepEqual(errors, []);
+    await page.close();
+  },
+);
