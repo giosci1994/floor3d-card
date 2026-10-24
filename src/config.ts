@@ -59,6 +59,10 @@ const VALUE_DEFAULTS: { [key: string]: string | number } = {
   camera_popup_duration: 20,
   moon_size: 30,
   ground_floor_level: 0,
+  walls: 'none',
+  walls_objects: 'wall_*',
+  walls_opacity: 0.15,
+  walls_height: 100,
 };
 
 // The top-level switches and their defaults, for the editor (its toggles).
@@ -98,6 +102,8 @@ const TOP_NUMBERS = [
   'camera_popup_duration',
   'moon_size',
   'ground_floor_level',
+  'walls_opacity',
+  'walls_height',
 ];
 const BLOCK_NUMBERS: { [block: string]: string[] } = {
   light: ['lumens', 'decay', 'distance', 'angle'],

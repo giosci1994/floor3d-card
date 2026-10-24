@@ -109,6 +109,24 @@ export const SECTIONS: Section[] = [
           selector: { select: { mode: 'dropdown', custom_value: true, options: [{ value: 'grass', label: 'grass' }] } },
         },
         num('ground_floor_level', { unit_of_measurement: 'cm' }),
+        // The walls in the way of the view: faded or cut low (walls.ts), and which objects are walls.
+        {
+          name: 'walls',
+          options_key: 'options.walls',
+          selector: {
+            select: { mode: 'dropdown', options: ['none', 'fade', 'low'].map((value) => ({ value, label: value })) },
+          },
+        },
+        ...(config.walls === 'fade' || config.walls === 'low'
+          ? [
+              row(
+                text('walls_objects'),
+                config.walls === 'fade'
+                  ? num('walls_opacity', { min: 0, max: 1, step: 0.05 })
+                  : num('walls_height', { min: 10, max: 500, step: 10, unit_of_measurement: 'cm' }),
+              ),
+            ]
+          : []),
       ],
     ],
   },

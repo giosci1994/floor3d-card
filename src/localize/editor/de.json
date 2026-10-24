@@ -198,7 +198,11 @@
     "sky_clouds": "Wolken des Wetters",
     "angle_offset": "Winkel der 0 des Sensors",
     "mapping": "Text auf dem Objekt",
-    "cameras_button": "Schaltfläche zum Ausblenden"
+    "cameras_button": "Schaltfläche zum Ausblenden",
+    "walls": "Wände im Blick",
+    "walls_objects": "Wände",
+    "walls_opacity": "Deckkraft ausgeblendeter Wände",
+    "walls_height": "Höhe niedriger Wände"
   },
   "helpers": {
     "path": "Zum Beispiel /local/floor3d/",
@@ -288,7 +292,11 @@
     "sky_clouds": "Aus: der Himmel ignoriert die Wolken der Wetter-Entität, Sterne und Mond sind immer zu sehen",
     "angle_offset": "Wird zum Winkel des Sensors addiert: wo seine 0 am Modell liegt. Standard 0",
     "mapping": "Flach: auf der größten Fläche des Objekts, von vorne und hinten lesbar. Modell: auf der Abbildung (UV) des Modells, wie vor 2.11.3",
-    "cameras_button": "Eine Schaltfläche neben den Menüs blendet die Symbole aus und wieder ein, auf jedem Gerät"
+    "cameras_button": "Eine Schaltfläche neben den Menüs blendet die Symbole aus und wieder ein, auf jedem Gerät",
+    "walls": "fade: die Wände zwischen Kamera und Räumen werden beim Drehen der Ansicht durchsichtig. low: alle Wände werden in einer Höhe abgeschnitten, wie ein Puppenhaus. none: ganze Wände",
+    "walls_objects": "Die Objekte, die Wände sind: ein Name mit * oder eine Objektgruppe <Name>. Standard wall_*, die Wände von Sweet Home 3D",
+    "walls_opacity": "Wie viel von einer ausgeblendeten Wand sichtbar bleibt, von 0 (nichts) bis 1 (alles). Standard 0,15",
+    "walls_height": "Die Höhe des Schnitts über dem Boden jeder Etage. Standard 100 cm"
   },
   "options": {
     "language": {
@@ -391,6 +399,11 @@
     "mapping": {
       "flat": "Flach auf der größten Fläche",
       "model": "Abbildung des Modells"
+    },
+    "walls": {
+      "none": "Ganz",
+      "fade": "Im Blick ausgeblendet",
+      "low": "Niedrig"
     }
   },
   "types": {

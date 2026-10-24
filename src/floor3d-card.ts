@@ -22,6 +22,7 @@ import { Screens } from './screens';
 import { Openings, isOpen } from './openings';
 import { Rotating } from './rotating';
 import { Texts } from './texts';
+import { Walls, WallsHost } from './walls';
 import { CLIMATE_COLORS, activeAlarms, climateAction } from './maps';
 import { localize, pickLanguage } from './localize/localize';
 import { STATUS_COLORS, StatusKind } from './boxes';
@@ -185,6 +186,8 @@ export class Floor3dCard extends LitElement {
   private _levelMiddles?: number[]; // the middle of the height of each level (see _levelsUpTo)
   // Torch, sky light, sun, sky behind the canvas and ground (environment.ts).
   private _env = new Environment(this._environmentHost());
+  // The walls in the way of the view: faded, or cut low (walls.ts).
+  private _walls = new Walls(this._wallsHost());
   // The rooms coloured by a map, their labels, the Map menu and its legend (rooms.ts).
   private _roomMaps = new RoomMaps(this._roomsHost());
   // The entity types in modules of their own (see entity-types.ts).
@@ -287,6 +290,7 @@ export class Floor3dCard extends LitElement {
     this._pointerUpListener = (evt) => this._onPointerUp(evt as PointerEvent);
     this._pointerCancelListener = () => this._cancelTap();
     this._changeListener = () => {
+      this._walls.update();
       this._updateNearPlane();
       this._scheduleRender();
       this._rememberCamera();
@@ -612,7 +616,8 @@ export class Floor3dCard extends LitElement {
     );
     const raycaster = new THREE.Raycaster();
     raycaster.setFromCamera(mouse, this._camera);
-    return raycaster.intersectObjects(this._raycasting, false);
+    // A faded wall lets the tap through, to what is behind it.
+    return raycaster.intersectObjects(this._raycasting, false).filter((hit) => !hit.object.userData.f3dFaded);
   }
 
   private _addInputListeners(): void {
@@ -1583,6 +1588,8 @@ export class Floor3dCard extends LitElement {
 
       this._roomMaps.init();
 
+      this._walls.init();
+
       this._getOverlay();
 
       this._manageZoom();
@@ -2164,6 +2171,7 @@ export class Floor3dCard extends LitElement {
     this._bboxmodel.position.y = -box.min.y;
     this._bboxmodel.position.z = -(box.max.z - box.min.z) / 2;
     this._openings.placeCoverPlanes();
+    this._walls.place();
 
     if (this._config.camera_position) {
       this._camera.position.set(
@@ -2836,6 +2844,35 @@ export class Floor3dCard extends LitElement {
     };
   }
 
+  // --- Walls (walls.ts) ----------------------------------------------------------------------------
+
+  // What the walls read of the card.
+  private _wallsHost(): WallsHost {
+    // eslint-disable-next-line @typescript-eslint/no-this-alias
+    const card = this;
+    return {
+      get config() {
+        return card._config;
+      },
+      get scene() {
+        return card._scene;
+      },
+      get model() {
+        return card._bboxmodel;
+      },
+      get camera() {
+        return card._camera;
+      },
+      get target() {
+        return card._controls.target;
+      },
+      objectNamesFor: (ids) => card._objectNamesFor(ids),
+      num: (value, fallback) => card._num(value, fallback),
+      scheduleRender: () => card._scheduleRender(),
+      animate: () => card._startOrStopAnimationLoop(),
+    };
+  }
+
   // --- Rooms (rooms.ts) ----------------------------------------------------------------------------
 
   // What the rooms read of the card.
@@ -3203,6 +3240,7 @@ export class Floor3dCard extends LitElement {
       this._rotating.moving ||
       playing().length > 0 ||
       this._trackers.needAnimation() ||
+      this._walls.fading ||
       this._alarmPulse ||
       this._roomAlarms
     );
@@ -3245,6 +3283,7 @@ export class Floor3dCard extends LitElement {
 
     // Step proportional to elapsed time (60 fps = 1 step), capped after long pauses.
     this._showers.animate(clockDelta * 60);
+    this._walls.step(clockDelta);
 
     updateTweens();
 
