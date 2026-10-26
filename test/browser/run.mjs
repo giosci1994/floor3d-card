@@ -3414,3 +3414,26 @@ test(
     await page.close();
   },
 );
+
+test('the menus of views and maps have a name, as browsers ask of every form field', { timeout: TIMEOUT }, async () => {
+  const { page, errors } = await open(
+    house({
+      rooms: [{ name: 'Living', object_id: 'floor_living', temperature: 'sensor.t_living' }],
+      zoom_areas: [
+        { zoom: 'Living', camera_position: { x: -200, y: 500, z: 300 }, camera_target: { x: -200, y: 0, z: 0 } },
+      ],
+    }),
+  );
+  const fields = await page.evaluate(() =>
+    [...window.__card.shadowRoot.querySelectorAll('select, input, textarea')].map((f) => [
+      f.getAttribute('name'),
+      !!f.getAttribute('aria-label'),
+    ]),
+  );
+  assert.deepEqual(fields, [
+    ['f3d-views', true],
+    ['f3d-map', true],
+  ]);
+  assert.deepEqual(errors, []);
+  await page.close();
+});

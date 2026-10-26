@@ -1849,6 +1849,7 @@ export class Floor3dCard extends LitElement {
     // The placeholder comes back when the camera is moved by hand, so the same view can be picked again.
     return html`
       <select
+        name="f3d-views"
         aria-label=${this._t('views')}
         @change=${this._handleZoomChange.bind(this)}
         style="font: inherit; font-size: 14px; padding: 6px 10px; border-radius: 8px; color-scheme: dark;
