@@ -15,6 +15,8 @@ export default defineConfig({
       customCss: ['./src/styles/custom.css'],
       sidebar: [
         { label: 'Getting started', items: [{ autogenerate: { directory: 'getting-started' } }] },
+        { label: '3D model', items: [{ autogenerate: { directory: 'model' } }] },
+        { label: 'Editor', items: [{ autogenerate: { directory: 'editor' } }] },
         { label: 'Features', items: [{ autogenerate: { directory: 'features' } }] },
       ],
     }),

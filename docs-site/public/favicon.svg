@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- A house seen from above at an angle, lit from inside: the card in an icon. -->
+  <path d="M32 6 58 20v24L32 58 6 44V20z" fill="#161e2b"/>
+  <path d="M32 10 54 22 32 34 10 22z" fill="#f2a33a"/>
+  <path d="M10 22 32 34v20L10 42z" fill="#8a5418"/>
+  <path d="M54 22 32 34v20l22-12z" fill="#5c3810"/>
+  <path d="M32 10v24M21 16l22 12" stroke="#161e2b" stroke-width="2"/>
+</svg>
