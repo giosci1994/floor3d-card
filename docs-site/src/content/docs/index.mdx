@@ -1,0 +1,37 @@
+---
+title: floor3d-card mod
+description: The 3D model of your home in a Home Assistant card, live.
+template: splash
+hero:
+  tagline: The 3D model of your home in a Home Assistant card, live. Lamps that light the rooms with their colour and their shadows, doors and covers that open, rooms coloured by their sensors, alarms that blink, the sun, the sky and the weather.
+  image:
+    file: ../../assets/images/hero.jpg
+    alt: A flat in the evening, its lamps lighting the rooms
+  actions:
+    - text: Get started
+      link: /floor3d-card/getting-started/installation/
+      icon: right-arrow
+    - text: GitHub
+      link: https://github.com/giosci1994/floor3d-card
+      icon: external
+      variant: minimal
+---
+
+import { Card, CardGrid } from '@astrojs/starlight/components';
+
+<CardGrid>
+  <Card title="Light and shadows" icon="star">
+    Lamps in the colour and brightness of the light entity, the sun of `sun.sun` with its shadows, and shadows kept within what the device can draw.
+  </Card>
+  <Card title="Doors, covers and more" icon="puzzle">
+    Doors that swing or slide, covers that roll up or turn their slats, objects that turn, a TV that lights the room, people tracked by a radar.
+  </Card>
+  <Card title="Rooms and alarms" icon="warning">
+    Rooms coloured by temperature, humidity, CO₂ or any sensor; a room that blinks with smoke or a water leak, and the camera going there.
+  </Card>
+  <Card title="Sky, weather and boxes" icon="sun">
+    A sky that follows the sun, stars and the moon at night, the forecast, and boxes in the corners for what is on, energy and people.
+  </Card>
+</CardGrid>
+
+This card is a fork of [adizanni/floor3d-card](https://github.com/adizanni/floor3d-card), with the same `custom:floor3d-card` and the same configuration: a card that worked with the original works with this one.

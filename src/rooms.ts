@@ -218,6 +218,7 @@ export class RoomMaps {
     return html`
       <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 4px;">
         <select
+          name="f3d-map"
           aria-label=${this.host.t('map')}
           @change=${(ev: Event) => this.host.setMapMode((ev.target as HTMLSelectElement).value)}
           style="font: inherit; font-size: 14px; padding: 6px 10px; border-radius: 8px; color-scheme: dark;

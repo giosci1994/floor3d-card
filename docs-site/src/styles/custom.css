@@ -1,0 +1,4 @@
+/* The picture of the home page, with rounded corners as the cards below it. */
+.hero > img {
+  border-radius: 1rem;
+}

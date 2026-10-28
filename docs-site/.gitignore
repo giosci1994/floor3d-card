@@ -1,0 +1,7 @@
+node_modules/
+dist/
+.astro/
+# Copied from ../docs/images at every build (scripts/images.mjs)
+src/assets/images/
+# The root .gitignore leaves out every package-lock.json; this one is needed by npm ci
+!package-lock.json
