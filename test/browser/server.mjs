@@ -21,6 +21,8 @@ export async function start() {
   const files = new Map([
     ['/local/floor3d/home.obj', objFile()],
     ['/local/floor3d/levels.obj', objFile({ level1: ['floor_bed', 'bed', 'wardrobe'] })], // the bedroom on level 1
+    // The bedroom on level 2, and no level 1.
+    ['/local/floor3d/gap.obj', objFile({ level1: ['floor_bed', 'bed', 'wardrobe'], upper: 'lvl002' })],
     ['/local/floor3d/covers.obj', objFile({ covers: true })],
     ['/local/floor3d/basement.obj', objFile({ basement: true })], // the house on a basement
     ['/local/floor3d/home.mtl', mtlFile()],

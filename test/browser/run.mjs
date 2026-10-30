@@ -1523,6 +1523,65 @@ const projected = (page, p) =>
   }, p);
 
 test(
+  'levels: a model that skips a level number (lvl000 and lvl002) shows, hides and taps its levels',
+  { timeout: TIMEOUT },
+  async () => {
+    const view = (zoom, level) => ({
+      zoom,
+      camera_position: { x: 0, y: 1000, z: 850 },
+      camera_target: { x: 0, y: 0, z: 0 },
+      level,
+    });
+    const zoom_areas = [view('Bedroom', 2), view('Ground floor', 0)];
+    const { page, errors } = await open(house({ objfile: 'gap.obj', zoom_areas, click: 'yes' }));
+    const levels = () =>
+      page.evaluate(() => window.__card._levels.flatMap((level, i) => (level ? [[i, level.visible]] : [])));
+    const choose = (index) =>
+      page.evaluate((index) => {
+        const select = window.__card._zoommenu.querySelector('select[aria-label="Views"]');
+        select.value = String(index);
+        select.dispatchEvent(new Event('change'));
+      }, index);
+    // A tap on the floor of the living room, and whether the card can still find what is under it.
+    const [x, y] = await projected(page, [500, 6, 700]);
+    const tap = async () => {
+      await page.mouse.click(x, y);
+      return page.evaluate(() => window.__card._raycasting.every((o) => o));
+    };
+    assert.deepEqual(await levels(), [
+      [0, true],
+      [2, true],
+    ]);
+    assert.equal(await tap(), true);
+    await choose(1);
+    assert.deepEqual(
+      await levels(),
+      [
+        [0, true],
+        [2, false],
+      ],
+      'Ground floor: level 0',
+    );
+    assert.equal(await tap(), true, 'only the objects of the levels on show are tapped');
+    await choose(0);
+    assert.deepEqual(
+      await levels(),
+      [
+        [0, false],
+        [2, true],
+      ],
+      'Bedroom: level 2',
+    );
+    assert.equal(await tap(), true);
+    // The card shows the objects of level 2 with level 2 (an info box, a camera icon).
+    assert.equal(await page.evaluate(() => window.__card._levelShown(2)), true);
+    assert.equal(await page.evaluate(() => window.__card._levelShown(0)), false);
+    assert.deepEqual(errors, []);
+    await page.close();
+  },
+);
+
+test(
   'cameras: an icon over its point of the model that follows the view, hidden with its level; a tap opens the camera',
   { timeout: TIMEOUT },
   async () => {
