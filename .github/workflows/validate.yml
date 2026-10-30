@@ -12,6 +12,9 @@ permissions: {}
 jobs:
   validate-hacs:
     name: HACS validation
+    # HACS checks the repository a pull request comes from: a fork has no releases, so the card
+    # file is never there and the check fails whatever the change. Its pull requests skip it.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     steps:
       - name: HACS validation
