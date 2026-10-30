@@ -19,6 +19,7 @@ export default defineConfig({
         { label: 'Editor', items: [{ autogenerate: { directory: 'editor' } }] },
         { label: 'Entity types', items: [{ autogenerate: { directory: 'entities' } }] },
         { label: 'Features', items: [{ autogenerate: { directory: 'features' } }] },
+        { label: 'Reference', items: [{ autogenerate: { directory: 'reference' } }] },
         { label: 'Help', items: [{ autogenerate: { directory: 'help' } }] },
         { label: 'Development', items: [{ autogenerate: { directory: 'development' } }] },
       ],
