@@ -1709,10 +1709,11 @@ export class Floor3dCard extends LitElement {
       return;
     });
 
+    // By the number of the level, like _levels: a model may skip some (lvl000 and lvl002 only).
     this._displaylevels = [];
     this._levels.forEach((level, index) => {
       if (level) {
-        this._displaylevels.push(true);
+        this._displaylevels[index] = true;
         this._raycasting = this._raycasting.concat(this._raycastinglevels[index]);
       }
     });
@@ -1793,7 +1794,7 @@ export class Floor3dCard extends LitElement {
   private _updateRaycasting() {
     this._raycasting = [];
     this._displaylevels.forEach((visible, index) => {
-      if (visible) {
+      if (visible && this._raycastinglevels[index]) {
         this._raycasting = this._raycasting.concat(this._raycastinglevels[index]);
       }
     });
