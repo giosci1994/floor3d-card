@@ -110,9 +110,10 @@ const basementBoxes = [
   ['basement_stairs', 'wood', 330, 400, 4, 290, 430, 520],
 ];
 
-// Names with lvl000 or lvl001 in front, as the ExportToHASS plugin of Sweet Home 3D writes the levels.
+// Names with lvl000 or lvl001 in front, as the ExportToHASS plugin of Sweet Home 3D writes the levels
+// (upper: another number for the objects of level1, as a model whose levels skip a number).
 // Boxes one after the other with the same name are one object.
-export function objFile({ level1 = [], covers = false, basement = false } = {}) {
+export function objFile({ level1 = [], upper = 'lvl001', covers = false, basement = false } = {}) {
   const level = (name) =>
     (basement
       ? basementBoxes.some((b) => b[0] === name)
@@ -120,7 +121,7 @@ export function objFile({ level1 = [], covers = false, basement = false } = {}) 
         : 'lvl001'
       : level1.length
         ? level1.includes(name)
-          ? 'lvl001'
+          ? upper
           : 'lvl000'
         : '') + name;
   const lift = (b) => (basement ? [b[0], b[1], b[2], b[3], b[4] + BASEMENT, b[5] + BASEMENT, b[6], b[7]] : b);
