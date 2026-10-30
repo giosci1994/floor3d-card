@@ -17,6 +17,7 @@ export default defineConfig({
         { label: 'Getting started', items: [{ autogenerate: { directory: 'getting-started' } }] },
         { label: '3D model', items: [{ autogenerate: { directory: 'model' } }] },
         { label: 'Editor', items: [{ autogenerate: { directory: 'editor' } }] },
+        { label: 'Entity types', items: [{ autogenerate: { directory: 'entities' } }] },
         { label: 'Features', items: [{ autogenerate: { directory: 'features' } }] },
       ],
     }),
