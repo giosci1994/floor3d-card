@@ -1649,6 +1649,98 @@ test(
 );
 
 test(
+  'markers: a chip with the icon and the state of an entity, over a point or over an object, that follows the view and its level; a tap opens the entity',
+  { timeout: TIMEOUT },
+  async () => {
+    const config = house({
+      objfile: 'levels.obj',
+      markers: [
+        { entity: 'sensor.t_living', position: [500, 150, 700] },
+        { entity: 'light.lamp_1', object_id: 'bed', name: 'Bed lamp', icon: 'mdi:lamp' },
+        { entity: 'sensor.t_living', position: [400, 150, 600], state: 'no', icon: 'mdi:thermometer' },
+        { entity: 'sensor.t_living' }, // without a place: no marker
+      ],
+    });
+    const { page, errors } = await open(config);
+    const markersOf = () =>
+      page.evaluate(() =>
+        [...window.__card.shadowRoot.querySelectorAll('.f3d-marker')].map((el) => {
+          const r = el.getBoundingClientRect();
+          const icon = el.querySelector('ha-icon');
+          return {
+            title: el.title,
+            text: el.textContent.trim(),
+            icon: icon ? icon.getAttribute('icon') : el.firstElementChild.tagName.toLowerCase(),
+            visible: getComputedStyle(el).visibility === 'visible',
+            x: Math.round((r.left + r.right) / 2),
+            y: Math.round((r.top + r.bottom) / 2),
+            classes: el.className,
+          };
+        }),
+      );
+    let markers = await markersOf();
+    assert.deepEqual(
+      markers.map((m) => [m.title, m.text, m.icon]),
+      [
+        ['sensor.t_living: 21.5 °C', '21.5 °C', 'ha-state-icon'],
+        ['Bed lamp: on', 'on', 'mdi:lamp'],
+        ['sensor.t_living: 21.5 °C', '', 'mdi:thermometer'],
+      ],
+      'the state as Home Assistant writes it (here without it: the state and its unit); state: no, only the icon',
+    );
+    assert.deepEqual(
+      markers.map((m) => m.visible),
+      [true, true, true],
+    );
+    assert.match(markers[1].classes, /\bon\b/, 'a lamp on: in the colour of the theme');
+    assert.doesNotMatch(markers[0].classes, /\bon\b/);
+    const near = (m, at) => Math.abs(m.x - at[0]) <= 1 && Math.abs(m.y - at[1]) <= 1;
+    const point = await projected(page, [500, 150, 700]);
+    assert.ok(near(markers[0], point), 'over its point: ' + [markers[0].x, markers[0].y] + ' / ' + point);
+    const bed = await projected(page, [950, 55, 550]); // the middle of the top of the bed
+    assert.ok(near(markers[1], bed), 'over the bed: ' + [markers[1].x, markers[1].y] + ' / ' + bed);
+    // The view turns: the markers go with their points.
+    await page.evaluate(() => {
+      const card = window.__card;
+      card._camera.position.set(-900, 700, 300);
+      card._controls.update();
+      card._render();
+    });
+    markers = await markersOf();
+    const moved = await projected(page, [500, 150, 700]);
+    assert.notDeepEqual(moved, point);
+    assert.ok(near(markers[0], moved), 'follows the view');
+    // A new state: the chip says it.
+    await page.evaluate(() => window.__setState('sensor.t_living', '23.0'));
+    assert.equal((await markersOf())[0].text, '23.0 °C');
+    // Only level 0 shown: the marker over the bed, on level 1, hides with it.
+    await page.evaluate(() => {
+      window.__card._setVisibleLevel(0);
+      window.__card._render();
+    });
+    assert.deepEqual(
+      (await markersOf()).map((m) => m.visible),
+      [true, false, true],
+    );
+    // A tap opens the entity; the model under it gets nothing.
+    await moreInfo(page);
+    markers = await markersOf();
+    await page.mouse.click(markers[0].x, markers[0].y);
+    assert.deepEqual(await page.evaluate(() => window.__moreInfo), ['sensor.t_living']);
+    assert.deepEqual(await page.evaluate(() => window.__calls), []);
+    // markers_show: no.
+    await page.evaluate(() => {
+      const card = window.__card;
+      card._config = { ...card._config, markers_show: 'no' };
+      card._renderBoxes(true);
+    });
+    assert.deepEqual(await markersOf(), []);
+    assert.deepEqual(errors, []);
+    await page.close();
+  },
+);
+
+test(
   'camera pop-up: the picture comes in its corner when a sensor goes off, a new one every second; the cross closes it; it goes after the duration',
   { timeout: TIMEOUT },
   async () => {
@@ -1767,6 +1859,59 @@ test(
       pickMode: false,
       line: 'On the map',
     });
+    assert.deepEqual(errors, []);
+    await page.close();
+  },
+);
+
+test(
+  'card editor: markers, placed at a point picked on the model (with its level) or over an object picked on it',
+  { timeout: TIMEOUT },
+  async () => {
+    const config = house({ objfile: 'levels.obj', markers: [{ entity: 'sensor.t_living' }] });
+    const { page, errors } = await open(config);
+    await page.evaluate(async () => {
+      const card = window.__card;
+      card.preview = true;
+      const ed = await card.constructor.getConfigElement();
+      ed.hass = window.__hass();
+      ed.setConfig(JSON.parse(JSON.stringify(card._config)));
+      document.body.append(ed);
+      await new Promise((r) => setTimeout(r, 300));
+      ed._mode = 'ready';
+      window.__ed = ed;
+    });
+    const line = () =>
+      page.evaluate(() => {
+        const d = window.__ed._describe('markers', window.__ed._config.markers[0], 0);
+        return [d.secondary, d.warning];
+      });
+    assert.deepEqual(await line(), ['Not placed', true]);
+    // A point: the top of the bed, on level 1.
+    await page.evaluate(async () => {
+      const ed = window.__ed;
+      ed._edit('markers', 0);
+      await ed.updateComplete;
+      ed._startPick({ path: ['markers', 0, 'position'], point: true });
+    });
+    const [x, y] = await projected(page, [900, 55, 480]);
+    await page.mouse.click(x, y);
+    let marker = await page.evaluate(() => window.__ed._config.markers[0]);
+    assert.equal(marker.level, 1);
+    assert.equal(marker.position.length, 3);
+    assert.deepEqual(await line(), ['At a point of the model', false]);
+    // An object: the table, picked.
+    await page.evaluate(() => window.__ed._startPick({ path: ['markers', 0, 'object_id'] }));
+    const [tx, ty] = await projected(page, [510, 80, 650]);
+    await page.mouse.click(tx, ty);
+    marker = await page.evaluate(() => window.__ed._config.markers[0]);
+    assert.equal(marker.object_id, 'table');
+    const objectOnly = await page.evaluate(
+      () => window.__ed._describe('markers', { entity: 'sensor.t_living', object_id: 'table' }, 0).secondary,
+    );
+    assert.equal(objectOnly, 'Around table');
+    // While a marker is edited, its object is outlined in the preview.
+    assert.deepEqual(await page.evaluate(() => window.__ed._itemObjects('markers', { object_id: 'table' })), ['table']);
     assert.deepEqual(errors, []);
     await page.close();
   },

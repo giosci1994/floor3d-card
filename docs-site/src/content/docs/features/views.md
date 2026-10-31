@@ -2,7 +2,7 @@
 title: The camera and views
 description: Where the camera starts, the views of the Views menu, and views opened from the page address.
 sidebar:
-  order: 8
+  order: 9
 ---
 
 ## The initial view

@@ -499,3 +499,21 @@ test('defaults: the values the editor shows in empty fields, left out of the YAM
   );
   assert.equal(cleanConfig({ cameras_button: false, entities: [] }).cameras_button, 'no');
 });
+
+test('markers: position as [x, y, z] once complete, the level a number, state: yes left out, empty markers dropped', () => {
+  const c = cleanConfig({
+    type: 'custom:floor3d-card',
+    entities: [],
+    markers: [
+      { entity: 'sensor.t', position: { x: '1', y: 2, z: '3.5' }, level: '1', state: 'yes' },
+      { entity: 'binary_sensor.door', object_id: 'door_1', state: 'no', name: '' },
+      { entity: '', name: '' },
+    ],
+    markers_show: 'yes',
+  });
+  assert.deepEqual(c.markers, [
+    { entity: 'sensor.t', position: [1, 2, 3.5], level: 1 },
+    { entity: 'binary_sensor.door', object_id: 'door_1', state: 'no' },
+  ]);
+  assert.ok(!('markers_show' in c), 'the default switch left out');
+});

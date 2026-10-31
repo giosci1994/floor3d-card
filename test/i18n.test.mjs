@@ -9,6 +9,8 @@ import {
   VECTOR_HEADINGS,
   cameraPlaceSchema,
   cameraPopupSchema,
+  markerSchema,
+  markerPlaceSchema,
   cameraSchema,
   entityActionsSchema,
   entitySchema,
@@ -127,14 +129,21 @@ test('editor: every field, menu entry and heading has its English text', () => {
       mapSchema(),
       personSchema(),
     ],
-    [cameraSchema(), cameraPlaceSchema(), cameraPopupSchema()],
+    [cameraSchema(), cameraPlaceSchema(), cameraPopupSchema(), markerSchema(), markerPlaceSchema()],
   ].flat();
   const walk = (schema) => {
     if (typeof schema === 'string') {
       if (
-        !['sun_roof', 'rooms', 'maps', 'colorcondition', 'shadow_status', 'people_list', 'cameras_list'].includes(
-          schema,
-        )
+        ![
+          'sun_roof',
+          'rooms',
+          'maps',
+          'colorcondition',
+          'shadow_status',
+          'people_list',
+          'cameras_list',
+          'markers_list',
+        ].includes(schema)
       ) {
         assert.ok('headings.' + schema.replace('.', '_') in en, 'heading ' + schema);
       }

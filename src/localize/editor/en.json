@@ -7,7 +7,8 @@
     "colours": "State colours and room maps",
     "rendering": "Rendering",
     "boxes": "Boxes",
-    "cameras": "Cameras of the house"
+    "cameras": "Cameras of the house",
+    "markers": "Markers"
   },
   "labels": {
     "name": "Name",
@@ -205,7 +206,9 @@
     "walls": "Walls in the way",
     "walls_objects": "Walls",
     "walls_opacity": "Faded walls opacity",
-    "walls_height": "Height of low walls"
+    "walls_height": "Height of low walls",
+    "markers_show": "Show the markers",
+    "marker_state": "Show the state"
   },
   "helpers": {
     "path": "For example /local/floor3d/",
@@ -300,7 +303,9 @@
     "walls": "fade: the walls between the camera and the rooms fade as the view turns. low: every wall is cut at a height, as a doll's house. none: whole walls",
     "walls_objects": "The objects that are walls: a name with * or an object group <name>. Default wall_*, the walls of Sweet Home 3D",
     "walls_opacity": "How much of a faded wall shows, from 0 (nothing) to 1 (all). Default 0.15",
-    "walls_height": "The height of the cut above the floor of each level. Default 100 cm"
+    "walls_height": "The height of the cut above the floor of each level. Default 100 cm",
+    "marker_state": "Off: only the icon",
+    "marker_level": "The marker shows only with this level. Picking the point sets it"
   },
   "options": {
     "language": {
@@ -488,7 +493,8 @@
     "chips": "Chips",
     "camera_popup": "Picture that pops up",
     "camera_place": "Place on the map",
-    "camera_popup_on": "Pops up when"
+    "camera_popup_on": "Pops up when",
+    "marker_place": "Place on the model"
   },
   "ui": {
     "loading": "Loading…",
@@ -553,6 +559,11 @@
     "camera_on_map": "On the map",
     "camera_not_on_map": "Not on the map",
     "popup_sensors_one": "pops up with 1 sensor",
-    "popup_sensors_other": "pops up with {count} sensors"
+    "popup_sensors_other": "pops up with {count} sensors",
+    "add_marker": "Add a marker",
+    "marker_point": "At a point of the model",
+    "marker_not_placed": "Not placed",
+    "tap_marker_point": "Tap the point of the model where the marker goes",
+    "marker_or_object": "Or over an object: the marker stays over its top, also when it moves"
   }
 }

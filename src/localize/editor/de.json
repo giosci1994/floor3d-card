@@ -7,7 +7,8 @@
     "colours": "Zustandsfarben und Raumkarten",
     "rendering": "Darstellung",
     "boxes": "Anzeigen in den Ecken",
-    "cameras": "Kameras im Haus"
+    "cameras": "Kameras im Haus",
+    "markers": "Markierungen"
   },
   "labels": {
     "name": "Name",
@@ -202,7 +203,9 @@
     "walls": "Wände im Blick",
     "walls_objects": "Wände",
     "walls_opacity": "Deckkraft ausgeblendeter Wände",
-    "walls_height": "Höhe niedriger Wände"
+    "walls_height": "Höhe niedriger Wände",
+    "markers_show": "Markierungen anzeigen",
+    "marker_state": "Zustand anzeigen"
   },
   "helpers": {
     "path": "Zum Beispiel /local/floor3d/",
@@ -297,7 +300,9 @@
     "walls": "fade: die Wände zwischen Kamera und Räumen werden beim Drehen der Ansicht durchsichtig. low: alle Wände werden in einer Höhe abgeschnitten, wie ein Puppenhaus. none: ganze Wände",
     "walls_objects": "Die Objekte, die Wände sind: ein Name mit * oder eine Objektgruppe <Name>. Standard wall_*, die Wände von Sweet Home 3D",
     "walls_opacity": "Wie viel von einer ausgeblendeten Wand sichtbar bleibt, von 0 (nichts) bis 1 (alles). Standard 0,15",
-    "walls_height": "Die Höhe des Schnitts über dem Boden jeder Etage. Standard 100 cm"
+    "walls_height": "Die Höhe des Schnitts über dem Boden jeder Etage. Standard 100 cm",
+    "marker_state": "Aus: nur das Symbol",
+    "marker_level": "Die Markierung erscheint nur mit dieser Etage. Das Wählen des Punkts setzt sie"
   },
   "options": {
     "language": {
@@ -461,7 +466,8 @@
     "chips": "Chips",
     "camera_popup": "Bild bei Ereignis",
     "camera_place": "Position auf der Karte",
-    "camera_popup_on": "Erscheint bei"
+    "camera_popup_on": "Erscheint bei",
+    "marker_place": "Platz im Modell"
   },
   "ui": {
     "loading": "Wird geladen…",
@@ -526,6 +532,11 @@
     "camera_on_map": "Auf der Karte",
     "camera_not_on_map": "Nicht auf der Karte",
     "popup_sensors_one": "erscheint bei 1 Sensor",
-    "popup_sensors_other": "erscheint bei {count} Sensoren"
+    "popup_sensors_other": "erscheint bei {count} Sensoren",
+    "add_marker": "Markierung hinzufügen",
+    "marker_point": "An einem Punkt des Modells",
+    "marker_not_placed": "Nicht platziert",
+    "tap_marker_point": "Tippe auf den Punkt des Modells, an den die Markierung kommt",
+    "marker_or_object": "Oder über einem Objekt: die Markierung bleibt darüber, auch wenn es sich bewegt"
   }
 }

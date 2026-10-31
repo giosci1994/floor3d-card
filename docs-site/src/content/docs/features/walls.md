@@ -2,7 +2,7 @@
 title: Walls
 description: The walls in the way of the view, faded or cut low.
 sidebar:
-  order: 7
+  order: 8
 ---
 
 `walls` (since 2.13.2) handles the walls in the way of the view. It is in the card editor, next to the ground.

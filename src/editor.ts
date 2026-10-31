@@ -59,6 +59,8 @@ import {
   MAP_KEYS,
   mapSchema,
   personSchema,
+  markerSchema,
+  markerPlaceSchema,
   roomAlarmsSchema,
   roomSchema,
   roomSensorsSchema,
@@ -72,7 +74,7 @@ import { ROOM_KEYS } from './maps';
 import { point } from './cameras';
 import { Translator, translator } from './localize/editor';
 
-type ListKey = 'entities' | 'object_groups' | 'zoom_areas' | 'rooms' | 'maps' | 'people' | 'cameras';
+type ListKey = 'entities' | 'object_groups' | 'zoom_areas' | 'rooms' | 'maps' | 'people' | 'cameras' | 'markers';
 type View = { list?: ListKey; index?: number };
 // Where a picked object goes: a field of the config (path of keys), or the objects of a group. point:
 // the point of the model that was tapped, for the place of a camera (path: its position).
@@ -544,6 +546,7 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
 
   private _itemObjects(list: ListKey, item: any): string[] {
     if (!isObject(item) || list === 'maps' || list === 'people' || list === 'cameras') return [];
+    if (list === 'markers') return item.object_id ? [item.object_id] : [];
     if (list === 'object_groups') return (item.objects || []).map((o) => (isObject(o) ? o.object_id : o));
     return [item.object_id];
   }
@@ -685,6 +688,8 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
           return this._renderList('people', this._t('ui.add_person'), { entity: '' });
         case 'cameras_list':
           return this._renderList('cameras', this._t('ui.add_camera'), { entity: '' });
+        case 'markers_list':
+          return this._renderList('markers', this._t('ui.add_marker'), { entity: '' });
         case 'colorcondition':
           return this._renderColorConditions(list as ListKey, index as number, data);
         case 'shadow_status':
@@ -827,6 +832,19 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
         primary: this._entityName(camera),
         secondary: parts.join(' · '),
         warning: !camera.entity || !this.hass?.states[camera.entity] || (!placed && !sensors),
+      };
+    }
+    if (list === 'markers') {
+      const placed = point(item.position) !== undefined;
+      return {
+        icon: item.icon || 'mdi:map-marker',
+        primary: this._entityName(item),
+        secondary: placed
+          ? this._t('ui.marker_point')
+          : item.object_id
+            ? this._t('ui.around', { id: item.object_id })
+            : this._t('ui.marker_not_placed'),
+        warning: !item.entity || !this.hass?.states[item.entity] || (!placed && !item.object_id),
       };
     }
     if (list === 'zoom_areas') {
@@ -980,6 +998,7 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
         set(dropEmpty({ ...value })),
       );
     else if (list === 'cameras') content = this._renderCamera(index, isObject(item) ? item : { entity: item }, set);
+    else if (list === 'markers') content = this._renderMarker(index, isObject(item) ? item : { entity: item }, set);
     else content = this._renderRoom(index, item, set);
     return html`
       <div class="subheader">
@@ -1256,6 +1275,61 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
       `,
       this._form(cameraPlaceSchema(), data, onChange),
       this._form(cameraPopupSchema(), data, onChange, this._t('headings.camera_popup_on')),
+    ];
+  }
+
+  // A marker: the entity, its name, icon and whether its state shows; its place, a point of the model
+  // (typed, or picked in the preview with its level) or an object (chosen or picked).
+  private _renderMarker(index: number, marker: any, set: (value: any) => void): TemplateResult[] {
+    const position = marker.position;
+    const data = {
+      ...marker,
+      position: Array.isArray(position) ? { x: position[0], y: position[1], z: position[2] } : position,
+      state: marker.state !== 'no' && marker.state !== false,
+    };
+    const onChange = (value: any): void => {
+      const next = dropEmpty({ ...value });
+      if (isObject(next.position)) {
+        const list = [next.position.x, next.position.y, next.position.z];
+        // Written as [x, y, z] once complete; while being typed it stays { x, y, z }.
+        if (list.every((n) => typeof n === 'number' && isFinite(n))) next.position = list;
+        else if (list.every((n) => n === undefined || n === null)) delete next.position;
+      }
+      if (next.state === false) next.state = 'no';
+      else delete next.state;
+      set(next);
+    };
+    const path = ['markers', index, 'position'];
+    const active = this._picking && JSON.stringify(this._picking.path) === JSON.stringify(path);
+    return [
+      this._form(markerSchema(), data, onChange),
+      html`
+        <div class="heading-row">
+          <div class="heading">${this._t('headings.marker_place')}</div>
+          <ha-button
+            appearance="plain"
+            size="s"
+            class=${active ? 'picking' : ''}
+            @click=${() => this._startPick({ path, point: true })}
+          >
+            <ha-svg-icon slot="start" .path=${mdiCursorDefaultClickOutline}></ha-svg-icon>${this._t('ui.pick')}
+          </ha-button>
+        </div>
+        ${active ? html`<div class="hint">${this._t('ui.tap_marker_point')}</div>` : nothing}
+      `,
+      this._form(markerPlaceSchema(), data, onChange),
+      html`<div class="hint">${this._t('ui.marker_or_object')}</div>`,
+      this._objectRow(
+        ['markers', index, 'object_id'],
+        [
+          objectField(
+            'object_id',
+            this._objectOptions().filter((o) => !o.startsWith('<')),
+          ),
+        ],
+        data,
+        (value) => onChange({ ...data, object_id: value.object_id }),
+      ),
     ];
   }
 

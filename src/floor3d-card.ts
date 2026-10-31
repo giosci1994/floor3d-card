@@ -24,6 +24,7 @@ import { Rotating } from './rotating';
 import { Texts } from './texts';
 import { Walls, WallsHost } from './walls';
 import { forgetModels, keepModel, takeModel } from './model-cache';
+import { MarkerOverlay } from './marker-overlay';
 import { CLIMATE_COLORS, activeAlarms, climateAction } from './maps';
 import { localize, pickLanguage } from './localize/localize';
 import { STATUS_COLORS, StatusKind } from './boxes';
@@ -201,6 +202,7 @@ export class Floor3dCard extends LitElement {
   private _texts = new Texts(this._entityHost());
   // The cameras on screen (camera-overlay.ts): their icons over the model, the picture that pops up.
   private _cameras = new CameraOverlay(this._camerasHost(), this._boxes);
+  private _markers = new MarkerOverlay(this._camerasHost(), this._boxes);
   private _lastFrameTime?: number | null; // timestamp of the previous animation frame
   private _lastRenderTime = 0;
   private _lastShadowTime = 0;
@@ -604,6 +606,7 @@ export class Floor3dCard extends LitElement {
     this._env.aimTorch();
     this._renderer.render(this._scene, this._camera);
     this._cameras.placePins();
+    this._markers.place();
   }
 
   // Objects of the model under a point of the screen (client coordinates), nearest first.
@@ -906,6 +909,7 @@ export class Floor3dCard extends LitElement {
       if (this._renderer) this._renderer.domElement.style.cursor = this._pickMode ? 'crosshair' : '';
       // The icons of the cameras let the taps through to the model.
       this._cameras.setPicking(this._pickMode);
+      this._markers.setPicking(this._pickMode);
     }
     if ('highlight' in detail) this._setHighlight(detail.highlight || []);
     if (detail.request === 'snapshot') {
@@ -1158,6 +1162,7 @@ export class Floor3dCard extends LitElement {
       this._renderer.render(this._scene, this._camera);
     }
     this._cameras.placePins();
+    this._markers.place();
     this._boxes.place();
   }
 
@@ -2685,6 +2690,7 @@ export class Floor3dCard extends LitElement {
     if (!this._card || !this._hass || !this._modelready) return;
     this._boxes.renderAll(force);
     this._cameras.render(force);
+    this._markers.render(force);
     this._boxes.placeIfChanged(force);
   }
 
@@ -2968,6 +2974,7 @@ export class Floor3dCard extends LitElement {
       num: (value, fallback) => card._num(value, fallback),
       levelShown: (level) => card._levelShown(level),
       renderBoxes: (force) => card._renderBoxes(force),
+      object: (name) => card._object(name),
     };
   }
 
