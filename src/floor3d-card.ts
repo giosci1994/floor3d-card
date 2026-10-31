@@ -23,6 +23,7 @@ import { Openings, isOpen } from './openings';
 import { Rotating } from './rotating';
 import { Texts } from './texts';
 import { Walls, WallsHost } from './walls';
+import { forgetModels, keepModel, takeModel } from './model-cache';
 import { CLIMATE_COLORS, activeAlarms, climateAction } from './maps';
 import { localize, pickLanguage } from './localize/localize';
 import { STATUS_COLORS, StatusKind } from './boxes';
@@ -912,6 +913,8 @@ export class Floor3dCard extends LitElement {
       previewState.image = undefined;
       if (this._renderer && this._modelready) this._snapshot();
     }
+    // The reload button loads the model from its files again (a model exported again).
+    if (detail.request === 'reload') forgetModels();
     if (detail.request === 'reload' && this._renderer) {
       this.rerender();
     } else if (['reload', 'live', 'resume'].includes(detail.request) && this._pausedEl) {
@@ -1319,6 +1322,28 @@ export class Floor3dCard extends LitElement {
 
     this._showLoading(fileExt == 'obj' && this._config.mtlfile ? 'loading_materials' : 'loading_model');
 
+    if (fileExt == 'obj') this._modeltype = ModelSource.OBJ;
+    else if (fileExt == 'glb') this._modeltype = ModelSource.GLB;
+    else return;
+    void this._loadModel(path, fileExt);
+  }
+
+  // The model files, and what else changes how they load: the key of the model in the cache.
+  private _modelKey(path: string): string {
+    return [path, this._config.objfile, this._config.mtlfile || '', this._config.draco_decoder_path || ''].join('|');
+  }
+
+  // The model: a copy of the one a card being edited loaded a moment ago (model-cache.ts), else from
+  // its files.
+  private async _loadModel(path: string, fileExt: string): Promise<void> {
+    const scene = this._scene;
+    const cached = await takeModel(this._modelKey(path), path + this._config.objfile);
+    if (scene !== this._scene) return; // the card was set up again meanwhile
+    if (cached) {
+      await this._showPreparing();
+      if (scene === this._scene) this._onLoaded3DModel(cached, true);
+      return;
+    }
     if (fileExt == 'obj') {
       //waterfront format
       if (this._config.mtlfile && this._config.mtlfile != '') {
@@ -1333,11 +1358,9 @@ export class Floor3dCard extends LitElement {
       } else {
         this._loadOBJ(path);
       }
-      this._modeltype = ModelSource.OBJ;
-    } else if (fileExt == 'glb') {
+    } else {
       //glb format
       this._loadGLB(path);
-      this._modeltype = ModelSource.GLB;
     }
   }
 
@@ -1507,8 +1530,15 @@ export class Floor3dCard extends LitElement {
     this._onLoaded3DModel(gltf.scene);
   }
 
-  private _onLoaded3DModel(object: Object3D): void {
+  private _onLoaded3DModel(object: Object3D, cached = false): void {
     // Object Loaded Event: last root object passed to the function
+
+    // A card being edited keeps a copy of the model as the file gave it, for the next preview.
+    if (this.preview && !cached) {
+      let path = this._config.path;
+      if (!path.endsWith('/')) path += '/';
+      void keepModel(this._modelKey(path), path + this._config.objfile, object);
+    }
 
     this._initobjects(object);
 

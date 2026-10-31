@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { after, before, test } from 'node:test';
 import { chromium } from 'playwright';
-import { objectNames } from './model.mjs';
+import { objFile, objectNames } from './model.mjs';
 import { start } from './server.mjs';
 
 const TIMEOUT = 180000;
@@ -2732,6 +2732,79 @@ test(
     const blue = await picture('#0000ff');
     await page.evaluate((blue) => window.__setState('media_player.tv', 'playing', { entity_picture: blue }), blue);
     assert.equal(await (await shown('wardrobe')).jsonValue(), 'blue', 'entity_picture of a media player');
+    assert.deepEqual(errors, []);
+    await page.close();
+  },
+);
+
+test(
+  'model cache: a card being edited keeps its model; the next preview takes a copy, unless the file changed or the editor reloads',
+  { timeout: TIMEOUT },
+  async () => {
+    const OBJ = '/local/floor3d/home.obj';
+    const original = objFile();
+    const config = house({
+      entities: [
+        { entity: 'fan.table', type3d: 'rotate', object_id: 'table', rotate: { axis: 'y', round_per_second: 1 } },
+      ],
+    });
+    const { page, errors } = await open(config, states({ 'fan.table': { state: 'off', attributes: {} } }));
+    // Home Assistant builds the preview again at every change of the configuration: a new card in
+    // the place of the old one. Then where the table is (its geometry moves to its middle, the pivot
+    // of the rotation: a copy that shared the geometry would move it again), and whether the bed is.
+    const rebuild = () =>
+      page.evaluate(async () => {
+        const old = window.__card;
+        const card = document.createElement('floor3d-card');
+        card.preview = true;
+        card.setConfig(JSON.parse(JSON.stringify(old._config)));
+        card.hass = window.__hass();
+        old.replaceWith(card);
+        window.__card = card;
+        const start = Date.now();
+        while (!card._modelready && Date.now() - start < 20000) await new Promise((r) => setTimeout(r, 50));
+        const table = card._scene.getObjectByName('table');
+        table.geometry.computeBoundingBox();
+        const world = table.geometry.boundingBox.clone().applyMatrix4(table.matrixWorld);
+        return {
+          ready: card._modelready,
+          table: [world.min.x, world.min.z, world.max.x, world.max.z].map(Math.round),
+          bed: !!card._scene.getObjectByName('bed'),
+        };
+      });
+    const gets = () => server.hits(OBJ);
+    const heads = () => server.hits('HEAD ' + OBJ);
+    // The card of the dashboard, not being edited: nothing kept, the first preview reads the file.
+    let before = gets();
+    const first = await rebuild();
+    assert.equal(first.ready, true);
+    assert.equal(gets(), before + 1, 'the first preview reads the file');
+    // The next previews take the model kept by the first one: a question to the file, no download.
+    before = gets();
+    const headsBefore = heads();
+    const second = await rebuild();
+    const third = await rebuild();
+    assert.equal(gets(), before, 'the next previews do not read the file again');
+    assert.ok(heads() >= headsBefore + 2, 'they ask whether it changed');
+    assert.deepEqual(second.table, first.table, 'the table where it was: the copy has its own geometry');
+    assert.deepEqual(third.table, first.table);
+    assert.equal(third.bed, true);
+    // The model exported again with the same name: the preview reads it.
+    server.serve(OBJ, objFile().replace('\no bed\n', '\no bunk\n'));
+    before = gets();
+    const changed = await rebuild();
+    assert.equal(gets(), before + 1, 'a changed file is read again');
+    assert.equal(changed.bed, false, 'the new model, where the bed is a bunk');
+    server.serve(OBJ, original);
+    // The reload button of the editor: the model is read again.
+    await rebuild(); // reads the original again, and keeps it
+    before = gets();
+    await page.evaluate(() =>
+      window.dispatchEvent(new CustomEvent('floor3d-card-editor', { detail: { request: 'reload' } })),
+    );
+    await page.waitForFunction(() => window.__card._modelready);
+    await rebuild();
+    assert.ok(gets() > before, 'after the reload button the file is read again');
     assert.deepEqual(errors, []);
     await page.close();
   },
