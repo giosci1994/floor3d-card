@@ -16,6 +16,7 @@ A cleaner and faster base for what comes next, with nothing to change in your co
 - **The code in modules.** The card was one file of 7,000 lines; now each part (the boxes, the cameras, the sky, the rooms and every type of entity) is a module of its own, with tests in the browser for each of them.
 - **Updated libraries:** three.js 0.186, Lit 3, tween.js 25.
 - **2.13.3:** a [photo frame](https://giosci1994.github.io/floor3d-card/entities/image/#a-photo-frame) on any object of the model (`image.attribute`), models whose level numbers skip one (thanks to [niltrip](https://github.com/niltrip)), and a [live demo](https://giosci1994.github.io/floor3d-card/) on the documentation site.
+- **2.13.4:** for a tablet on a wall, a [kiosk mode](https://giosci1994.github.io/floor3d-card/features/wall-tablets/) without menus, with a tour of the views, and a [lighter quality](https://giosci1994.github.io/floor3d-card/features/wall-tablets/#quality) for weak tablets; [markers](https://giosci1994.github.io/floor3d-card/features/markers/), any entity as a chip over the model; objects [coloured as their light](https://giosci1994.github.io/floor3d-card/entities/color/#the-colour-of-a-light), a LED strip for example; and the preview of the editor ready sooner with a big model, [kept in memory](https://giosci1994.github.io/floor3d-card/editor/preview/#fewer-reloads).
 
 ## What the card does
 
@@ -60,7 +61,7 @@ If the original floor3d-card is installed, remove it from HACS first: both defin
 Copy all the files (`.js` and `.wasm`) of the [latest release](https://github.com/giosci1994/floor3d-card/releases/latest) into a folder of `/config/www` and add `floor3d-card.js` as a resource (details in [Installation](https://giosci1994.github.io/floor3d-card/getting-started/installation/#by-hand)). It's **required** to load this card as `module`.
 
 ```yaml
-- url: /local/floor3d-card/floor3d-card.js?v=2.13.3 # the version: change it at every update
+- url: /local/floor3d-card/floor3d-card.js?v=2.13.4 # the version: change it at every update
   type: module
 ```
 
