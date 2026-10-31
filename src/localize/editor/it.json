@@ -7,7 +7,8 @@
     "colours": "Colori di stato e mappe delle stanze",
     "rendering": "Rendering",
     "boxes": "Riquadri",
-    "cameras": "Telecamere della casa"
+    "cameras": "Telecamere della casa",
+    "markers": "Segnaposti"
   },
   "labels": {
     "name": "Nome",
@@ -202,7 +203,9 @@
     "walls": "Muri davanti alla vista",
     "walls_objects": "Muri",
     "walls_opacity": "Opacità dei muri sfumati",
-    "walls_height": "Altezza dei muri bassi"
+    "walls_height": "Altezza dei muri bassi",
+    "markers_show": "Mostra i segnaposti",
+    "marker_state": "Mostra lo stato"
   },
   "helpers": {
     "path": "Per esempio /local/floor3d/",
@@ -297,7 +300,9 @@
     "walls": "fade: i muri tra la telecamera e le stanze sfumano mentre giri la vista. low: tutti i muri sono tagliati a un'altezza, come una casa delle bambole. none: muri interi",
     "walls_objects": "Gli oggetti che sono muri: un nome con * o un gruppo di oggetti <nome>. Predefinito wall_*, i muri di Sweet Home 3D",
     "walls_opacity": "Quanto resta visibile un muro sfumato, da 0 (niente) a 1 (tutto). Predefinito 0,15",
-    "walls_height": "L'altezza del taglio sopra il pavimento di ogni piano. Predefinita 100 cm"
+    "walls_height": "L'altezza del taglio sopra il pavimento di ogni piano. Predefinita 100 cm",
+    "marker_state": "Spento: solo l'icona",
+    "marker_level": "Il segnaposto si vede solo con questo piano. Scegliendo il punto si imposta da solo"
   },
   "options": {
     "language": {
@@ -461,7 +466,8 @@
     "chips": "Chip",
     "camera_popup": "Immagine a comparsa",
     "camera_place": "Posizione sulla mappa",
-    "camera_popup_on": "Compare quando"
+    "camera_popup_on": "Compare quando",
+    "marker_place": "Posizione sul modello"
   },
   "ui": {
     "loading": "Caricamento…",
@@ -526,6 +532,11 @@
     "camera_on_map": "Sulla mappa",
     "camera_not_on_map": "Non sulla mappa",
     "popup_sensors_one": "compare con 1 sensore",
-    "popup_sensors_other": "compare con {count} sensori"
+    "popup_sensors_other": "compare con {count} sensori",
+    "add_marker": "Aggiungi un segnaposto",
+    "marker_point": "In un punto del modello",
+    "marker_not_placed": "Senza posizione",
+    "tap_marker_point": "Tocca il punto del modello dove va il segnaposto",
+    "marker_or_object": "Oppure sopra un oggetto: il segnaposto resta sopra di esso, anche quando si muove"
   }
 }

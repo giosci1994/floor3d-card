@@ -227,6 +227,12 @@ export const SECTIONS: Section[] = [
     ],
   },
   {
+    // Markers (markers.ts): any entity as a chip over the model.
+    key: 'markers',
+    icon: 'mdi:map-marker-radius',
+    content: () => [[row(show('markers_show'))], 'markers_list'],
+  },
+  {
     key: 'interaction',
     icon: 'mdi:gesture-tap',
     content: (config) => [
@@ -696,6 +702,17 @@ export const cameraPlaceSchema = (): Schema[] => [
 ];
 export const cameraPopupSchema = (): Schema[] => [
   entity('popup_on', ['binary_sensor', 'event', 'input_boolean', 'switch'], true),
+];
+// A marker: the entity, its name and icon, and its state next to the icon (marker-overlay.ts); then
+// its place, a point of the model (picked in the preview, with its level) or an object.
+export const markerSchema = (): Schema[] => [
+  entity('entity'),
+  row(text('name'), { name: 'icon', selector: { icon: {} } }),
+  { ...bool('state'), label_key: 'marker_state', helper_key: 'marker_state' },
+];
+export const markerPlaceSchema = (): Schema[] => [
+  vector('position'),
+  { ...num('level', { min: 0, step: 1 }), helper_key: 'marker_level' },
 ];
 // A person of the people box: the person, and an entity whose state is the room where they are.
 export const personSchema = (): Schema[] => [

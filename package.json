@@ -42,7 +42,7 @@
     "lint": "eslint src",
     "format": "prettier --write \"src/**/*.{ts,json}\" \"test/**/*.{mjs,json,html}\" \"*.mjs\"",
     "format:check": "prettier --check \"src/**/*.{ts,json}\" \"test/**/*.{mjs,json,html}\" \"*.mjs\"",
-    "test": "node --experimental-strip-types --test test/config.test.mjs test/i18n.test.mjs test/maps.test.mjs test/slats.test.mjs test/sky.test.mjs test/boxes.test.mjs test/cameras.test.mjs test/ground.test.mjs test/rotate.test.mjs test/textmap.test.mjs",
+    "test": "node --experimental-strip-types --test test/config.test.mjs test/i18n.test.mjs test/maps.test.mjs test/slats.test.mjs test/sky.test.mjs test/boxes.test.mjs test/cameras.test.mjs test/markers.test.mjs test/ground.test.mjs test/rotate.test.mjs test/textmap.test.mjs",
     "test:browser": "node --test --test-concurrency=1 test/browser/run.mjs",
     "rollup": "rollup -c rollup.config.mjs"
   }

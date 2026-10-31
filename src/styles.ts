@@ -389,6 +389,52 @@ export const cardStyles = css`
   .f3d-pins.picking .f3d-pin {
     pointer-events: none;
   }
+  /* The markers (marker-overlay.ts): a chip with the icon and the state of an entity. */
+  .f3d-marker {
+    position: absolute;
+    left: 0;
+    top: 0;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    max-width: 160px;
+    height: 26px;
+    margin: 0;
+    padding: 0 8px 0 6px;
+    box-sizing: border-box;
+    border-radius: 13px;
+    border: 1px solid rgba(255, 255, 255, 0.6);
+    background: rgba(0, 0, 0, 0.6);
+    color: white;
+    font: inherit;
+    font-size: 12px;
+    line-height: 1;
+    white-space: nowrap;
+    cursor: pointer;
+    pointer-events: auto;
+    visibility: hidden;
+    --mdc-icon-size: 16px;
+  }
+  .f3d-marker span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .f3d-marker:hover,
+  .f3d-marker:focus-visible {
+    background: rgba(0, 0, 0, 0.8);
+    outline: none;
+    box-shadow: 0 0 0 2px var(--primary-color, #03a9f4);
+  }
+  .f3d-marker.on {
+    background: var(--primary-color, #03a9f4);
+    border-color: rgba(255, 255, 255, 0.85);
+  }
+  .f3d-marker.off {
+    opacity: 0.5;
+  }
+  .f3d-pins.picking .f3d-marker {
+    pointer-events: none;
+  }
   @keyframes f3d-ring {
     from {
       box-shadow: 0 0 0 0 rgba(229, 57, 53, 0.7);

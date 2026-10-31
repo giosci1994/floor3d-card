@@ -104,6 +104,15 @@ Each box has `*_position` (`top-left`, `top-right`, `bottom-left` or `bottom-rig
 
 See [Cameras of the house](/floor3d-card/features/cameras/).
 
+## Markers
+
+| Option | Default | |
+| --- | --- | --- |
+| `markers` | | Any entities as chips over the model: `entity`, `position` or `object_id`, `level`, `name`, `icon`, `state`. |
+| `markers_show` | `yes` | The markers. |
+
+See [Markers](/floor3d-card/features/markers/).
+
 ## Interaction
 
 | Option | Default | |

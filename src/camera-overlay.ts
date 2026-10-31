@@ -25,6 +25,41 @@ export interface CamerasHost {
   num(value: unknown, fallback: number): number;
   levelShown(level: number | undefined): boolean;
   renderBoxes(force: boolean): void;
+  object(name: string): THREE.Object3D | undefined; // an object of the model: the markers over it
+}
+
+// Places marks of a layer over points of the scene (world coordinates): the icons of the cameras and
+// the markers, after every frame. A mark is hidden behind the camera, out of the view, or while its
+// level is hidden; it is placed from the top left corner of its layer, wherever the canvas is in the
+// card.
+export function placeOver(
+  layer: HTMLElement,
+  marks: { el: HTMLElement; point?: THREE.Vector3; level?: number }[],
+  host: Pick<CamerasHost, 'canvas' | 'camera' | 'levelShown'>,
+): void {
+  if (!marks.length || !host.canvas || !host.camera) return;
+  const canvas = host.canvas.getBoundingClientRect();
+  const box = layer.getBoundingClientRect();
+  const width = canvas.width;
+  const height = canvas.height;
+  const left = canvas.left - box.left;
+  const top = canvas.top - box.top;
+  const screen = new THREE.Vector3();
+  const view = new THREE.Vector3();
+  marks.forEach(({ el, point, level }) => {
+    let shown = !!point && width > 0 && height > 0 && host.levelShown(level);
+    if (shown) {
+      view.copy(point).applyMatrix4(host.camera.matrixWorldInverse);
+      screen.copy(point).project(host.camera);
+      shown = view.z < 0 && Math.abs(screen.x) <= 1 && Math.abs(screen.y) <= 1;
+    }
+    if (shown) {
+      const x = left + ((screen.x + 1) / 2) * width;
+      const y = top + ((1 - screen.y) / 2) * height;
+      el.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px) translate(-50%, -50%)`;
+    }
+    el.style.visibility = shown ? 'visible' : 'hidden';
+  });
 }
 
 export class CameraOverlay {
@@ -147,35 +182,19 @@ export class CameraOverlay {
   }
 
   // The icons follow the camera of the card: placed again after every frame over their point of the
-  // model; hidden behind the camera, out of the view, or when their level is hidden.
+  // model (placeOver).
   public placePins(): void {
-    if (!this._pins.length || !this._pinsEl || !this.host.canvas || !this.host.camera || !this.host.model) return;
-    // The icons are placed from the top left corner of their layer, wherever the canvas is in the card.
-    const canvas = this.host.canvas.getBoundingClientRect();
-    const layer = this._pinsEl.getBoundingClientRect();
-    const width = canvas.width;
-    const height = canvas.height;
-    const left = canvas.left - layer.left;
-    const top = canvas.top - layer.top;
-    const point = new THREE.Vector3();
-    const view = new THREE.Vector3();
-    this._pins.forEach(({ el, camera }) => {
-      const p = camera.position;
-      let shown = !!p && width > 0 && height > 0;
-      if (shown && !this.host.levelShown(camera.level)) shown = false;
-      if (shown) {
-        point.set(p[0], p[1], p[2]).applyMatrix4(this.host.model.matrixWorld);
-        view.copy(point).applyMatrix4(this.host.camera.matrixWorldInverse);
-        point.project(this.host.camera);
-        shown = view.z < 0 && Math.abs(point.x) <= 1 && Math.abs(point.y) <= 1;
-      }
-      if (shown) {
-        const x = left + ((point.x + 1) / 2) * width;
-        const y = top + ((1 - point.y) / 2) * height;
-        el.style.transform = `translate(${x.toFixed(1)}px, ${y.toFixed(1)}px) translate(-50%, -50%)`;
-      }
-      el.style.visibility = shown ? 'visible' : 'hidden';
-    });
+    if (!this._pins.length || !this._pinsEl || !this.host.model) return;
+    const matrix = this.host.model.matrixWorld;
+    placeOver(
+      this._pinsEl,
+      this._pins.map(({ el, camera }) => ({
+        el,
+        level: camera.level,
+        point: camera.position ? new THREE.Vector3(...camera.position).applyMatrix4(matrix) : undefined,
+      })),
+      this.host,
+    );
   }
 
   // camera_popup_show: the picture of the camera whose sensor went off last, in its corner, a new one

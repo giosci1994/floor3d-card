@@ -126,6 +126,7 @@ Some of these were found and fixed first in other forks: [Steven-D-Morgan/hass-3
 - `walls: fade` fades the walls between the camera and the rooms, and only those, and they follow the view; a tap goes through a faded wall; `walls: low` cuts every wall at `walls_height` above the floor of its level, and nothing else (2.13.2).
 - a model that skips a level number (`lvl000` and `lvl002`) shows and hides its levels by their number, and a tap on the model finds what is under it on the levels on show (2.13.3, #41);
 - a TV screen shows the picture of the attribute of `image.attribute` (a photo frame), and changes with it; without it, `entity_picture`; the menus of the views and of the maps have a name (2.13.3);
+- a marker shows the icon and the state of its entity over its point or over the top of its object, follows the view, the state and the level, opens the entity on a tap, and hides with `markers_show: no`; in the editor, a marker gets its point (with its level) or its object with a tap on the model;
 - a card being edited keeps its model: the next preview takes a copy without reading the file, with the geometry of its own (a rotating table stays where it is), unless the file changed (its ETag) or the reload button of the editor was pressed;
 
 The tests wait for what they check (an animation that ends, a camera that arrives, a new picture of a camera), not for a fixed time: a busy computer is slower, and a fixed wait long enough on one failed on another. They pass with every core of the computer busy with something else.

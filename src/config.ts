@@ -31,6 +31,7 @@ const SWITCH_DEFAULTS: { [key: string]: 'yes' | 'no' } = {
   alarm_panel_show: 'yes',
   chips_show: 'yes',
   cameras_show: 'yes',
+  markers_show: 'yes',
   cameras_button: 'yes',
   camera_popup_show: 'yes',
   stars_show: 'yes',
@@ -329,6 +330,29 @@ export function cleanConfig<T>(config: T): T {
       })
       .filter((item) => item !== undefined);
     if (c.cameras.length === 0) delete c.cameras;
+  }
+
+  // Markers (see markers.ts): the position as [x, y, z] once its three numbers are there, the level as
+  // a number, state: no only when the state is hidden.
+  if (Array.isArray(c.markers)) {
+    c.markers = c.markers
+      .map((item) => {
+        if (!isObject(item)) return undefined;
+        const clean = cleanItem(item, 'entity');
+        if (!isObject(clean)) return undefined;
+        const p = clean.position;
+        if (isObject(p)) {
+          const list = [p.x, p.y, p.z].map((n) => (typeof n === 'string' && NUMBER.test(n.trim()) ? Number(n) : n));
+          if (list.every((n) => typeof n === 'number' && isFinite(n))) clean.position = list;
+        } else if (Array.isArray(p)) {
+          clean.position = p.map((n) => (typeof n === 'string' && NUMBER.test(n.trim()) ? Number(n) : n));
+        }
+        toNumber(clean, 'level');
+        if (clean.state === 'yes' || clean.state === true) delete clean.state;
+        return clean;
+      })
+      .filter((item) => item !== undefined);
+    if (c.markers.length === 0) delete c.markers;
   }
 
   if (isObject(c.url_parameters)) {
