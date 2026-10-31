@@ -5,8 +5,9 @@
   "description": "The documentation site of floor3d-card mod (Astro Starlight), published on GitHub Pages",
   "scripts": {
     "images": "node scripts/images.mjs",
-    "dev": "npm run images && astro dev",
-    "build": "npm run images && astro build",
+    "demo": "node scripts/demo.mjs",
+    "dev": "npm run images && npm run demo && astro dev",
+    "build": "npm run images && npm run demo && astro build",
     "preview": "astro preview"
   },
   "dependencies": {

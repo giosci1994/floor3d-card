@@ -29,7 +29,7 @@ The X coordinate comes from `sensor_x`, from an `x` attribute of the entity, or 
 | `sensor_x`, `sensor_y` | | The sensors of the coordinates. |
 | `unit` | `mm` | `mm`, `cm` or `m`: the unit of the coordinates. |
 | `flip_x`, `flip_y` | `no` | Mirror an axis. |
-| `sensor_position` | | Where the radar is in the model: `[x, y, z]`. |
+| `sensor_position` | `[0, 0, 0]` | Where the radar is: `[x, y, z]` from the middle of the bottom of the model, which the card centres on 0 (for a house 1400 cm wide, its corner is at `[-700, 0, -700]`). |
 | `sensor_rotation` | `0` | Which way it faces, in degrees. |
 | `scale` | `0.001` | From the unit of the radar to the model. |
 | `zone` | | An entity whose state is shown above the head (the zone). |

@@ -3,5 +3,7 @@ dist/
 .astro/
 # Copied from ../docs/images at every build (scripts/images.mjs)
 src/assets/images/
+# The card, the house and the TV picture of the demo (scripts/demo.mjs)
+public/demo/
 # The root .gitignore leaves out every package-lock.json; this one is needed by npm ci
 !package-lock.json

@@ -1,0 +1,67 @@
+---
+// The live demo of the card on the picture of the hero of the home page: see scripts/demo.js.
+---
+
+<script>
+  import { setupDemo } from '../scripts/demo.js';
+  setupDemo();
+</script>
+
+<style is:global>
+  /* In place of the picture of the hero: its size and place, the picture or the card in it. */
+  .hero > .f3d-demo {
+    position: relative;
+    width: min(70%, 20rem);
+    aspect-ratio: 1;
+    margin-inline: auto;
+  }
+  @media (min-width: 50rem) {
+    .hero > .f3d-demo {
+      order: 2;
+      width: min(100%, 25rem);
+    }
+  }
+  .f3d-demo > img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border-radius: 1rem;
+  }
+  .f3d-demo-live {
+    border-radius: 1rem;
+    overflow: hidden;
+    background: #161e2b;
+    touch-action: none;
+  }
+  .f3d-demo floor3d-card {
+    display: block;
+    width: 100%;
+    height: 100%;
+  }
+  .f3d-demo-play {
+    position: absolute;
+    left: 50%;
+    bottom: 1.25rem;
+    transform: translateX(-50%);
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    padding: 0.6rem 1.2rem;
+    border: none;
+    border-radius: 999px;
+    background: var(--sl-color-text-accent);
+    color: var(--sl-color-black);
+    font: inherit;
+    font-weight: 600;
+    white-space: nowrap;
+    cursor: pointer;
+    box-shadow: 0 4px 14px rgb(0 0 0 / 35%);
+  }
+  .f3d-demo-play:hover {
+    filter: brightness(1.1);
+  }
+  .f3d-demo-play:disabled {
+    cursor: progress;
+    opacity: 0.85;
+  }
+</style>

@@ -10,6 +10,12 @@ on:
       - 'docs-site/**'
       - 'docs/images/**'
       - '.github/workflows/docs.yml'
+      # the card and the house of the live demo of the home page
+      - 'src/**'
+      - 'package.json'
+      - 'yarn.lock'
+      - 'rollup.config.mjs'
+      - 'test/browser/model.mjs'
   pull_request:
     branches:
       - master
@@ -17,6 +23,12 @@ on:
       - 'docs-site/**'
       - 'docs/images/**'
       - '.github/workflows/docs.yml'
+      # the card and the house of the live demo of the home page
+      - 'src/**'
+      - 'package.json'
+      - 'yarn.lock'
+      - 'rollup.config.mjs'
+      - 'test/browser/model.mjs'
   workflow_dispatch:
 
 permissions:
@@ -39,6 +51,11 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: docs-site/package-lock.json
+      # The live demo of the home page runs the card of this commit (docs-site/scripts/demo.mjs).
+      - name: Build the card
+        run: |
+          npx --yes yarn@1.22.22 install --frozen-lockfile
+          npm run build
       - name: Build
         working-directory: docs-site
         run: |
