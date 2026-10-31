@@ -258,6 +258,7 @@
     "glow": "Standard 0.8",
     "mode": "Für einen Schalter oder eine Steckdose: Ein heißt Heizen oder Kühlen",
     "alarm_object_color": "Standard: die Farbe der Alarmart",
+    "image_attribute": "Das Attribut mit der Adresse des Bildes, etwa für einen Bilderrahmen. Standard: entity_picture",
     "key": "Eine fertige Karte, um ihre Farben zu ändern, oder ein neuer Name für andere Sensoren der Räume",
     "unit": "Steht hinter dem Wert",
     "min": "Der ersten Farbe",

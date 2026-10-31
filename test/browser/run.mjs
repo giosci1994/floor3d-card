@@ -2683,6 +2683,60 @@ test(
   },
 );
 
+test(
+  'image: the picture of the attribute of image.attribute (a photo frame), else entity_picture, on the screen',
+  { timeout: TIMEOUT },
+  async () => {
+    const frame = {
+      entity: 'sensor.photo_frame',
+      type3d: 'image',
+      object_id: 'tv_screen',
+      image: { attribute: 'picture', lumens: 2 },
+    };
+    const player = { entity: 'media_player.tv', type3d: 'image', object_id: 'wardrobe' };
+    const { page, errors } = await open(
+      house({ entities: [frame, player] }),
+      states({ 'sensor.photo_frame': { state: 'on', attributes: {} } }),
+    );
+    // A picture of one colour, as an address the card can load; and the colour of the middle of the
+    // picture on an object, once it is there.
+    const picture = (color) =>
+      page.evaluate((color) => {
+        const c = document.createElement('canvas');
+        c.width = c.height = 4;
+        const ctx = c.getContext('2d');
+        ctx.fillStyle = color;
+        ctx.fillRect(0, 0, 4, 4);
+        return c.toDataURL();
+      }, color);
+    const shown = (name) =>
+      page.waitForFunction((name) => {
+        const map = window.__card._scene.getObjectByName(name).material.map;
+        if (!map || !map.image || !map.image.width) return null;
+        const c = document.createElement('canvas');
+        c.width = c.height = 1;
+        c.getContext('2d').drawImage(map.image, map.image.width / 2, map.image.height / 2, 1, 1, 0, 0, 1, 1);
+        const d = c.getContext('2d').getImageData(0, 0, 1, 1).data;
+        return d[0] > 200 && d[1] < 60 ? 'red' : d[1] > 200 && d[0] < 60 ? 'green' : d[2] > 200 ? 'blue' : null;
+      }, name);
+    const red = await picture('#ff0000');
+    await page.evaluate((red) => window.__setState('sensor.photo_frame', 'on', { picture: red }), red);
+    assert.equal(await (await shown('tv_screen')).jsonValue(), 'red', 'the picture of the attribute');
+    const green = await picture('#00ff00');
+    await page.evaluate(
+      (green) => window.__setState('sensor.photo_frame', 'on', { picture: green, entity_picture: 'nothing.png' }),
+      green,
+    );
+    assert.equal(await (await shown('tv_screen')).jsonValue(), 'green', 'a new picture, and not entity_picture');
+    // Without image.attribute: entity_picture, as before.
+    const blue = await picture('#0000ff');
+    await page.evaluate((blue) => window.__setState('media_player.tv', 'playing', { entity_picture: blue }), blue);
+    assert.equal(await (await shown('wardrobe')).jsonValue(), 'blue', 'entity_picture of a media player');
+    assert.deepEqual(errors, []);
+    await page.close();
+  },
+);
+
 // --- 2.12.0: cleanup ------------------------------------------------------------------------------
 
 test(

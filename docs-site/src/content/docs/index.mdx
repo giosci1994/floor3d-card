@@ -8,8 +8,8 @@ head:
 hero:
   tagline: The 3D model of your home in a Home Assistant card, live. Lamps that light the rooms with their colour and their shadows, doors and covers that open, rooms coloured by their sensors, alarms that blink, the sun, the sky and the weather.
   image:
-    file: ../../assets/images/hero.jpg
-    alt: A flat in the evening, its lamps lighting the rooms
+    file: ../../assets/images/demo-night.jpg
+    alt: The house of the live demo at night, its lamps lighting the rooms
   actions:
     - text: Get started
       link: /floor3d-card/getting-started/installation/
@@ -21,6 +21,9 @@ hero:
 ---
 
 import { Card, CardGrid } from '@astrojs/starlight/components';
+import LiveDemo from '../../components/LiveDemo.astro';
+
+<LiveDemo />
 
 <CardGrid>
   <Card title="Light and shadows" icon="star">

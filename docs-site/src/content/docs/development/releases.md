@@ -13,7 +13,7 @@ sidebar:
 
 - **Build**, at every push and pull request to `master`: lint, format check, build, `npm test` and the [browser tests](/floor3d-card/development/testing/).
 - **Validate**, at every push and every night: the checks of HACS. Pull requests from forks skip it, since a fork has no releases for HACS to check.
-- **Docs**: builds this site on pull requests that change it, and publishes it on GitHub Pages from `master`.
+- **Docs**: builds this site on pull requests that change it, and publishes it on GitHub Pages from `master`. It builds the card first: the live demo of the home page runs the card of the same commit, in the house of the browser tests (`docs-site/scripts/demo.mjs`, `docs-site/src/scripts/demo.js`).
 - **Release**: the files of each published release.
 
 The changes of each version are in the [releases](https://github.com/giosci1994/floor3d-card/releases) on GitHub.

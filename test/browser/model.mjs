@@ -111,9 +111,17 @@ const basementBoxes = [
 ];
 
 // Names with lvl000 or lvl001 in front, as the ExportToHASS plugin of Sweet Home 3D writes the levels
-// (upper: another number for the objects of level1, as a model whose levels skip a number).
-// Boxes one after the other with the same name are one object.
-export function objFile({ level1 = [], upper = 'lvl001', covers = false, basement = false } = {}) {
+// (upper: another number for the objects of level1, as a model whose levels skip a number); extra:
+// more boxes, and skip: objects left out, for the demo of the documentation site
+// (docs-site/scripts/demo.mjs). Boxes one after the other with the same name are one object.
+export function objFile({
+  level1 = [],
+  upper = 'lvl001',
+  covers = false,
+  basement = false,
+  extra = [],
+  skip = [],
+} = {}) {
   const level = (name) =>
     (basement
       ? basementBoxes.some((b) => b[0] === name)
@@ -142,7 +150,11 @@ export function objFile({ level1 = [], upper = 'lvl001', covers = false, basemen
   ].forEach((t) => lines.push('vt ' + t.join(' ')));
   let vi = 0;
   let previous = null;
-  const all = [...(basement ? basementBoxes : []), ...(covers ? [...boxes, ...coverBoxes] : boxes).map(lift)];
+  const all = [
+    ...(basement ? basementBoxes : []),
+    ...(covers ? [...boxes, ...coverBoxes] : boxes).map(lift),
+    ...extra.map(lift),
+  ].filter((b) => !skip.includes(b[0]));
   for (const [name, mat, x0, x1, y0, y1, z0, z1] of all) {
     if (name !== previous) lines.push(`o ${level(name)}`);
     lines.push(`usemtl ${mat}`);
