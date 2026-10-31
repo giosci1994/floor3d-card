@@ -261,6 +261,7 @@
     "glow": "Default 0.8",
     "mode": "For a switch or a plug: on means heating or cooling",
     "alarm_object_color": "Default: the colour of the kind of alarm",
+    "image_attribute": "The attribute with the address of the picture, as for a photo frame. Default entity_picture",
     "key": "A ready map, to change its colours, or a new name for other sensors of the rooms",
     "unit": "Written after the value",
     "min": "Of the first colour",

@@ -124,6 +124,7 @@ Some of these were found and fixed first in other forks: [Steven-D-Morgan/hass-3
 - the border of the alarm panel box is one line in the colour of the state, without a stripe; a tap on the status box frames its objects, then each one in turn, then the view before comes back, camera and zoom included, unless the camera was moved; the camera goes to an object from a side where nothing hides it, a TV on the inside of a wall seen from outside (2.13.1). Each of these fails on 2.13.0.
 - `walls: fade` fades the walls between the camera and the rooms, and only those, and they follow the view; a tap goes through a faded wall; `walls: low` cuts every wall at `walls_height` above the floor of its level, and nothing else (2.13.2).
 - a model that skips a level number (`lvl000` and `lvl002`) shows and hides its levels by their number, and a tap on the model finds what is under it on the levels on show (#41);
+- a TV screen shows the picture of the attribute of `image.attribute` (a photo frame), and changes with it; without it, `entity_picture`;
 
 The tests wait for what they check (an animation that ends, a camera that arrives, a new picture of a camera), not for a fixed time: a busy computer is slower, and a fixed wait long enough on one failed on another. They pass with every core of the computer busy with something else.
 

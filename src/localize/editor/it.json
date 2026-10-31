@@ -258,6 +258,7 @@
     "glow": "Predefinito 0.8",
     "mode": "Per un interruttore o una presa: acceso vuol dire che scalda o raffresca",
     "alarm_object_color": "Predefinito: il colore del tipo di allarme",
+    "image_attribute": "L'attributo con l'indirizzo dell'immagine, come per una cornice digitale. Predefinito entity_picture",
     "key": "Una mappa pronta, per cambiarne i colori, o un nome nuovo per altri sensori delle stanze",
     "unit": "Scritta dopo il valore",
     "min": "Del primo colore",

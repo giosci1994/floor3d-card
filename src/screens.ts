@@ -1,11 +1,22 @@
-// type3d: image: the picture of an entity (a TV, a camera) on a screen of the model, that glows with
-// image.lumens, and a light in front of it in the colour of the picture (lighting_lumens).
+// type3d: image: the picture of an entity (a TV, a camera, a photo frame) on a screen of the model,
+// that glows with image.lumens, and a light in front of it in the colour of the picture
+// (lighting_lumens).
 import * as THREE from 'three';
+import type { HassEntity } from 'home-assistant-js-websocket';
 import { EntityHandler, EntityHost } from './entity-types';
 import { Lamps } from './lamps';
 import type { EntityConfig } from './types';
 
 const SCREEN_EMISSIVE_SCALE = 0.25; // TV screen glow: image.lumens x this
+
+// The address of the picture of an entity: the attribute of image.attribute (a template sensor of a
+// photo frame, media_image_url), else entity_picture (the cover of a media player, the picture of a
+// camera or of an image entity). Undefined without one.
+export function pictureOf(item: EntityConfig, stateObj: HassEntity): string | undefined {
+  const name = (item.image && item.image.attribute) || 'entity_picture';
+  const picture = stateObj.attributes[name];
+  return typeof picture === 'string' && picture.trim() ? picture.trim() : undefined;
+}
 
 export class Screens {
   // The picture being loaded for each entity (a newer one, or the TV switched off, drops it), the
@@ -91,7 +102,7 @@ export class Screens {
   // A new picture, or the screen switched on or off.
   private _refresh(entity: EntityConfig, i: number): boolean {
     const stateObj = this.host.hass.states[entity.entity];
-    const key = stateObj.attributes['entity_picture'] + '|' + stateObj.state;
+    const key = pictureOf(entity, stateObj) + '|' + stateObj.state;
     if (key === this._keys[i]) return false;
     this._keys[i] = key;
     this._update(entity, i);
@@ -104,7 +115,7 @@ export class Screens {
       _foundobject = this.host.object(this.host.objectIds[index].objects[0].object_id);
     }
     if (_foundobject) {
-      const picture = this.host.hass.states[item.entity].attributes['entity_picture'];
+      const picture = pictureOf(item, this.host.hass.states[item.entity]);
       if (picture && !['off', 'standby', 'unavailable', 'unknown'].includes(this.host.hass.states[item.entity].state)) {
         // The picture goes on the screen once it has loaded, and the card redraws then. Before, the
         // empty texture went on at once: the screen, transparent, disappeared, and nothing redrew

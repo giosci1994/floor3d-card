@@ -515,7 +515,7 @@ export const typeSchema = (
             type: 'grid',
             column_min_width: '140px',
             schema: [
-              text('attribute'),
+              { ...text('attribute'), helper_key: 'image_attribute' },
               num('rotate', { unit_of_measurement: '°' }),
               bool('mirror'),
               num('lumens', { min: 0 }),
