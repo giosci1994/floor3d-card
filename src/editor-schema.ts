@@ -58,6 +58,7 @@ export const BLOCK_SWITCHES: { [block: string]: { [key: string]: 'yes' | 'no' } 
   image: { lighting_shadow: 'yes' },
   room: { label: 'no' },
   tracker: { label: 'yes', flip_x: 'no', flip_y: 'no' },
+  color: { light: 'no' },
 };
 // Options written as [x, y, z] lists, edited as three numbers.
 export const ARRAY_VECTORS: { [block: string]: string[] } = {
@@ -278,10 +279,30 @@ export const SECTIONS: Section[] = [
     ],
   },
   {
+    // kiosk: yes (kiosk.ts): a tablet on a wall, without menus, with a tour of the views.
+    key: 'kiosk',
+    icon: 'mdi:tablet-dashboard',
+    content: (config) => [
+      [
+        bool('kiosk'),
+        ...(config.kiosk === 'yes' || config.kiosk === true
+          ? [
+              row(
+                num('kiosk_tour', { min: 0, step: 1, unit_of_measurement: 's' }),
+                num('kiosk_idle', { min: 0, step: 1, unit_of_measurement: 's' }),
+              ),
+            ]
+          : []),
+      ],
+    ],
+  },
+  {
     key: 'rendering',
     icon: 'mdi:tune-variant',
     content: () => [
       [
+        // quality.ts: low for a weak tablet, auto when the device looks weak.
+        row(choice('quality', ['high', 'low', 'auto']), num('max_shadows', { min: 0, step: 1 })),
         row(num('max_pixel_ratio', { min: 0.5, max: 4 }), bool('log_depth')),
         bool('reversed_depth'),
         text('draco_decoder_path'),
@@ -505,7 +526,21 @@ export const typeSchema = (
         textStyle('text'),
       ];
     case 'color':
-      return ['colorcondition'];
+      return [
+        // The colour of the light (a LED strip), after the colours of the states.
+        [
+          {
+            name: 'color',
+            type: 'grid',
+            column_min_width: '140px',
+            schema: [
+              { ...bool('light'), label_key: 'color_light', helper_key: 'color_light' },
+              { ...num('glow', { min: 0, max: 3, step: 0.1 }), helper_key: 'color_glow' },
+            ],
+          },
+        ],
+        'colorcondition',
+      ];
     case 'hide':
     case 'show':
       return [[{ name: type, type: 'grid', column_min_width: '140px', schema: [text('state')] }]];

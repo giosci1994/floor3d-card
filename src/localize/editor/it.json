@@ -8,7 +8,8 @@
     "rendering": "Rendering",
     "boxes": "Riquadri",
     "cameras": "Telecamere della casa",
-    "markers": "Segnaposti"
+    "markers": "Segnaposti",
+    "kiosk": "Tablet a parete"
   },
   "labels": {
     "name": "Nome",
@@ -205,7 +206,13 @@
     "walls_opacity": "Opacità dei muri sfumati",
     "walls_height": "Altezza dei muri bassi",
     "markers_show": "Mostra i segnaposti",
-    "marker_state": "Mostra lo stato"
+    "marker_state": "Mostra lo stato",
+    "kiosk": "Modalità kiosk",
+    "kiosk_tour": "Giro delle viste",
+    "kiosk_idle": "Ritorno dopo",
+    "quality": "Qualità",
+    "max_shadows": "Ombre massime",
+    "color_light": "Colore della luce"
   },
   "helpers": {
     "path": "Per esempio /local/floor3d/",
@@ -221,7 +228,7 @@
     "extralightmode": "Solo le luci accese proiettano ombre",
     "click": "Spento: serve un doppio clic",
     "selectionMode": "I tocchi colorano gli oggetti e li elencano, per creare i gruppi",
-    "max_pixel_ratio": "Predefinito 2",
+    "max_pixel_ratio": "Predefinito 2 (1 con qualità bassa)",
     "temperature_min": "Predefinito 17",
     "temperature_max": "Predefinito 27",
     "illuminance_min": "Predefinito 5 (la scala è logaritmica)",
@@ -302,7 +309,14 @@
     "walls_opacity": "Quanto resta visibile un muro sfumato, da 0 (niente) a 1 (tutto). Predefinito 0,15",
     "walls_height": "L'altezza del taglio sopra il pavimento di ogni piano. Predefinita 100 cm",
     "marker_state": "Spento: solo l'icona",
-    "marker_level": "Il segnaposto si vede solo con questo piano. Scegliendo il punto si imposta da solo"
+    "marker_level": "Il segnaposto si vede solo con questo piano. Scegliendo il punto si imposta da solo",
+    "kiosk": "Niente intestazione, menu o pulsanti: per un tablet a parete",
+    "kiosk_tour": "Secondi di ogni vista (vista iniziale, poi le zone di zoom). Vuoto o 0: nessun giro",
+    "kiosk_idle": "Secondi dopo un tocco prima che il giro riprenda, o che la camera torni alla vista iniziale. Predefinito 60, 0 mai",
+    "quality": "Bassa: per un tablet poco potente (rapporto pixel 1, al massimo 4 lampade con ombra). Automatica: bassa su un dispositivo poco potente. Predefinito alta",
+    "max_shadows": "Lampade che fanno ombra insieme, sole escluso. Vuoto: quante ne regge il dispositivo (4 con qualità bassa)",
+    "color_light": "Mentre è accesa, gli oggetti prendono il colore della luce (una striscia LED)",
+    "color_glow": "Quanto brillano, per la luminosità della luce. Predefinito 1, 0 per niente"
   },
   "options": {
     "language": {
@@ -410,6 +424,11 @@
       "none": "Interi",
       "fade": "Sfumati davanti alla vista",
       "low": "Bassi"
+    },
+    "quality": {
+      "high": "Alta",
+      "low": "Bassa",
+      "auto": "Automatica"
     }
   },
   "types": {

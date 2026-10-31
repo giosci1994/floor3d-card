@@ -104,6 +104,11 @@ export interface Floor3dCardConfig {
   tone_mapping: string;
   light_power: number | string;
   max_pixel_ratio: number | string;
+  quality: string; // high (the default), low, or auto: low on a weak device (see quality.ts)
+  max_shadows: number | string; // lamps casting a shadow at once
+  kiosk: string; // yes: no header, menus or buttons (see kiosk.ts)
+  kiosk_tour: number | string; // seconds of each view of the tour; 0 or missing: no tour
+  kiosk_idle: number | string; // seconds after a touch before the tour goes on (60)
   draco_decoder_path: string; // folder of the Draco decoder, for .glb models compressed with Draco
   url_parameters: { zoom?: string }; // query parameters of the page read by the card
   log_depth: string;
@@ -143,6 +148,7 @@ export interface EntityConfig {
   long_press_action?: string;
   light?: any;
   colorcondition?: any; // type3d: color, a colour for each state
+  color?: any; // type3d: color: light (the colour of the light while it is on) and glow
   hide?: any;
   show?: any;
   door?: any;

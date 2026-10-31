@@ -4,7 +4,7 @@ import { HomeAssistant, LovelaceCardEditor, fireEvent, forwardHaptic } from './h
 // The editor is loaded on demand by getConfigElement(): devices that only show the card never download it.
 import { HassEntity } from 'home-assistant-js-websocket';
 import { createObjectGroupConfigArray, getLovelace } from './helpers';
-import { matchObjects, normalizeConfig, objectPattern } from './config';
+import { matchObjects, normalizeConfig, objectPattern, switchOn } from './config';
 import type { Floor3dCardConfig, EntityConfig, EntityObjects } from './types';
 import { CARD_VERSION, EDITOR_EVENT, PREVIEW_EVENT } from './const';
 import DRACO_DECODER from 'virtual:draco-decoder';
@@ -17,7 +17,7 @@ import { RoomMaps, RoomsHost, RoomView } from './rooms';
 import { EntityHandler, EntityHost, onNewState } from './entity-types';
 import { Trackers } from './trackers';
 import { Showers } from './showers';
-import { Lamps, rgbToHex } from './lamps';
+import { Lamps, lightColor, rgbToHex } from './lamps';
 import { Screens } from './screens';
 import { Openings, isOpen } from './openings';
 import { Rotating } from './rotating';
@@ -25,6 +25,8 @@ import { Texts } from './texts';
 import { Walls, WallsHost } from './walls';
 import { forgetModels, keepModel, takeModel } from './model-cache';
 import { MarkerOverlay } from './marker-overlay';
+import { Kiosk } from './kiosk';
+import { LOW_SUN_MAP, SUN_MAP, lowQuality, pixelRatioLimit, shadowLimit, thisDevice } from './quality';
 import { CLIMATE_COLORS, activeAlarms, climateAction } from './maps';
 import { localize, pickLanguage } from './localize/localize';
 import { STATUS_COLORS, StatusKind } from './boxes';
@@ -203,6 +205,9 @@ export class Floor3dCard extends LitElement {
   // The cameras on screen (camera-overlay.ts): their icons over the model, the picture that pops up.
   private _cameras = new CameraOverlay(this._camerasHost(), this._boxes);
   private _markers = new MarkerOverlay(this._camerasHost(), this._boxes);
+  // kiosk: yes (kiosk.ts): the tour of the views, and the way back after a touch.
+  private _kiosk = new Kiosk(this._kioskHost());
+  private _lowQuality = false; // quality: low, or auto on a weak device (quality.ts)
   private _lastFrameTime?: number | null; // timestamp of the previous animation frame
   private _lastRenderTime = 0;
   private _lastShadowTime = 0;
@@ -244,6 +249,7 @@ export class Floor3dCard extends LitElement {
   private _modelCenter?: THREE.Vector3;
   private _modelRadius?: number;
   private _colorDeps?: HassEntity[];
+  private _glows: string[] = []; // type3d: color: the light colour each entity shows (see _lightGlow)
   private _alarmPulse = false; // alarm triggered with something open: the openings blink
   private _roomAlarms = false; // a room or an object of type alarm blinks: an alarm is on
   private _card?: HTMLElement;
@@ -302,8 +308,12 @@ export class Floor3dCard extends LitElement {
     this._controlsStartListener = () => {
       this._stopCameraTweens();
       if (this._zoomSelect) this._zoomSelect.value = '';
+      this._kiosk.touched();
     };
     this._card_id = 'ha-card-1';
+    // kiosk: any tap on the card counts as a touch, also on a box or a marker, which stop the
+    // event before the model (hence the capture).
+    this.addEventListener('pointerdown', () => this._kiosk.touched(), true);
   }
 
   public connectedCallback(): void {
@@ -338,6 +348,7 @@ export class Floor3dCard extends LitElement {
       this._boxes.subscribeWeather();
       this._boxes.connect();
       this._renderBoxes(true); // the pictures of the cameras start again
+      this._startKiosk();
     }
   }
 
@@ -355,6 +366,7 @@ export class Floor3dCard extends LitElement {
     this._cancelTap();
     this._boxes.disconnect();
     this._cameras.disconnect();
+    this._kiosk.stop();
     // The preview going away while the editor is paused (Home Assistant replaces it at every change
     // of the config): the next one shows its last picture, with the camera where it was.
     if (previewState.paused && this._modelready && this._isEditorPreview()) this._snapshot();
@@ -386,6 +398,11 @@ export class Floor3dCard extends LitElement {
     // Short forms (true/false, object_id strings in object_groups, missing options block) become
     // the long ones the rest of the card reads.
     this._config = normalizeConfig(config);
+    // kiosk: yes: no header, no menus and no buttons (the views menu and bar: see _getZoomMenu).
+    if (this._config.kiosk === 'yes') {
+      this._config = { ...this._config, header: 'no', hideLevelsMenu: 'yes', hideMapMenu: 'yes', cameras_button: 'no' };
+    }
+    this._lowQuality = lowQuality(this._config, thisDevice());
     // A card with only rooms (maps, alarms) may have no entities: the states were never read then,
     // so the rooms didn't change and the canvas kept its first size.
     if (!Array.isArray(this._config.entities)) this._config.entities = [];
@@ -421,6 +438,7 @@ export class Floor3dCard extends LitElement {
   public rerender(): void {
     // Nothing to rebuild yet: the model is shown for the first time when the card is displayed.
     if (!this._renderer || !this._controls) return;
+    this._kiosk.stop();
     this._removeInputListeners();
     this._controls.removeEventListener('change', this._changeListener);
     this._controls.removeEventListener('start', this._controlsStartListener);
@@ -1600,8 +1618,11 @@ export class Floor3dCard extends LitElement {
 
       this._controls = new OrbitControls(this._camera, this._renderer.domElement);
 
-      // Phones report 3x or more: 9 times the pixels of 1x for a difference hard to see.
-      this._renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, this._num(this._config.max_pixel_ratio, 2)));
+      // Phones report 3x or more: 9 times the pixels of 1x for a difference hard to see. With quality:
+      // low, 1 (see pixelRatioLimit).
+      this._renderer.setPixelRatio(
+        Math.min(window.devicePixelRatio || 1, pixelRatioLimit(this._config, this._lowQuality)),
+      );
 
       this._controls.maxPolarAngle = (0.85 * Math.PI) / 2;
       this._controls.addEventListener('change', this._changeListener);
@@ -1645,6 +1666,7 @@ export class Floor3dCard extends LitElement {
       if (this._ispanel() || this._issidebar()) {
         this._resizeObserver.observe(this._card);
       }
+      this._startKiosk();
     }
   }
 
@@ -1836,7 +1858,7 @@ export class Floor3dCard extends LitElement {
   }
 
   private _getZoomBar(): TemplateResult {
-    if (this._levels) {
+    if (this._levels && this._config.kiosk !== 'yes') {
       // The original button bar, only when the views menu is hidden: they do the same thing.
       if (this._zoom.length > 0 && this._config.hideZoomMenu == 'yes') {
         return html`
@@ -1879,7 +1901,7 @@ export class Floor3dCard extends LitElement {
   }
 
   private _getZoomMenu(): TemplateResult {
-    if (this._config.hideZoomMenu == 'yes' || !this._levels || this._zoom.length == 0) {
+    if (this._config.hideZoomMenu == 'yes' || this._config.kiosk === 'yes' || !this._levels || this._zoom.length == 0) {
       return html``;
     }
     // The placeholder comes back when the camera is moved by hand, so the same view can be picked again.
@@ -2268,7 +2290,15 @@ export class Floor3dCard extends LitElement {
     color: {
       setup: (_, i) => this._setupColor(i),
       show: (entity, i) => this._updatecolor(entity, i),
-      refresh: this._onNewState((entity, i) => this._updatecolor(entity, i)),
+      // With color.light, also when the light changes colour or brightness.
+      refresh: (entity, i, state) => {
+        if (this._states[i] === state && JSON.stringify(this._lightGlow(entity) || null) === this._glows[i]) {
+          return false;
+        }
+        this._states[i] = state;
+        this._updatecolor(entity, i);
+        return true;
+      },
     },
     hide: {
       show: (entity, i) => this._updatehide(entity, i),
@@ -2512,13 +2542,18 @@ export class Floor3dCard extends LitElement {
   // coordinates one for every two textures: at least 6 stay for them. With 32 texture units and 31
   // varyings (some desktop GPUs) the varyings were the limit, and from 28 shadows the shaders failed.
   // The sun comes first, then the lights in config order.
+  // max_shadows (or quality: low, see shadowLimit) lowers it: so many lamps, plus the sun.
   private _shadowBudget(): number {
     const caps = this._renderer.capabilities;
     const textures = this._textureUnits ? this._textureUnits.units : 2;
-    return Math.max(
+    const gpu = Math.max(
       2,
       Math.min(caps.maxTextures - textures, caps.maxVaryings - Math.max(6, 4 + Math.ceil(textures / 2))),
     );
+    const limit = shadowLimit(this._config, this._lowQuality);
+    if (limit === undefined) return gpu;
+    const sun = this._env.sun && this._env.sun.castShadow ? 1 : 0;
+    return Math.min(gpu, limit + sun);
   }
 
   // The texture units of the material of the model that takes the most, among those lit by the
@@ -2879,6 +2914,7 @@ export class Floor3dCard extends LitElement {
       scheduleRender: () => card._scheduleRender(),
       enableShadow: (light, bias) => card._enableShadow(light, bias),
       refreshLightShadow: (light) => card._refreshLightShadow(light),
+      sunMapSize: () => (card._lowQuality ? LOW_SUN_MAP : SUN_MAP),
     };
   }
 
@@ -2933,6 +2969,32 @@ export class Floor3dCard extends LitElement {
       renderMenus: () => card._renderMenus(),
       setMapMode: (mode) => card._setMapMode(mode),
     };
+  }
+
+  // --- Kiosk (kiosk.ts) -----------------------------------------------------------------------------
+
+  // What the tour of kiosk: yes reads of the card: the views, and the flight to one of them.
+  private _kioskHost() {
+    // eslint-disable-next-line @typescript-eslint/no-this-alias
+    const card = this;
+    return {
+      get config() {
+        return card._config;
+      },
+      views: (): number[] => (card._zoom || []).map((zoom, index) => (zoom ? index : -1)).filter((i) => i >= 0),
+      show: (index: number): void => {
+        if (card._modelready && card._renderer && card._controls) card._goToView(index);
+      },
+      // An alarm of a room on, that alarm_view showed: the camera stays on it.
+      hold: (): boolean => card._config.alarm_view == 'yes' && card._roomMaps.alarm,
+    };
+  }
+
+  // The tour starts once the model is shown, but not in the preview of the card editor: there the
+  // camera is where the editor puts it.
+  private _startKiosk(): void {
+    if (this._isEditorPreview()) this._kiosk.stop();
+    else this._kiosk.start();
   }
 
   // --- Cameras (camera-overlay.ts) -----------------------------------------------------------------
@@ -3197,41 +3259,71 @@ export class Floor3dCard extends LitElement {
     });
   }
 
-  private _updatecolor(item: any, index: number): void {
-    // Change the color of the object when, for the bound device, the state matches the condition
-
+  // color: the colour of the first colorcondition whose state is the state of the entity; else, with
+  // color.light: yes, the colour of the light while it is on (see _lightGlow); else the material of
+  // the model. Objects of several materials keep them.
+  private _updatecolor(item: EntityConfig, index: number): void {
+    const glow = this._lightGlow(item);
+    this._glows[index] = JSON.stringify(glow || null);
     let j = 0;
     this._object_ids[index].objects.forEach((element) => {
-      let _object: any = this._object(element.object_id);
+      const _object: any = this._object(element.object_id);
 
       if (_object) {
-        let i: any;
-        let defaultcolor = true;
-        for (i in item.colorcondition) {
-          if (this._states[index] == item.colorcondition[i].state) {
-            const colorarray = item.colorcondition[i].color.split(',');
-            let color = '';
-            if (colorarray.length == 3) {
-              color = rgbToHex(Number(colorarray[0]), Number(colorarray[1]), Number(colorarray[2]));
-            } else {
-              color = item.colorcondition[i].color;
-            }
-            if (!Array.isArray(_object.material)) {
-              _object.material = this._clonedmaterial[index][j];
-              _object.material.color.set(color);
-            }
-            defaultcolor = false;
+        const initial: any = this._initialmaterial[index][j];
+        const cloned: any = this._clonedmaterial[index][j];
+        let color: string | undefined;
+        let emissive: { color: string; intensity: number } | undefined;
+        const conditions = item.colorcondition && typeof item.colorcondition === 'object' ? item.colorcondition : {};
+        for (const condition of Object.values(conditions) as any[]) {
+          if (condition && this._states[index] == condition.state) {
+            const colorarray = String(condition.color).split(',');
+            color =
+              colorarray.length == 3
+                ? rgbToHex(Number(colorarray[0]), Number(colorarray[1]), Number(colorarray[2]))
+                : condition.color;
             break;
           }
         }
-        if (defaultcolor) {
-          if (this._initialmaterial[index][j]) {
-            _object.material = this._initialmaterial[index][j];
+        if (color === undefined && glow) {
+          color = glow.color;
+          emissive = { color: glow.color, intensity: glow.glow };
+        }
+        if (color !== undefined && cloned && !Array.isArray(_object.material)) {
+          _object.material = cloned;
+          cloned.color.set(color);
+          // The glow of the light, or none: the one of the material of the model.
+          if (cloned.emissive && initial && initial.emissive) {
+            if (emissive) {
+              cloned.emissive.set(emissive.color);
+              cloned.emissiveIntensity = emissive.intensity;
+            } else {
+              cloned.emissive.copy(initial.emissive);
+              cloned.emissiveIntensity = initial.emissiveIntensity;
+            }
           }
+        } else if (color === undefined && initial) {
+          _object.material = initial;
         }
       }
       j += 1;
     });
+  }
+
+  // color.light: yes: while the entity is on, the colour its light reports (white when none) and
+  // a glow as strong as glow (1 when missing, 0 none) times the brightness of the light. A LED
+  // strip coloured as its light. Undefined while it is off, or without color.light.
+  private _lightGlow(item: EntityConfig): { color: string; glow: number } | undefined {
+    if (!item.color || !switchOn(item.color, 'light', false) || !this._hass) return undefined;
+    const stateObj = this._hass.states[item.entity];
+    if (!stateObj || stateObj.state !== 'on') return undefined;
+    const rgb = (lightColor(stateObj) || [255, 255, 255]).map((v) => Math.max(0, Math.min(255, Math.round(v))));
+    const brightness = Number(stateObj.attributes.brightness);
+    const level = brightness > 0 ? Math.min(brightness, 255) / 255 : 1;
+    return {
+      color: rgbToHex(rgb[0], rgb[1], rgb[2]),
+      glow: Math.round(Math.max(0, this._num(item.color.glow, 1)) * level * 1000) / 1000,
+    };
   }
 
   private _updatehide(entity: EntityConfig, index: number): void {

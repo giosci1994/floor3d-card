@@ -32,7 +32,7 @@ The options of a type go in a block with its name: `light:` for a light, `door:`
 | Type | In the editor | What the objects do |
 | --- | --- | --- |
 | [`light`](/floor3d-card/entities/light/) | Light | A light in the colour and brightness of the entity |
-| [`color`](/floor3d-card/entities/color/) | Colour by state | A colour for each state |
+| [`color`](/floor3d-card/entities/color/) | Colour by state | A colour for each state, or the colour of a light |
 | [`hide`, `show`](/floor3d-card/entities/hide-show/) | Hidden / Shown in a state | Hidden or shown in one state |
 | [`text`](/floor3d-card/entities/text/) | Text | The state written on the object |
 | [`room`](/floor3d-card/entities/room/) | Room label and colour | A coloured box over a floor, with a label |

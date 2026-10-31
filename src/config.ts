@@ -37,6 +37,7 @@ const SWITCH_DEFAULTS: { [key: string]: 'yes' | 'no' } = {
   stars_show: 'yes',
   moon_show: 'yes',
   sky_clouds: 'yes',
+  kiosk: 'no',
   sky: 'no', // no longer used by the card
 };
 
@@ -64,6 +65,8 @@ const VALUE_DEFAULTS: { [key: string]: string | number } = {
   walls_objects: 'wall_*',
   walls_opacity: 0.15,
   walls_height: 100,
+  quality: 'high',
+  kiosk_idle: 60,
 };
 
 // The top-level switches and their defaults, for the editor (its toggles).
@@ -81,6 +84,7 @@ const BLOCK_SWITCHES: [string, string][] = [
   ['image', 'lighting_shadow'],
   ['room', 'label'],
   ['tracker', 'label'],
+  ['color', 'light'],
 ];
 
 // Types whose options block the card reads without checking that it exists.
@@ -105,6 +109,9 @@ const TOP_NUMBERS = [
   'ground_floor_level',
   'walls_opacity',
   'walls_height',
+  'max_shadows',
+  'kiosk_tour',
+  'kiosk_idle',
 ];
 const BLOCK_NUMBERS: { [block: string]: string[] } = {
   light: ['lumens', 'decay', 'distance', 'angle'],
@@ -117,6 +124,7 @@ const BLOCK_NUMBERS: { [block: string]: string[] } = {
   tracker: ['sensor_rotation', 'scale', 'height', 'size'],
   info: ['size'],
   shower: ['velocity', 'count', 'size', 'height', 'width'],
+  color: ['glow'],
 };
 
 const NUMBER = /^-?\d+(\.\d+)?$/;

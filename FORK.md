@@ -128,6 +128,9 @@ Some of these were found and fixed first in other forks: [Steven-D-Morgan/hass-3
 - a TV screen shows the picture of the attribute of `image.attribute` (a photo frame), and changes with it; without it, `entity_picture`; the menus of the views and of the maps have a name (2.13.3);
 - a marker shows the icon and the state of its entity over its point or over the top of its object, follows the view, the state and the level, opens the entity on a tap, and hides with `markers_show: no`; in the editor, a marker gets its point (with its level) or its object with a tap on the model;
 - a card being edited keeps its model: the next preview takes a copy without reading the file, with the geometry of its own (a rotating table stays where it is), unless the file changed (its ETag) or the reload button of the editor was pressed;
+- `kiosk: yes` hides the header, the menus of the views, levels and maps; the tour flies to the initial view and to every view in turn, stops at a touch on the model or on a box, and goes on from the initial view `kiosk_idle` seconds later;
+- `quality: low` draws at pixel ratio 1 on a screen of 2, with the shadows of the sun and of 4 lamps and a sun map of 1024; `quality: auto` is low with 2 GB of memory and high with 8; `max_pixel_ratio` and `max_shadows` win;
+- a `color` entity with `color.light: yes` takes the colour of its light and glows with its brightness, also when only the colour or the brightness changes; a colour of its state comes first, without the glow; off, the material of the model;
 
 The tests wait for what they check (an animation that ends, a camera that arrives, a new picture of a camera), not for a fixed time: a busy computer is slower, and a fixed wait long enough on one failed on another. They pass with every core of the computer busy with something else.
 

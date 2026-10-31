@@ -22,7 +22,7 @@ A light entity gets a light in its objects, on when the entity is on, in the col
 | `color` | white | The colour of a light that doesn't report one. |
 | `decay` | `2` | How fast the light fades with the distance. |
 | `distance` | `600` | How far the light reaches, in cm. |
-| `shadow` | `no` | `yes`: the light casts shadows, and doesn't go through the walls. |
+| `shadow` | `yes` | With `shadow: yes` of the card the light casts shadows, and doesn't go through the walls; `no`: it doesn't. |
 | `vertical_alignment` | `middle` | `top` or `bottom`: the light at the top or bottom of the lamp, so that the lamp itself doesn't stop it. |
 | `single` | `no` | `yes`: one light for a lamp made of several objects, in the middle of them. |
 | `light_object` | none | One light, on this object of the lamp. |
@@ -36,6 +36,7 @@ Without a shadow, the light of a lamp goes through the walls and lights the room
 
 To stay within the limit:
 
+- `max_shadows` (or [`quality: low`](/floor3d-card/features/wall-tablets/#quality)) sets a lower limit, for a weak tablet.
 - `shadow: no` on the lights whose shadow nobody would notice (a corridor, a strip under the cabinets): they still light the room.
 - One light for a lamp made of several objects. A chandelier or a row of five spots, given as a `<group>` or a name with `*`, makes one light per object: five lights, and five shadows. With `single: yes` the entity gets one light in the middle of all its objects, or on the object of `light_object`. Raise `lumens`, since the light of five spots becomes one.
 - `extralightmode: yes` (top level): only the lights that are on count, and a light gets its shadow when it is switched on, if there is room.

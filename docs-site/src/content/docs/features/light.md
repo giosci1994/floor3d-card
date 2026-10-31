@@ -26,7 +26,7 @@ The card computes light as three.js does today: colours in sRGB, light in linear
 | `sky_color` | `#e6eeff` | The colour of the sky light from above. |
 | `ground_color` | `#706458` | The colour of the sky light from below. |
 | `shadow` | `no` | `yes`: the lamps and the sun can cast shadows. |
-| `max_pixel_ratio` | `2` | The highest resolution, in pixels per CSS pixel (phones reach 3 or more). |
+| `max_pixel_ratio` | `2` | The highest resolution, in pixels per CSS pixel (phones reach 3 or more); `1` with [`quality: low`](/floor3d-card/features/wall-tablets/#quality). |
 
 ## The sun indoors
 

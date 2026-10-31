@@ -36,6 +36,7 @@ export interface EnvironmentHost {
   // The sun takes part in the shadow budget of the card (the texture units of the GPU).
   enableShadow(light: THREE.DirectionalLight, bias: number): void;
   refreshLightShadow(light: THREE.DirectionalLight): void;
+  sunMapSize(): number; // the size of the shadow map of the sun (smaller with quality: low)
 }
 
 export class Environment {
@@ -260,7 +261,8 @@ export class Environment {
       camera.near = r * 0.5;
       camera.far = r * 3.5;
       camera.updateProjectionMatrix();
-      this._sun.shadow.mapSize.set(2048, 2048);
+      const size = this.host.sunMapSize();
+      this._sun.shadow.mapSize.set(size, size);
       this._sun.shadow.normalBias = 1.5;
       this.host.enableShadow(this._sun, -0.0003);
       this._buildSunRoof();

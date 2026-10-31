@@ -113,6 +113,16 @@ See [Cameras of the house](/floor3d-card/features/cameras/).
 
 See [Markers](/floor3d-card/features/markers/).
 
+## Wall tablet
+
+| Option | Default | |
+| --- | --- | --- |
+| `kiosk` | `no` | `yes`: no header, menus or buttons. |
+| `kiosk_tour` | none | Seconds of each view of the tour: the initial view, then the views. |
+| `kiosk_idle` | `60` | Seconds after a touch before the tour goes on, or the camera goes back to the initial view. `0`: never. |
+
+See [Wall tablets](/floor3d-card/features/wall-tablets/).
+
 ## Interaction
 
 | Option | Default | |
@@ -151,7 +161,9 @@ See [Room colours and maps](/floor3d-card/features/rooms/) and [Alarms](/floor3d
 
 | Option | Default | |
 | --- | --- | --- |
-| `max_pixel_ratio` | `2` | The highest resolution, in pixels per CSS pixel. |
+| `quality` | `high` | `low`: lighter, for a weak tablet; `auto`: low on a weak device. See [Wall tablets](/floor3d-card/features/wall-tablets/#quality). |
+| `max_shadows` | as many as the GPU takes | Lamps casting a shadow at once, the sun aside. |
+| `max_pixel_ratio` | `2`, `1` with quality low | The highest resolution, in pixels per CSS pixel. |
 | `log_depth` | `no` | The logarithmic depth buffer (expensive on phones). |
 | `reversed_depth` | `yes` | The reversed depth buffer, where the browser has it. |
 | `draco_decoder_path` | the one of the card | Another folder with the Draco decoder. |
