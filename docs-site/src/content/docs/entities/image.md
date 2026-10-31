@@ -19,7 +19,7 @@ The picture of the entity (`entity_picture`: the cover of what a media player pl
 
 | Option | Default | |
 | --- | --- | --- |
-| `attribute` | `entity_picture` | The attribute with the address of the picture (below). |
+| `attribute` | `entity_picture` | The attribute with the address of the picture (since 2.13.3, below). |
 | `rotate` | `0` | Turns the picture, in degrees. |
 | `mirror` | `no` | `yes`: mirrors the picture. |
 | `lumens` | none | The screen glows; without it the picture is lit by the room, as a printed picture. |

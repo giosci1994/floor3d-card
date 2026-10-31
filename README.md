@@ -15,6 +15,7 @@ A cleaner and faster base for what comes next, with nothing to change in your co
 - **Lighter on large models.** A change of state, and every frame of an alarm, no longer search the objects through the whole model (thousands of objects in a model of Sweet Home 3D): each object is found once.
 - **The code in modules.** The card was one file of 7,000 lines; now each part (the boxes, the cameras, the sky, the rooms and every type of entity) is a module of its own, with tests in the browser for each of them.
 - **Updated libraries:** three.js 0.186, Lit 3, tween.js 25.
+- **2.13.3:** a [photo frame](https://giosci1994.github.io/floor3d-card/entities/image/#a-photo-frame) on any object of the model (`image.attribute`), models whose level numbers skip one (thanks to [niltrip](https://github.com/niltrip)), and a [live demo](https://giosci1994.github.io/floor3d-card/) on the documentation site.
 
 ## What the card does
 
@@ -57,7 +58,7 @@ If the original floor3d-card is installed, remove it from HACS first: both defin
 Copy all the files (`.js` and `.wasm`) of the [latest release](https://github.com/giosci1994/floor3d-card/releases/latest) into a folder of `/config/www` and add `floor3d-card.js` as a resource (details in [Installation](https://giosci1994.github.io/floor3d-card/getting-started/installation/#by-hand)). It's **required** to load this card as `module`.
 
 ```yaml
-- url: /local/floor3d-card/floor3d-card.js?v=2.13.2 # the version: change it at every update
+- url: /local/floor3d-card/floor3d-card.js?v=2.13.3 # the version: change it at every update
   type: module
 ```
 
