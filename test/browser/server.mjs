@@ -1,6 +1,7 @@
 // Web server of the browser tests: the test page (test/index.html), the build (dist/), the generated
 // test house at /local/floor3d/, the picture of a camera, and the configurations and states each test
 // puts in files.
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
@@ -35,7 +36,9 @@ export async function start() {
   const hits = new Map();
   const server = http.createServer((req, res) => {
     const url = decodeURIComponent(new URL(req.url, 'http://localhost').pathname);
-    hits.set(url, (hits.get(url) || 0) + 1);
+    // HEAD requests apart: the card asks with them whether a model changed (model-cache.ts).
+    const hit = req.method === 'HEAD' ? 'HEAD ' + url : url;
+    hits.set(hit, (hits.get(hit) || 0) + 1);
     let body = files.get(url);
     if (body === undefined) {
       // The test page, and the card: /floor3d-card.js, its chunks and the Draco decoder come from dist/.
@@ -52,7 +55,9 @@ export async function start() {
       return;
     }
     const type = url.startsWith('/api/camera_proxy/') ? 'image/gif' : TYPES[path.extname(url)] || 'text/plain';
-    res.writeHead(200, { 'Content-Type': type, 'Cache-Control': 'no-store' });
+    // An ETag, as Home Assistant sends for the files of /local: it changes with the file.
+    const etag = '"' + crypto.createHash('sha1').update(body).digest('hex').slice(0, 16) + '"';
+    res.writeHead(200, { 'Content-Type': type, 'Cache-Control': 'no-store', ETag: etag });
     res.end(body);
   });
   await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
@@ -60,7 +65,9 @@ export async function start() {
     url: `http://127.0.0.1:${server.address().port}`,
     // A file of the test page: /test/<name>.
     put: (name, value) => files.set('/test/' + name, typeof value === 'string' ? value : JSON.stringify(value)),
-    // How many times a file was asked for.
+    // A file of the test house, changed while the tests run (a model exported again).
+    serve: (url, value) => files.set(url, value),
+    // How many times a file was asked for ('HEAD /url': asked whether it changed).
     hits: (url) => hits.get(url) || 0,
     close: () => new Promise((resolve) => server.close(resolve)),
   };
