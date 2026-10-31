@@ -5,7 +5,7 @@ sidebar:
   order: 6
 ---
 
-`markers` puts a chip over the model for any entity: its icon and its state, as Home Assistant writes it (in the language of the user, with its unit). The chip follows the view, takes the colour of the theme while the entity is on or open, fades while it is unavailable, and a tap opens the entity. They are in the *Markers* section of the editor.
+`markers` (since 2.13.4) puts a chip over the model for any entity: its icon and its state, as Home Assistant writes it (in the language of the user, with its unit). The chip follows the view, takes the colour of the theme while the entity is on or open, fades while it is unavailable, and a tap opens the entity. They are in the *Markers* section of the editor.
 
 ```yaml
 markers:

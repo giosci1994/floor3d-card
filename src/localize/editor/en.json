@@ -8,7 +8,8 @@
     "rendering": "Rendering",
     "boxes": "Boxes",
     "cameras": "Cameras of the house",
-    "markers": "Markers"
+    "markers": "Markers",
+    "kiosk": "Wall tablet"
   },
   "labels": {
     "name": "Name",
@@ -208,7 +209,13 @@
     "walls_opacity": "Faded walls opacity",
     "walls_height": "Height of low walls",
     "markers_show": "Show the markers",
-    "marker_state": "Show the state"
+    "marker_state": "Show the state",
+    "kiosk": "Kiosk mode",
+    "kiosk_tour": "Tour of the views",
+    "kiosk_idle": "Back after",
+    "quality": "Quality",
+    "max_shadows": "Maximum shadows",
+    "color_light": "Colour of the light"
   },
   "helpers": {
     "path": "For example /local/floor3d/",
@@ -224,7 +231,7 @@
     "extralightmode": "Only the lights that are on cast shadows",
     "click": "Off: a double click runs it",
     "selectionMode": "Taps color the objects and list them, to build groups",
-    "max_pixel_ratio": "Default 2",
+    "max_pixel_ratio": "Default 2 (1 with quality low)",
     "temperature_min": "Default 17",
     "temperature_max": "Default 27",
     "illuminance_min": "Default 5 (the scale is logarithmic)",
@@ -305,7 +312,14 @@
     "walls_opacity": "How much of a faded wall shows, from 0 (nothing) to 1 (all). Default 0.15",
     "walls_height": "The height of the cut above the floor of each level. Default 100 cm",
     "marker_state": "Off: only the icon",
-    "marker_level": "The marker shows only with this level. Picking the point sets it"
+    "marker_level": "The marker shows only with this level. Picking the point sets it",
+    "kiosk": "No header, menus or buttons: for a tablet on a wall",
+    "kiosk_tour": "Seconds of each view (initial view, then the zoom areas). Empty or 0: no tour",
+    "kiosk_idle": "Seconds after a touch before the tour goes on, or the camera goes back to the initial view. Default 60, 0 never",
+    "quality": "Low: for a weak tablet (pixel ratio 1, at most 4 lamps with shadow). Auto: low on a weak device. Default high",
+    "max_shadows": "Lamps casting a shadow at once, the sun aside. Empty: as many as the device takes (4 with quality low)",
+    "color_light": "While it is on, the objects take the colour of the light (a LED strip)",
+    "color_glow": "How much they glow, times the brightness of the light. Default 1, 0 none"
   },
   "options": {
     "language": {
@@ -437,6 +451,11 @@
       "none": "Whole",
       "fade": "Faded in the way of the view",
       "low": "Low"
+    },
+    "quality": {
+      "high": "High",
+      "low": "Low",
+      "auto": "Automatic"
     }
   },
   "types": {

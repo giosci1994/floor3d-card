@@ -23,7 +23,7 @@ HACS shows the updates of the card like those of any other card.
 2. Add the card as a resource of type **module** (Settings › Dashboards › Resources):
 
    ```yaml
-   - url: /local/floor3d-card/floor3d-card.js?v=2.13.3 # the version: change it at every update
+   - url: /local/floor3d-card/floor3d-card.js?v=2.13.4 # the version: change it at every update
      type: module
    ```
 

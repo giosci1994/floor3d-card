@@ -517,3 +517,25 @@ test('markers: position as [x, y, z] once complete, the level a number, state: y
   ]);
   assert.ok(!('markers_show' in c), 'the default switch left out');
 });
+
+test('wall tablet: kiosk, its seconds and the quality written as the card reads them, defaults left out', () => {
+  const c = cleanConfig({
+    type: 'custom:floor3d-card',
+    entities: [{ entity: 'light.led', type3d: 'color', object_id: 'strip', color: { light: true, glow: '0.5' } }],
+    kiosk: true,
+    kiosk_tour: '20',
+    kiosk_idle: '60',
+    quality: 'high',
+    max_shadows: '3',
+  });
+  assert.equal(c.kiosk, 'yes');
+  assert.equal(c.kiosk_tour, 20);
+  assert.ok(!('kiosk_idle' in c), 'the default 60 left out');
+  assert.ok(!('quality' in c), 'the default high left out');
+  assert.equal(c.max_shadows, 3);
+  assert.deepEqual(c.entities[0].color, { light: 'yes', glow: 0.5 });
+  const off = cleanConfig({ type: 'custom:floor3d-card', entities: [], kiosk: 'no', quality: 'auto', kiosk_idle: 0 });
+  assert.ok(!('kiosk' in off));
+  assert.equal(off.quality, 'auto');
+  assert.equal(off.kiosk_idle, 0, 'never back: kept');
+});

@@ -3768,3 +3768,181 @@ test('the menus of views and maps have a name, as browsers ask of every form fie
   assert.deepEqual(errors, []);
   await page.close();
 });
+
+// --- Wall tablets ------------------------------------------------------------------------------
+
+test(
+  'kiosk: no header, menus or buttons; the tour goes through the views, stops at a touch and goes on kiosk_idle seconds later',
+  { timeout: TIMEOUT },
+  async () => {
+    const view = (zoom, x) => ({ zoom, camera_position: { x, y: 500, z: 300 }, camera_target: { x, y: 0, z: 0 } });
+    const { page, errors } = await open(
+      house({
+        objfile: 'levels.obj',
+        name: 'Home',
+        header: 'yes',
+        hideLevelsMenu: 'no',
+        rooms: [{ name: 'Living', object_id: 'floor_living', temperature: 'sensor.t_living' }],
+        zoom_areas: [view('Living', -200), view('Bedroom', 200)],
+        kiosk: 'yes',
+        kiosk_tour: 1,
+        kiosk_idle: 2,
+      }),
+    );
+    const shown = await page.evaluate(() => {
+      const card = window.__card;
+      return {
+        header: card._card.header,
+        menus: card._zoommenu.querySelectorAll('select, button').length,
+        bars: card._levelbar.querySelectorAll('*').length + card._zoombar.querySelectorAll('*').length,
+      };
+    });
+    assert.deepEqual(shown, { header: '', menus: 0, bars: 0 }, 'no header, views and map menus, levels bar');
+    // The views the tour flies to, from a new start.
+    await page.evaluate(() => {
+      const card = window.__card;
+      window.__views = [];
+      const go = card._goToView.bind(card);
+      card._goToView = (index, animate) => {
+        window.__views.push(index);
+        go(index, animate);
+      };
+      card._kiosk.start();
+    });
+    const views = () => page.evaluate(() => window.__views.slice());
+    await until(page, () => window.__views.length >= 4, null, 'the tour goes on', 20000);
+    assert.deepEqual((await views()).slice(0, 4), [0, 1, -1, 0], 'initial view, the zoom areas, again');
+    // A touch on the model (OrbitControls start): no tour until 2 seconds later, then the initial view.
+    const touched = await page.evaluate(() => {
+      window.__card._controls.dispatchEvent({ type: 'start' });
+      return window.__views.length;
+    });
+    await page.waitForTimeout(1500);
+    assert.equal((await views()).length, touched, 'stopped after the touch');
+    await until(page, (n) => window.__views.length > n + 1, touched, 'the tour goes on after kiosk_idle', 20000);
+    assert.deepEqual((await views()).slice(touched, touched + 2), [-1, 0], 'back to the initial view, then on');
+    // A tap on a box or a marker counts too, though they keep it from the model.
+    const tapped = await page.evaluate(() => {
+      const card = window.__card;
+      card._zoommenu.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, composed: true }));
+      return window.__views.length;
+    });
+    await page.waitForTimeout(1500);
+    assert.equal((await views()).length, tapped, 'stopped after a tap on the card');
+    assert.deepEqual(errors, []);
+    await page.close();
+  },
+);
+
+test(
+  'quality: low draws at pixel ratio 1 with 4 lamp shadows and a smaller sun map; auto on a weak device; max_shadows',
+  { timeout: TIMEOUT },
+  async () => {
+    // A screen of pixel ratio 2, and the memory a browser tells (Chromium: deviceMemory).
+    const screen =
+      (memory = 8) =>
+      async (page) => {
+        const cdp = await page.context().newCDPSession(page);
+        await cdp.send('Emulation.setDeviceMetricsOverride', {
+          width: 900,
+          height: 700,
+          deviceScaleFactor: 2,
+          mobile: false,
+        });
+        await page.addInitScript((m) => Object.defineProperty(navigator, 'deviceMemory', { get: () => m }), memory);
+      };
+    const look = (page) =>
+      page.evaluate(() => {
+        const card = window.__card;
+        return {
+          ratio: card._renderer.getPixelRatio(),
+          sunMap: card._env.sun.shadow.mapSize.x,
+          budget: card._shadowStatus.budget,
+          casting: card._shadowLights.filter((l) => l.castShadow).length,
+        };
+      });
+    const config = (extra) => house({ entities: lamps(8), ...extra });
+
+    let { page, errors } = await open(config({}), states(), screen());
+    const s = await shadowState(page);
+    let q = await look(page);
+    assert.deepEqual(q, { ratio: 2, sunMap: 2048, budget: s.status.budget, casting: Math.min(9, s.status.budget) });
+    assert.equal(s.status.budget, expectedLimit(s), 'high: as many as the GPU takes');
+    assert.deepEqual(errors, []);
+    await page.close();
+
+    ({ page, errors } = await open(config({ quality: 'low' }), states(), screen()));
+    assert.deepEqual(await look(page), { ratio: 1, sunMap: 1024, budget: 5, casting: 5 }, 'the sun and 4 lamps');
+    assert.ok((await brightness(page)) > 0.03, 'the model is drawn');
+    assert.deepEqual(errors, []);
+    await page.close();
+
+    ({ page, errors } = await open(config({ quality: 'auto' }), states(), screen(2)));
+    q = await look(page);
+    assert.equal(q.ratio, 1, 'auto with 2 GB: low');
+    assert.equal(q.budget, 5);
+    await page.close();
+    ({ page, errors } = await open(config({ quality: 'auto' }), states(), screen(8)));
+    assert.equal((await look(page)).ratio, 2, 'auto with 8 GB: high');
+    await page.close();
+
+    ({ page, errors } = await open(
+      config({ quality: 'low', max_shadows: 2, max_pixel_ratio: 1.5 }),
+      states(),
+      screen(),
+    ));
+    q = await look(page);
+    assert.equal(q.ratio, 1.5, 'max_pixel_ratio wins');
+    assert.equal(q.budget, 3, 'the sun and max_shadows lamps');
+    assert.equal(q.casting, 3);
+    assert.deepEqual(errors, []);
+    await page.close();
+  },
+);
+
+test(
+  'color with color.light: the objects take the colour of the light while it is on, glowing with its brightness',
+  { timeout: TIMEOUT },
+  async () => {
+    const { page, errors } = await open(
+      house({
+        entities: [
+          {
+            entity: 'light.led',
+            type3d: 'color',
+            object_id: 'sofa',
+            color: { light: 'yes', glow: 2 },
+            colorcondition: [{ state: 'unavailable', color: '0,0,255' }],
+          },
+        ],
+      }),
+      states({ 'light.led': { state: 'on', attributes: { brightness: 255, rgb_color: [255, 0, 0] } } }),
+    );
+    const sofa = () =>
+      page.evaluate(() => {
+        const card = window.__card;
+        const m = card._scene.getObjectByName('sofa').material;
+        const hex = (c) => '#' + c.getHexString();
+        return {
+          initial: m === card._initialmaterial[0][0],
+          color: hex(m.color),
+          emissive: hex(m.emissive),
+          glow: Math.round(m.emissiveIntensity * 100) / 100,
+        };
+      });
+    assert.deepEqual(await sofa(), { initial: false, color: '#ff0000', emissive: '#ff0000', glow: 2 });
+    // A new colour and half the brightness, the state still on.
+    await page.evaluate(() => window.__setState('light.led', 'on', { brightness: 128, rgb_color: [0, 255, 0] }));
+    assert.deepEqual(await sofa(), { initial: false, color: '#00ff00', emissive: '#00ff00', glow: 1 });
+    // A colour of a state comes first, without the glow.
+    await page.evaluate(() => window.__setState('light.led', 'unavailable', {}, true));
+    const blue = await sofa();
+    assert.equal(blue.color, '#0000ff');
+    assert.equal(blue.emissive, '#000000', 'the glow of the material of the model');
+    // Off: the material of the model.
+    await page.evaluate(() => window.__setState('light.led', 'off', {}, true));
+    assert.equal((await sofa()).initial, true);
+    assert.deepEqual(errors, []);
+    await page.close();
+  },
+);

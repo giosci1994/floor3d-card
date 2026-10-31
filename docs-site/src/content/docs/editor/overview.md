@@ -17,7 +17,7 @@ The editor is built on the components of Home Assistant, like the editors of the
 
 ## Settings
 
-The settings of the card are in sections: 3D model, camera and navigation, light and shadows, boxes, cameras of the house, markers, interaction (with the overlay), state colours and room maps (with the rooms), rendering. The yes/no options are toggles, and the help text of each field gives the value used when it is empty. An option left out of the YAML because it has its default shows that value in its field.
+The settings of the card are in sections: 3D model, camera and navigation, light and shadows, boxes, cameras of the house, markers, interaction (with the overlay), state colours and room maps (with the rooms), wall tablet, rendering. The yes/no options are toggles, and the help text of each field gives the value used when it is empty. An option left out of the YAML because it has its default shows that value in its field.
 
 The version of the card is at the top of the editor, next to the buttons of the [preview](/floor3d-card/editor/preview/): refresh, which loads the preview again, and pause.
 

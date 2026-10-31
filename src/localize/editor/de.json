@@ -8,7 +8,8 @@
     "rendering": "Darstellung",
     "boxes": "Anzeigen in den Ecken",
     "cameras": "Kameras im Haus",
-    "markers": "Markierungen"
+    "markers": "Markierungen",
+    "kiosk": "Wand-Tablet"
   },
   "labels": {
     "name": "Name",
@@ -205,7 +206,13 @@
     "walls_opacity": "Deckkraft ausgeblendeter Wände",
     "walls_height": "Höhe niedriger Wände",
     "markers_show": "Markierungen anzeigen",
-    "marker_state": "Zustand anzeigen"
+    "marker_state": "Zustand anzeigen",
+    "kiosk": "Kioskmodus",
+    "kiosk_tour": "Rundgang durch die Ansichten",
+    "kiosk_idle": "Zurück nach",
+    "quality": "Qualität",
+    "max_shadows": "Maximale Schatten",
+    "color_light": "Farbe des Lichts"
   },
   "helpers": {
     "path": "Zum Beispiel /local/floor3d/",
@@ -221,7 +228,7 @@
     "extralightmode": "Nur eingeschaltete Lichter werfen Schatten",
     "click": "Aus: ein Doppelklick führt sie aus",
     "selectionMode": "Tippen färbt die Objekte ein und listet sie auf, um Gruppen zu bilden",
-    "max_pixel_ratio": "Standard 2",
+    "max_pixel_ratio": "Standard 2 (1 bei niedriger Qualität)",
     "temperature_min": "Standard 17",
     "temperature_max": "Standard 27",
     "illuminance_min": "Standard 5 (die Skala ist logarithmisch)",
@@ -302,7 +309,14 @@
     "walls_opacity": "Wie viel von einer ausgeblendeten Wand sichtbar bleibt, von 0 (nichts) bis 1 (alles). Standard 0,15",
     "walls_height": "Die Höhe des Schnitts über dem Boden jeder Etage. Standard 100 cm",
     "marker_state": "Aus: nur das Symbol",
-    "marker_level": "Die Markierung erscheint nur mit dieser Etage. Das Wählen des Punkts setzt sie"
+    "marker_level": "Die Markierung erscheint nur mit dieser Etage. Das Wählen des Punkts setzt sie",
+    "kiosk": "Ohne Kopfzeile, Menüs und Schaltflächen: für ein Tablet an der Wand",
+    "kiosk_tour": "Sekunden je Ansicht (Startansicht, dann die Zoombereiche). Leer oder 0: kein Rundgang",
+    "kiosk_idle": "Sekunden nach einer Berührung, bis der Rundgang weitergeht oder die Kamera zur Startansicht zurückkehrt. Standard 60, 0 nie",
+    "quality": "Niedrig: für ein schwaches Tablet (Pixelverhältnis 1, höchstens 4 Lampen mit Schatten). Automatisch: niedrig auf einem schwachen Gerät. Standard hoch",
+    "max_shadows": "Lampen, die gleichzeitig Schatten werfen, ohne die Sonne. Leer: so viele, wie das Gerät schafft (4 bei niedriger Qualität)",
+    "color_light": "Solange es an ist, nehmen die Objekte die Farbe des Lichts an (ein LED-Streifen)",
+    "color_glow": "Wie stark sie leuchten, mal die Helligkeit des Lichts. Standard 1, 0 gar nicht"
   },
   "options": {
     "language": {
@@ -410,6 +424,11 @@
       "none": "Ganz",
       "fade": "Im Blick ausgeblendet",
       "low": "Niedrig"
+    },
+    "quality": {
+      "high": "Hoch",
+      "low": "Niedrig",
+      "auto": "Automatisch"
     }
   },
   "types": {
