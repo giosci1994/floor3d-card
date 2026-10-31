@@ -36,3 +36,11 @@ At every update copy the new files and change the `?v=` of the resource: Home As
 Remove the original floor3d-card from HACS first: both define `custom:floor3d-card` and use the same `www/community/floor3d-card` folder. When both are loaded, the one loaded first is used and the browser console says `custom:floor3d-card is already defined by another resource`.
 
 Your configuration stays the same. In the card picker this card is listed as **floor3d-card mod**.
+
+A few things work differently, on purpose:
+
+- `sky: yes` is ignored: it changed the lights and the colours of the model. `backgroundColor: sky` draws a sky that follows the sun instead, and `ground` a lawn under the house (see [Sky, weather and ground](/floor3d-card/features/sky/)).
+- The text type writes flat on the largest face of the object, readable from both sides; `mapping: model` keeps the old way (see [Text](/floor3d-card/entities/text/)).
+- In YAML dashboards, an unquoted `yes` or `no` (read as `true` or `false`) now works: `shadow: yes` gives shadows, `header: no` hides the header.
+- A configuration saved by this editor writes the objects of a group as plain ids, which the original card doesn't read (see [What the editor writes](/floor3d-card/editor/yaml/)).
+- The bugs of the original card fixed here are listed in [FORK.md](https://github.com/giosci1994/floor3d-card/blob/master/FORK.md#fixes).

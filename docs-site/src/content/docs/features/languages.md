@@ -14,4 +14,4 @@ The card and its editor show the language of the profile of each user in Home As
 | Deutsch | ✓ | ✓ |
 | Norsk bokmål | ✓ | English |
 
-A new language is two JSON files to translate: see `src/localize/` in the repository, and [FORK.md](https://github.com/giosci1994/floor3d-card/blob/master/FORK.md#languages) for the steps.
+A new language is two JSON files to translate: see `src/localize/` in the repository, and [Adding a language](/floor3d-card/development/languages/) for the steps.
