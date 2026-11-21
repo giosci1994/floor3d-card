@@ -2,6 +2,16 @@
 
 # floor3d-card mod
 
+<p align="center">
+  <a href="https://github.com/giosci1994/floor3d-card/actions/workflows/build.yml"><img src="https://github.com/giosci1994/floor3d-card/actions/workflows/build.yml/badge.svg" alt="Build" /></a>
+  <a href="https://github.com/giosci1994/floor3d-card/actions/workflows/validate.yml"><img src="https://github.com/giosci1994/floor3d-card/actions/workflows/validate.yml/badge.svg" alt="Validate" /></a>
+  <a href="https://github.com/giosci1994/floor3d-card/releases/latest"><img src="https://img.shields.io/github/v/release/giosci1994/floor3d-card?color=00b585" alt="Release" /></a>
+  <img src="https://img.shields.io/github/downloads/giosci1994/floor3d-card/total?color=34d399" alt="Downloads" />
+  <a href="https://hacs.xyz"><img src="https://img.shields.io/badge/HACS-custom-41BDF5" alt="HACS custom" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/giosci1994/floor3d-card" alt="License" /></a>
+  <a href="https://buymeacoffee.com/giosci1994u"><img src="https://img.shields.io/badge/Buy%20Me%20a%20Coffee-FFDD00?logo=buymeacoffee&amp;logoColor=black" alt="Buy Me a Coffee" /></a>
+</p>
+
 The 3D model of your home in a Home Assistant card, live: lamps that light the rooms with their colour and their shadows, doors and covers that open, rooms coloured by their sensors, alarms that blink, the sun, the sky and the weather, people, cameras and the energy of the house, all on the model.
 
 **📖 Documentation: [giosci1994.github.io/floor3d-card](https://giosci1994.github.io/floor3d-card/)**: installation, the 3D model, the editor, every entity type and option, and troubleshooting.
