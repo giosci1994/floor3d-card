@@ -121,7 +121,7 @@ const BLOCK_NUMBERS: { [block: string]: string[] } = {
   text: ['span'],
   image: ['rotate', 'lumens', 'lighting_lumens'],
   rotate: ['round_per_second', 'ramp', 'speed_multiplier', 'angle_min', 'angle_max', 'angle_offset'],
-  tracker: ['sensor_rotation', 'scale', 'height', 'size'],
+  tracker: ['sensor_rotation', 'scale', 'height', 'size', 'model_scale', 'model_rotation'],
   info: ['size'],
   shower: ['velocity', 'count', 'size', 'height', 'width'],
   color: ['glow'],

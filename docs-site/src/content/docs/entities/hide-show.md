@@ -20,3 +20,5 @@ sidebar:
   hide:
     state: 'off'
 ```
+
+A hidden object is out of the way of a tap (since 2.14.0): a roof hidden over the house lets you tap the lamps under it. The same goes for an object you see through, with an opacity under 0.5 (glass, a polycarbonate roof); the picker of the editor can still pick those.

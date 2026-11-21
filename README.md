@@ -18,6 +18,14 @@ The 3D model of your home in a Home Assistant card, live: lamps that light the r
 
 > A fork of [adizanni/floor3d-card](https://github.com/adizanni/floor3d-card), with the same `custom:floor3d-card` and the same configuration: a card that worked with the original works with this one. The notes for developers, and the bugs of the original card fixed here, are in [FORK.md](FORK.md). If it is useful to you, you can support it on [Buy Me a Coffee](https://buymeacoffee.com/giosci1994u).
 
+## New in 2.14
+
+- **A robot vacuum on the model.** A [tracker](https://giosci1994.github.io/floor3d-card/entities/tracker/#a-model-in-place-of-the-marker) can show a `.glb` model of its own in place of the marker, turned to where it is going by a heading sensor.
+- **Colours that glow.** A [colour of a state](https://giosci1994.github.io/floor3d-card/entities/color/#a-colour-that-glows) can make the objects shine in it (`glow`): a dark console that lights up when it is on.
+- **A picture by the state of another entity.** A [TV screen](https://giosci1994.github.io/floor3d-card/entities/image/#a-picture-by-the-state-of-another-entity) can show a picture of its own while another entity is in a state (`image.overrides`): the logo of a game console while it is on.
+- **Recipes.** [Examples](https://giosci1994.github.io/floor3d-card/recipes/appliances/) with the sensors of Home Assistant they need: appliances that glow while they work, a console on the TV, and a robot vacuum with a [model to download](https://giosci1994.github.io/floor3d-card/models/robot-vacuum.glb).
+- **Taps through hidden objects.** Objects hidden with `type3d: hide`, and those you see through, no longer stop a tap on what is behind them ([#48](https://github.com/giosci1994/floor3d-card/issues/48)).
+
 ## New in 2.13
 
 A cleaner and faster base for what comes next, with nothing to change in your configuration:
@@ -71,7 +79,7 @@ If the original floor3d-card is installed, remove it from HACS first: both defin
 Copy all the files (`.js` and `.wasm`) of the [latest release](https://github.com/giosci1994/floor3d-card/releases/latest) into a folder of `/config/www` and add `floor3d-card.js` as a resource (details in [Installation](https://giosci1994.github.io/floor3d-card/getting-started/installation/#by-hand)). It's **required** to load this card as `module`.
 
 ```yaml
-- url: /local/floor3d-card/floor3d-card.js?v=2.13.4 # the version: change it at every update
+- url: /local/floor3d-card/floor3d-card.js?v=2.14.0 # the version: change it at every update
   type: module
 ```
 

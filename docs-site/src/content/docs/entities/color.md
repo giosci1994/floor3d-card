@@ -20,6 +20,28 @@ The objects take a colour for each state of the entity, and their own colours in
 
 A colour is `#rrggbb`, a name (`red`) or `r, g, b` (`255, 0, 0`). With an [`entity_template`](/floor3d-card/entities/overview/#templates) the state can be made from a number: `hot` above 25 °C, for example.
 
+## A colour that glows
+
+A dark object, or one with a texture, stays almost black with a colour only: the colour multiplies its own. With `glow` (since 2.14.0) a condition also makes the objects shine in its colour, as strong as the number: a console that lights up in blue when it is on.
+
+```yaml
+- entity: switch.console
+  type3d: color
+  object_id: <Console>
+  colorcondition:
+    - state: 'on'
+      color: '#00aaff'
+      glow: 1.5
+```
+
+| Option of a condition | Default | |
+| --- | --- | --- |
+| `state` | | The state of the entity. |
+| `color` | | Its colour. |
+| `glow` | none | From `0`: the objects also glow in the colour, this much (`1` is the colour itself, more is brighter). Without it, only the colour, as before. |
+
+Around `1` to `1.5` the texture still shows under the colour; from about `2.5` the objects are the colour itself, bright. The glow doesn't light the room around the objects. In the editor, the field is next to the colour of each state.
+
 ## The colour of a light
 
 With `color.light: yes` (since 2.13.4) the objects take the colour of a light entity while it is on, and glow with its brightness: a LED strip, a lamp shade, a lit sign. The entity is the light itself.

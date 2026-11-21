@@ -47,6 +47,7 @@ import {
   cameraPopupSchema,
   cameraSchema,
   colorConditionSchema,
+  imageOverrideSchema,
   entityActionsSchema,
   entitySchema,
   groupSchema,
@@ -692,6 +693,8 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
           return this._renderList('markers', this._t('ui.add_marker'), { entity: '' });
         case 'colorcondition':
           return this._renderColorConditions(list as ListKey, index as number, data);
+        case 'image_overrides':
+          return this._renderImageOverrides(list as ListKey, index as number, data);
         case 'shadow_status':
           return this._renderShadowStatus();
         default:
@@ -1080,41 +1083,75 @@ export class Floor3dCardEditor extends LitElement implements LovelaceCardEditor 
 
   private _renderColorConditions(list: ListKey, index: number, entity: any): TemplateResult {
     const conditions: any[] = Array.isArray(entity.colorcondition) ? entity.colorcondition : [];
-    const set = (next: any[]): void => this._setItem(list, index, { ...entity, colorcondition: next });
+    return this._renderRows(
+      this._t('headings.colorcondition'),
+      conditions,
+      (next) => this._setItem(list, index, { ...entity, colorcondition: next }),
+      colorConditionSchema(entity.type3d === 'color'),
+      this._t('ui.add_colour'),
+      { state: '', color: '' },
+    );
+  }
+
+  // image.overrides: the picture of the screen while another entity is in a state.
+  private _renderImageOverrides(list: ListKey, index: number, entity: any): TemplateResult {
+    const image = entity.image && typeof entity.image === 'object' ? entity.image : {};
+    const overrides: any[] = Array.isArray(image.overrides) ? image.overrides : [];
+    return this._renderRows(
+      this._t('headings.image_overrides'),
+      overrides,
+      (next) =>
+        this._setItem(list, index, { ...entity, image: { ...image, overrides: next.length ? next : undefined } }),
+      imageOverrideSchema(),
+      this._t('ui.add_override'),
+      { entity: '', state: '', picture: '' },
+    );
+  }
+
+  // Rows of a list inside an entity (colours of the states, pictures of the screen): moved by their
+  // handle, each with its fields and a button to remove it, and a button to add one.
+  private _renderRows(
+    heading: string,
+    rows: any[],
+    set: (next: any[]) => void,
+    schema: Schema[],
+    add: string,
+    blank: any,
+  ): TemplateResult {
     return html`
-      <div class="heading">${this._t('headings.colorcondition')}</div>
+      <div class="heading">${heading}</div>
       <ha-sortable
         handle-selector=".handle"
         @item-moved=${(ev: CustomEvent) => {
-          const next = conditions.slice();
+          const next = rows.slice();
           next.splice(ev.detail.newIndex, 0, next.splice(ev.detail.oldIndex, 1)[0]);
           set(next);
         }}
       >
         <div class="rows">
           ${repeat(
-            conditions,
+            rows,
             (c) => this._key(c),
             (c, i) => html`
               <div class="row condition">
                 <div class="handle"><ha-svg-icon .path=${mdiDragHorizontalVariant}></ha-svg-icon></div>
-                ${this._form(colorConditionSchema(), c, (value) => {
-                  const next = conditions.slice();
+                ${this._form(schema, c, (value) => {
+                  const next = rows.slice();
                   next[i] = dropEmpty({ ...value });
                   set(next);
                 })}
                 <ha-icon-button
                   .label=${this._t('ui.remove')}
                   .path=${mdiDelete}
-                  @click=${() => set(conditions.filter((_, j) => j !== i))}
+                  @click=${() => set(rows.filter((_, j) => j !== i))}
                 ></ha-icon-button>
               </div>
             `,
           )}
         </div>
       </ha-sortable>
-      <ha-button class="add" @click=${() => set([...conditions, { state: '', color: '' }])}>
-        <ha-svg-icon slot="start" .path=${mdiPlus}></ha-svg-icon>${this._t('ui.add_colour')}
+      <ha-button class="add" @click=${() => set([...rows, { ...blank }])}>
+        <ha-svg-icon slot="start" .path=${mdiPlus}></ha-svg-icon>${add}
       </ha-button>
     `;
   }
