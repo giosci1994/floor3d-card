@@ -3,6 +3,7 @@
 // from Playwright: npx playwright install --only-shell chromium (the CI does it).
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import zlib from 'node:zlib';
 import { after, before, test } from 'node:test';
 import { chromium } from 'playwright';
 import { objFile, objectNames } from './model.mjs';
@@ -3942,6 +3943,299 @@ test(
     // Off: the material of the model.
     await page.evaluate(() => window.__setState('light.led', 'off', {}, true));
     assert.equal((await sofa()).initial, true);
+    assert.deepEqual(errors, []);
+    await page.close();
+  },
+);
+
+test(
+  '#48: a tap goes through a hidden object and one you see through; the picker of the editor picks the second',
+  { timeout: TIMEOUT },
+  async () => {
+    const { page, errors } = await open(
+      house({
+        entities: [tv, { entity: 'light.lamp_1', type3d: 'hide', object_id: 'wall_north', hide: { state: 'off' } }],
+      }),
+    );
+    // The TV hangs on the inside of the north wall: from the north, the wall is in front of it (and the
+    // back of the TV behind it).
+    const screen = await middleOf(page, 'tv_screen');
+    const first = (glass = false) =>
+      page.evaluate(
+        ([p, glass]) => {
+          const card = window.__card;
+          card._controls.target.set(p[0], p[1], p[2]);
+          card._camera.position.set(p[0], p[1] + 100, p[2] - 800);
+          card._controls.update();
+          card._camera.updateMatrixWorld();
+          const v = new card._camera.position.constructor(...p).project(card._camera);
+          const r = card._renderer.domElement.getBoundingClientRect();
+          const x = r.left + ((v.x + 1) / 2) * r.width;
+          const y = r.top + ((1 - v.y) / 2) * r.height;
+          const hits = card._getintersect(x, y, glass);
+          return hits.length ? hits[0].object.name : '';
+        },
+        [screen, glass],
+      );
+    assert.equal(await first(), 'wall_north', 'the wall shown is in the way');
+    await page.evaluate(() => window.__setState('light.lamp_1', 'off'));
+    assert.equal(await page.evaluate(() => window.__card._scene.getObjectByName('wall_north').visible), false);
+    assert.match(await first(), /^tv_/, 'the hidden wall lets the tap through to the TV');
+    // Shown again, but almost transparent (glass): a tap goes through, the picker stops on it.
+    await page.evaluate(() => {
+      window.__setState('light.lamp_1', 'on');
+      const wall = window.__card._scene.getObjectByName('wall_north');
+      wall.material = wall.material.clone();
+      wall.material.transparent = true;
+      wall.material.opacity = 0.3;
+    });
+    assert.equal(await page.evaluate(() => window.__card._scene.getObjectByName('wall_north').visible), true);
+    assert.match(await first(), /^tv_/, 'a tap goes through the glass to the TV');
+    assert.equal(await first(true), 'wall_north', 'the picker picks the glass');
+    assert.deepEqual(errors, []);
+    await page.close();
+  },
+);
+
+test(
+  'color: a colorcondition with glow makes the objects glow in its colour, and without glow they do not',
+  { timeout: TIMEOUT },
+  async () => {
+    const { page, errors } = await open(
+      house({
+        entities: [
+          {
+            entity: 'media_player.tv',
+            type3d: 'color',
+            object_id: 'sofa',
+            colorcondition: [
+              { state: 'on', color: '#4FC3F7', glow: 2.5 },
+              { state: 'idle', color: '255,0,0' },
+            ],
+          },
+        ],
+      }),
+      states({ 'media_player.tv': { state: 'on', attributes: {} } }),
+    );
+    const sofa = () =>
+      page.evaluate(() => {
+        const card = window.__card;
+        const m = card._scene.getObjectByName('sofa').material;
+        const hex = (c) => '#' + c.getHexString();
+        return {
+          initial: m === card._initialmaterial[0][0],
+          color: hex(m.color),
+          emissive: hex(m.emissive),
+          glow: Math.round(m.emissiveIntensity * 100) / 100,
+        };
+      });
+    assert.deepEqual(await sofa(), { initial: false, color: '#4fc3f7', emissive: '#4fc3f7', glow: 2.5 });
+    // A condition without glow: only the colour, with the glow of the material of the model.
+    await page.evaluate(() => window.__setState('media_player.tv', 'idle'));
+    const red = await sofa();
+    assert.equal(red.color, '#ff0000');
+    assert.equal(red.emissive, '#000000');
+    await page.evaluate(() => window.__setState('media_player.tv', 'off'));
+    assert.equal((await sofa()).initial, true);
+    assert.deepEqual(errors, []);
+    await page.close();
+  },
+);
+
+test(
+  'a tracker with a model: it takes the place of the pin, fades, turns to sensor_heading the shorter way; a model that does not load gives the pin back',
+  { timeout: TIMEOUT },
+  async () => {
+    const tracker = (extra) => ({
+      entity: 'sensor.robot_x',
+      type3d: 'tracker',
+      object_id: 'floor_living',
+      tracker: { sensor_y: 'sensor.robot_y', sensor_heading: 'sensor.robot_heading', scale: 0.1, ...extra },
+    });
+    const warnings = [];
+    const { page, errors } = await open(
+      house({
+        entities: [
+          // A model of its own (the GLB house, small), relative to path; another one compressed with
+          // Draco, from an address of its own; one that doesn't exist.
+          tracker({ model: 'home.glb', model_scale: 0.02, flip_y: true, sensor_rotation: 10 }),
+          tracker({ model: '/local/floor3d/draco.glb', model_scale: 0.02, model_rotation: 90 }),
+          tracker({ model: 'missing.glb' }),
+        ],
+      }),
+      states({
+        'sensor.robot_x': { state: '0', attributes: {} },
+        'sensor.robot_y': { state: '0', attributes: {} },
+        'sensor.robot_heading': { state: '30', attributes: {} },
+      }),
+      (page) => page.on('console', (m) => m.type() === 'warning' && warnings.push(m.text())),
+    );
+    const views = () =>
+      page.evaluate(() =>
+        window.__card._trackers._views.map((tv) => {
+          const meshes = [];
+          tv.pivot.traverse((o) => o.isMesh && meshes.push(o));
+          return {
+            pin: meshes.some((m) => m.geometry.type === 'SphereGeometry' && m.visible),
+            model: meshes.some((m) => m.geometry.type !== 'SphereGeometry' && m.geometry.type !== 'CylinderGeometry'),
+            yaw: Math.round((tv.yaw * 180) / Math.PI),
+            target: Math.round((tv.yawTarget * 180) / Math.PI),
+            turn: tv.pivot.children[tv.pivot.children.length - 1].rotation.y,
+            opacity: tv.opacity,
+            materials: tv.materials.map(([m, full]) => [m.transparent, m.opacity, full]),
+            visible: tv.group.visible,
+          };
+        }),
+      );
+    await eventually(async () => {
+      const v = await views();
+      return v[0].model && v[1].model && v[2].pin;
+    }, 'the models load, the missing one gives the pin back');
+    assert.ok(
+      warnings.some((w) => w.includes('cannot load the tracker model') && w.includes('missing.glb')),
+      warnings.join('\n'),
+    );
+    let v = await views();
+    assert.equal(v[0].pin, false, 'the pin is gone');
+    assert.ok(Math.abs(v[1].turn - Math.PI / 2) < 1e-6 || Math.abs(v[1].turn + Math.PI / 2) < 1e-6, 'model_rotation');
+    // Nobody there yet (0, 0): invisible, every material at 0.
+    assert.ok(
+      v.every((t) => !t.visible && t.materials.every(([transparent, opacity]) => transparent && opacity === 0)),
+    );
+    // The robot shows up: it faces its heading at once, flip_y and sensor_rotation as the position.
+    await page.evaluate(() => {
+      window.__setState('sensor.robot_x', '1200');
+      window.__setState('sensor.robot_y', '800');
+    });
+    await until(page, () => window.__card._trackers._views.every((tv) => tv.opacity === 1), null, 'they fade in');
+    v = await views();
+    assert.equal(v[0].target, 20, 'flip_y: -30, then +10: three.js -(-20)');
+    assert.equal(v[0].yaw, 20);
+    assert.equal(v[1].target, -30);
+    assert.ok(
+      v[0].materials.every(([t, opacity, full]) => t && Math.abs(opacity - full) < 1e-6),
+      'full opacity',
+    );
+    // From 30 to 170 and then to -170: the shorter way, through 180 and not back through 0.
+    await page.evaluate(() => window.__setState('sensor.robot_heading', '170'));
+    await until(
+      page,
+      () => window.__card._trackers._views[1].yaw === window.__card._trackers._views[1].yawTarget,
+      null,
+      'turned',
+    );
+    const path = await page.evaluate(async () => {
+      const tv = window.__card._trackers._views[1];
+      window.__setState('sensor.robot_heading', '-170');
+      const seen = [];
+      while (tv.yaw !== tv.yawTarget) {
+        seen.push(tv.yaw);
+        await new Promise((r) => setTimeout(r, 20));
+      }
+      return seen.map((y) => Math.round((y * 180) / Math.PI));
+    });
+    assert.ok(path.length > 1, 'it turns smoothly: ' + path);
+    assert.ok(
+      path.every((d) => Math.abs(d) >= 165),
+      'the shorter way, through 180: ' + path,
+    );
+    // The missing model: the 404 of its file, and nothing else.
+    assert.deepEqual(
+      errors.filter((e) => !/404/.test(e)),
+      [],
+    );
+    await page.close();
+  },
+);
+
+// A PNG of 4 x 4 pixels of one colour, as a data address (the pictures of image.overrides are in the
+// configuration, written before the page opens).
+const solidPng = (r, g, b) => {
+  const chunk = (type, data) => {
+    const body = Buffer.concat([Buffer.from(type), data]);
+    const out = Buffer.alloc(12 + data.length);
+    out.writeUInt32BE(data.length, 0);
+    body.copy(out, 4);
+    out.writeUInt32BE(zlib.crc32(body), 8 + data.length);
+    return out;
+  };
+  const header = Buffer.alloc(13);
+  header.writeUInt32BE(4, 0);
+  header.writeUInt32BE(4, 4);
+  header[8] = 8; // bits
+  header[9] = 2; // RGB
+  const rows = Buffer.concat(
+    Array.from({ length: 4 }, () => Buffer.from([0, ...[].concat(...Array(4).fill([r, g, b]))])),
+  );
+  return (
+    'data:image/png;base64,' +
+    Buffer.concat([
+      Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]),
+      chunk('IHDR', header),
+      chunk('IDAT', zlib.deflateSync(rows)),
+      chunk('IEND', Buffer.alloc(0)),
+    ]).toString('base64')
+  );
+};
+
+test(
+  'image.overrides: the picture of the first row whose entity is in its state, also with the screen entity off',
+  { timeout: TIMEOUT },
+  async () => {
+    const screen = {
+      entity: 'media_player.tv',
+      type3d: 'image',
+      object_id: 'tv_screen',
+      image: {
+        lumens: 2,
+        overrides: [
+          { entity: 'light.lamp_1', state: 'on', picture: solidPng(255, 0, 0) },
+          { entity: 'light.lamp_2', state: 'on', picture: solidPng(0, 255, 0) },
+        ],
+      },
+    };
+    const { page, errors } = await open(
+      house({ entities: [screen] }),
+      states({
+        'media_player.tv': { state: 'off', attributes: {} },
+        'light.lamp_1': { state: 'off', attributes: {} },
+        'light.lamp_2': { state: 'off', attributes: {} },
+      }),
+    );
+    const colour = (name) => {
+      const map = window.__card._scene.getObjectByName(name).material.map;
+      if (!map || !map.image || !map.image.width) return 'dark';
+      const c = document.createElement('canvas');
+      c.width = c.height = 1;
+      c.getContext('2d').drawImage(map.image, map.image.width / 2, map.image.height / 2, 1, 1, 0, 0, 1, 1);
+      const d = c.getContext('2d').getImageData(0, 0, 1, 1).data;
+      return d[0] > 200 && d[1] < 60 ? 'red' : d[1] > 200 && d[0] < 60 ? 'green' : d[2] > 200 ? 'blue' : '?';
+    };
+    const shows = (expected, message) =>
+      until(
+        page,
+        ([fn, expected]) => new Function('return ' + fn)()('tv_screen') === expected,
+        [colour.toString(), expected],
+        message,
+      );
+    assert.equal(await page.evaluate(colour, 'tv_screen'), 'dark', 'nothing matches, the TV is off');
+    await page.evaluate(() => window.__setState('light.lamp_2', 'on'));
+    await shows('green', 'the second row, with the TV off');
+    await page.evaluate(() => window.__setState('light.lamp_1', 'on'));
+    await shows('red', 'the first row comes first');
+    // The TV plays something: the picture of the row still comes first.
+    const blue = solidPng(0, 0, 255);
+    await page.evaluate((blue) => window.__setState('media_player.tv', 'playing', { entity_picture: blue }), blue);
+    await page.waitForTimeout(300);
+    assert.equal(await page.evaluate(colour, 'tv_screen'), 'red');
+    // No row matches: the picture of the TV, then dark when it is off.
+    await page.evaluate(() => {
+      window.__setState('light.lamp_1', 'off');
+      window.__setState('light.lamp_2', 'off');
+    });
+    await shows('blue', 'the picture of the TV again');
+    await page.evaluate(() => window.__setState('media_player.tv', 'off'));
+    await shows('dark', 'the TV off, no row');
     assert.deepEqual(errors, []);
     await page.close();
   },

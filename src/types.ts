@@ -147,7 +147,7 @@ export interface EntityConfig {
   action?: string; // a tap on its objects: more-info, overlay or default
   long_press_action?: string;
   light?: any;
-  colorcondition?: any; // type3d: color, a colour for each state
+  colorcondition?: ColorCondition[] | { [key: string]: ColorCondition }; // type3d: color and room, a colour for each state
   color?: any; // type3d: color: light (the colour of the light while it is on) and glow
   hide?: any;
   show?: any;
@@ -161,8 +161,8 @@ export interface EntityConfig {
   alarm?: any;
   climate?: any;
   shower?: any;
-  tracker?: any;
-  image?: any;
+  tracker?: TrackerConfig;
+  image?: ImageConfig;
 }
 
 // The objects of an entity, found from its object_id (helpers.ts): the card reads them by the
@@ -176,4 +176,56 @@ export interface EntityObjects {
 export interface ObjectGroup {
   object_group: string;
   objects: { object_id: string }[];
+}
+
+// A colour of type3d: color (and room) for a state. glow (color only): the objects also glow in it,
+// with this intensity; none without.
+export interface ColorCondition {
+  state: string;
+  color: string; // #rrggbb, a name, or r,g,b
+  glow?: number;
+}
+
+// type3d: tracker, a person or a robot from x and y sensors (trackers.ts).
+export interface TrackerConfig {
+  sensor_x?: string;
+  sensor_y?: string;
+  unit?: 'mm' | 'cm' | 'm';
+  scale?: number; // from millimetres to the units of the model, default 0.001
+  flip_x?: boolean | 'yes' | 'no';
+  flip_y?: boolean | 'yes' | 'no';
+  sensor_rotation?: number; // degrees
+  sensor_position?: number[]; // [x, y, z] of the sensor in the model
+  zone?: string; // an entity whose state is written over the tracker
+  label?: 'yes' | 'no';
+  color?: string;
+  size?: number;
+  height?: number;
+  // A .glb in place of the pin: relative to path, or an address starting with / or http.
+  model?: string;
+  model_scale?: number; // the model is in metres: 100 for a model of the house in centimetres
+  model_rotation?: number; // degrees, for a model whose front doesn't face +X
+  sensor_heading?: string; // the direction in degrees, from x towards y as sensor_x and sensor_y
+}
+
+// type3d: image, the picture of an entity on a screen of the model (screens.ts).
+export interface ImageConfig {
+  attribute?: string; // the attribute with the address of the picture, default entity_picture
+  rotate?: number;
+  mirror?: boolean | 'yes' | 'no';
+  lumens?: number;
+  lighting_lumens?: number;
+  lighting_direction?: string;
+  lighting_distance?: number;
+  lighting_off_state?: string;
+  lighting_shadow?: 'yes' | 'no';
+  // The first entry whose entity is in its state gives the picture, also with the entity off.
+  overrides?: ImageOverride[];
+  [key: string]: any; // older options (count, color, size, width, height...)
+}
+
+export interface ImageOverride {
+  entity: string;
+  state: string;
+  picture: string; // an address: /local/console.png
 }

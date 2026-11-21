@@ -563,6 +563,7 @@ export const typeSchema = (
             ],
           },
         ],
+        'image_overrides',
         'picture_light',
         [
           {
@@ -636,6 +637,11 @@ export const typeSchema = (
               num('size', { min: 0 }),
               num('height', { min: 0, unit_of_measurement: 'cm' }),
               num('sensor_rotation', { unit_of_measurement: '°' }),
+              // A model in place of the pin (a robot vacuum), turned by a heading sensor.
+              { ...text('model'), label_key: 'tracker_model', helper_key: 'tracker_model' },
+              num('model_scale', { min: 0 }),
+              num('model_rotation', { unit_of_measurement: '°' }),
+              entity('sensor_heading', 'sensor'),
             ],
           },
         ],
@@ -758,7 +764,19 @@ export const zoomSchema = (): Schema[] => [row(text('zoom'), num('level', { step
 export const zoomObjectSchema = (objects: string[]): Schema[] => [
   row(objectField('object_id', objects), num('distance', { min: 0, unit_of_measurement: 'cm' })),
 ];
-export const colorConditionSchema = (): Schema[] => [row(text('state'), text('color'))];
+// A colour for a state; in the color type also its glow (a room has none).
+export const colorConditionSchema = (glow = false): Schema[] => [
+  row(
+    text('state'),
+    text('color'),
+    ...(glow ? [{ ...num('glow', { min: 0, max: 5, step: 0.1 }), helper_key: 'condition_glow' }] : []),
+  ),
+];
+
+// A picture of image.overrides: while entity is in state, the screen shows picture.
+export const imageOverrideSchema = (): Schema[] => [
+  row(entity('entity'), text('state'), { ...text('picture'), helper_key: 'override_picture' }),
+];
 
 // The texts of the fields, in the language of the editor (see Translator in localize/editor.ts). A
 // field can name its own texts (label_key, helper_key), when its name is used elsewhere with another

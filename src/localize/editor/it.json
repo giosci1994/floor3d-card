@@ -212,7 +212,12 @@
     "kiosk_idle": "Ritorno dopo",
     "quality": "Qualità",
     "max_shadows": "Ombre massime",
-    "color_light": "Colore della luce"
+    "color_light": "Colore della luce",
+    "tracker_model": "Modello (.glb)",
+    "model_scale": "Scala del modello",
+    "model_rotation": "Rotazione del modello",
+    "sensor_heading": "Sensore della direzione",
+    "picture": "Immagine"
   },
   "helpers": {
     "path": "Per esempio /local/floor3d/",
@@ -316,7 +321,13 @@
     "quality": "Bassa: per un tablet poco potente (rapporto pixel 1, al massimo 4 lampade con ombra). Automatica: bassa su un dispositivo poco potente. Predefinito alta",
     "max_shadows": "Lampade che fanno ombra insieme, sole escluso. Vuoto: quante ne regge il dispositivo (4 con qualità bassa)",
     "color_light": "Mentre è accesa, gli oggetti prendono il colore della luce (una striscia LED)",
-    "color_glow": "Quanto brillano, per la luminosità della luce. Predefinito 1, 0 per niente"
+    "color_glow": "Quanto brillano, per la luminosità della luce. Predefinito 1, 0 per niente",
+    "condition_glow": "Gli oggetti brillano anche di questo colore: per un oggetto scuro o con una texture. Vuoto: niente bagliore",
+    "tracker_model": "Un file .glb al posto del segnaposto (un robot aspirapolvere), nella cartella di path, o un indirizzo che comincia con / o http. Vuoto: il segnaposto",
+    "model_scale": "Il modello è in metri: 100 per una casa in centimetri (Sweet Home 3D). Predefinito 1",
+    "model_rotation": "Per un modello il cui davanti non guarda verso +X. Predefinito 0",
+    "sensor_heading": "Un sensore con la direzione in gradi, da x verso y come i sensori X e Y: il modello si gira verso di essa",
+    "override_picture": "Il suo indirizzo, per esempio /local/console.png. La prima riga la cui entità è nel suo stato dà l’immagine, anche mentre l’entità dello schermo è spenta"
   },
   "options": {
     "language": {
@@ -486,7 +497,8 @@
     "camera_popup": "Immagine a comparsa",
     "camera_place": "Posizione sulla mappa",
     "camera_popup_on": "Compare quando",
-    "marker_place": "Posizione sul modello"
+    "marker_place": "Posizione sul modello",
+    "image_overrides": "Immagine secondo lo stato di un’altra entità"
   },
   "ui": {
     "loading": "Caricamento…",
@@ -556,6 +568,7 @@
     "marker_point": "In un punto del modello",
     "marker_not_placed": "Senza posizione",
     "tap_marker_point": "Tocca il punto del modello dove va il segnaposto",
-    "marker_or_object": "Oppure sopra un oggetto: il segnaposto resta sopra di esso, anche quando si muove"
+    "marker_or_object": "Oppure sopra un oggetto: il segnaposto resta sopra di esso, anche quando si muove",
+    "add_override": "Aggiungi immagine"
   }
 }

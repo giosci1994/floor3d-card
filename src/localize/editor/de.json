@@ -212,7 +212,12 @@
     "kiosk_idle": "Zurück nach",
     "quality": "Qualität",
     "max_shadows": "Maximale Schatten",
-    "color_light": "Farbe des Lichts"
+    "color_light": "Farbe des Lichts",
+    "tracker_model": "Modell (.glb)",
+    "model_scale": "Maßstab des Modells",
+    "model_rotation": "Drehung des Modells",
+    "sensor_heading": "Sensor der Richtung",
+    "picture": "Bild"
   },
   "helpers": {
     "path": "Zum Beispiel /local/floor3d/",
@@ -316,7 +321,13 @@
     "quality": "Niedrig: für ein schwaches Tablet (Pixelverhältnis 1, höchstens 4 Lampen mit Schatten). Automatisch: niedrig auf einem schwachen Gerät. Standard hoch",
     "max_shadows": "Lampen, die gleichzeitig Schatten werfen, ohne die Sonne. Leer: so viele, wie das Gerät schafft (4 bei niedriger Qualität)",
     "color_light": "Solange es an ist, nehmen die Objekte die Farbe des Lichts an (ein LED-Streifen)",
-    "color_glow": "Wie stark sie leuchten, mal die Helligkeit des Lichts. Standard 1, 0 gar nicht"
+    "color_glow": "Wie stark sie leuchten, mal die Helligkeit des Lichts. Standard 1, 0 gar nicht",
+    "condition_glow": "Die Objekte leuchten auch in dieser Farbe: für ein dunkles Objekt oder eines mit Textur. Leer: kein Leuchten",
+    "tracker_model": "Eine .glb-Datei anstelle der Markierung (ein Saugroboter), im Ordner von path, oder eine Adresse, die mit / oder http beginnt. Leer: die Markierung",
+    "model_scale": "Das Modell ist in Metern: 100 für ein Haus in Zentimetern (Sweet Home 3D). Standard 1",
+    "model_rotation": "Für ein Modell, dessen Vorderseite nicht nach +X zeigt. Standard 0",
+    "sensor_heading": "Ein Sensor mit der Richtung in Grad, von x nach y wie die Sensoren X und Y: das Modell dreht sich dorthin",
+    "override_picture": "Seine Adresse, etwa /local/console.png. Die erste Zeile, deren Entität in ihrem Zustand ist, gibt das Bild, auch wenn die Entität des Bildschirms aus ist"
   },
   "options": {
     "language": {
@@ -486,7 +497,8 @@
     "camera_popup": "Bild bei Ereignis",
     "camera_place": "Position auf der Karte",
     "camera_popup_on": "Erscheint bei",
-    "marker_place": "Platz im Modell"
+    "marker_place": "Platz im Modell",
+    "image_overrides": "Bild nach dem Zustand einer anderen Entität"
   },
   "ui": {
     "loading": "Wird geladen…",
@@ -556,6 +568,7 @@
     "marker_point": "An einem Punkt des Modells",
     "marker_not_placed": "Nicht platziert",
     "tap_marker_point": "Tippe auf den Punkt des Modells, an den die Markierung kommt",
-    "marker_or_object": "Oder über einem Objekt: die Markierung bleibt darüber, auch wenn es sich bewegt"
+    "marker_or_object": "Oder über einem Objekt: die Markierung bleibt darüber, auch wenn es sich bewegt",
+    "add_override": "Bild hinzufügen"
   }
 }

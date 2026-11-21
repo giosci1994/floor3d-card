@@ -18,6 +18,21 @@ export function pictureOf(item: EntityConfig, stateObj: HassEntity): string | un
   return typeof picture === 'string' && picture.trim() ? picture.trim() : undefined;
 }
 
+// image.overrides: the picture of the first entry whose entity is in its state (a game console on:
+// its picture on the TV, whatever the TV reports). Undefined when none is.
+export function overridePicture(
+  item: EntityConfig,
+  states: { [id: string]: HassEntity | undefined },
+): string | undefined {
+  const overrides = item.image && Array.isArray(item.image.overrides) ? item.image.overrides : [];
+  for (const o of overrides) {
+    if (!o || !o.entity || !o.picture) continue;
+    const stateObj = states[o.entity];
+    if (stateObj && String(stateObj.state) === String(o.state)) return String(o.picture).trim();
+  }
+  return undefined;
+}
+
 export class Screens {
   // The picture being loaded for each entity (a newer one, or the TV switched off, drops it), the
   // entities whose picture failed to load (logged once), and the picture and state on show.
@@ -99,10 +114,11 @@ export class Screens {
     });
   }
 
-  // A new picture, or the screen switched on or off.
+  // A new picture, or the screen switched on or off, or an entity of image.overrides changed state.
   private _refresh(entity: EntityConfig, i: number): boolean {
     const stateObj = this.host.hass.states[entity.entity];
-    const key = pictureOf(entity, stateObj) + '|' + stateObj.state;
+    const key =
+      pictureOf(entity, stateObj) + '|' + stateObj.state + '|' + overridePicture(entity, this.host.hass.states);
     if (key === this._keys[i]) return false;
     this._keys[i] = key;
     this._update(entity, i);
@@ -115,8 +131,11 @@ export class Screens {
       _foundobject = this.host.object(this.host.objectIds[index].objects[0].object_id);
     }
     if (_foundobject) {
-      const picture = pictureOf(item, this.host.hass.states[item.entity]);
-      if (picture && !['off', 'standby', 'unavailable', 'unknown'].includes(this.host.hass.states[item.entity].state)) {
+      // A picture of image.overrides comes first, and shows also with the entity off or unavailable.
+      const override = overridePicture(item, this.host.hass.states);
+      const picture = override || pictureOf(item, this.host.hass.states[item.entity]);
+      const on = !['off', 'standby', 'unavailable', 'unknown'].includes(this.host.hass.states[item.entity].state);
+      if (picture && (override || on)) {
         // The picture goes on the screen once it has loaded, and the card redraws then. Before, the
         // empty texture went on at once: the screen, transparent, disappeared, and nothing redrew
         // it when the picture arrived (a screen capture of Android TV changes every few seconds).

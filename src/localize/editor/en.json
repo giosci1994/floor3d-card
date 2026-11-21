@@ -215,7 +215,12 @@
     "kiosk_idle": "Back after",
     "quality": "Quality",
     "max_shadows": "Maximum shadows",
-    "color_light": "Colour of the light"
+    "color_light": "Colour of the light",
+    "tracker_model": "Model (.glb)",
+    "model_scale": "Scale of the model",
+    "model_rotation": "Rotation of the model",
+    "sensor_heading": "Heading sensor",
+    "picture": "Picture"
   },
   "helpers": {
     "path": "For example /local/floor3d/",
@@ -319,7 +324,13 @@
     "quality": "Low: for a weak tablet (pixel ratio 1, at most 4 lamps with shadow). Auto: low on a weak device. Default high",
     "max_shadows": "Lamps casting a shadow at once, the sun aside. Empty: as many as the device takes (4 with quality low)",
     "color_light": "While it is on, the objects take the colour of the light (a LED strip)",
-    "color_glow": "How much they glow, times the brightness of the light. Default 1, 0 none"
+    "color_glow": "How much they glow, times the brightness of the light. Default 1, 0 none",
+    "condition_glow": "The objects also glow in this colour: for a dark object or one with a texture. Empty: no glow",
+    "tracker_model": "A .glb file in place of the pin (a robot vacuum), in the folder of path, or an address that starts with / or http. Empty: the pin",
+    "model_scale": "The model is in metres: 100 for a house in centimetres (Sweet Home 3D). Default 1",
+    "model_rotation": "For a model whose front doesn’t face +X. Default 0",
+    "sensor_heading": "A sensor with the direction in degrees, from x towards y as the X and Y sensors: the model turns to it",
+    "override_picture": "Its address, such as /local/console.png. The first row whose entity is in its state gives the picture, also while the entity of the screen is off"
   },
   "options": {
     "language": {
@@ -513,7 +524,8 @@
     "camera_popup": "Picture that pops up",
     "camera_place": "Place on the map",
     "camera_popup_on": "Pops up when",
-    "marker_place": "Place on the model"
+    "marker_place": "Place on the model",
+    "image_overrides": "Picture by the state of another entity"
   },
   "ui": {
     "loading": "Loading…",
@@ -583,6 +595,7 @@
     "marker_point": "At a point of the model",
     "marker_not_placed": "Not placed",
     "tap_marker_point": "Tap the point of the model where the marker goes",
-    "marker_or_object": "Or over an object: the marker stays over its top, also when it moves"
+    "marker_or_object": "Or over an object: the marker stays over its top, also when it moves",
+    "add_override": "Add picture"
   }
 }

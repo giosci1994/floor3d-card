@@ -28,6 +28,7 @@ The picture of the entity (`entity_picture`: the cover of what a media player pl
 | `lighting_distance` | `800` | How far that light reaches, in cm. |
 | `lighting_off_state` | `off`, `standby`, `unavailable`, `unknown` | The states in which the light is off. |
 | `lighting_shadow` | `yes` | `no`: the light casts no shadow, and leaves the shadow for a lamp. |
+| `overrides` | none | Pictures by the state of other entities (since 2.14.0, below). |
 
 ![TV screen: the picture of the media player lights the room](../../../assets/images/tv.jpg)
 
@@ -58,4 +59,31 @@ template:
 A new address puts the new picture on the frame; while the entity is `off`, `unavailable` or `unknown` the frame is dark. The other options work as for a TV: `lumens` makes it glow, `lighting_lumens` lights the room with its colour, `rotate` and `mirror` turn it.
 
 The addresses of Home Assistant always work: `/local/…`, and the pictures it serves itself (media players, cameras, image entities). A picture from another site works only if that site lets other pages use it (CORS); otherwise the browser console says that it did not load.
+
+## A picture by the state of another entity
+
+`overrides` (since 2.14.0) gives the screen a picture of its own while another entity is in a state: the logo of a game console while the console is on, whatever the TV reports. The first row whose entity is in its state gives the picture, and the screen shows it also while the entity of the screen is `off` or `unavailable` (a TV that Home Assistant doesn't see while it shows the console). When no row matches, the screen is as before.
+
+```yaml
+- entity: media_player.living_room_tv
+  type3d: image
+  object_id: TV_screen
+  image:
+    lumens: 2
+    overrides:
+      - entity: switch.console
+        state: 'on'
+        picture: /local/console.png
+      - entity: input_select.tv_source
+        state: Radio
+        picture: /local/radio.png
+```
+
+| Option of a row | |
+| --- | --- |
+| `entity` | Any entity. |
+| `state` | The state in which the picture shows. |
+| `picture` | Its address: `/local/…` for a file of `/config/www`. |
+
+In the editor, the rows are under **Picture by the state of another entity**.
 
